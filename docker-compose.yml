@@ -1,0 +1,14 @@
+services:
+  ai-audio-books-db:
+    image: pgvector/pgvector:pg16
+    restart: on-failure
+    container_name: ai-audio-books-db
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    volumes:
+      - db-data:/var/lib/postgresql/data
+volumes:
+  db-data:
