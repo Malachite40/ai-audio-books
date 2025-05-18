@@ -75,3 +75,13 @@ model Verification {
 
     @@map("verification")
 }
+
+model Speaker {
+    id               String   @id @default(uuid())
+    name             String
+    image            String?
+    gptCondLatent    Json
+    speakerEmbedding Json
+    createdAt        DateTime @default(now()) @db.Timestamptz()
+    updatedAt        DateTime @default(now()) @updatedAt @db.Timestamptz()
+}

@@ -35,7 +35,7 @@ export function TRPCReactProvider(props: { children: React.ReactNode }) {
         }),
         httpBatchStreamLink({
           transformer: SuperJSON,
-          url: getBaseUrl() + "/trpc",
+          url: getBaseUrl() + "/api/trpc",
           headers: async () => {
             const headers = new Headers();
             headers.set("x-trpc-source", "nextjs-react");
@@ -56,5 +56,5 @@ export function TRPCReactProvider(props: { children: React.ReactNode }) {
 }
 
 function getBaseUrl() {
-  return `http://localhost:${process.env.PORT ?? 4000}`;
+  return `http://localhost:${process.env.PORT ?? 3000}`;
 }

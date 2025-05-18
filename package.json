@@ -23,5 +23,8 @@
     "overrides": {
       "@trpc/server": "11.1.0"
     }
+  },
+  "resolutions": {
+    "react-hook-form": "7.55.0"
   }
 }
