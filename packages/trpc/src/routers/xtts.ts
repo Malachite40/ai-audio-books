@@ -1,8 +1,10 @@
+import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { TRPCError } from "@trpc/server";
+import { AudioChunkStatus } from "@workspace/database";
 import { z } from "zod";
+import { env } from "../env";
+import { s3Client } from "../s3";
 import { createTRPCRouter, publicProcedure } from "../trpc";
-// No need to import fetch, using native fetch
-
 const XTTS_API_URL = "http://charhub-inference-5:8000"; // Define the API endpoint
 
 export const xttsRouter = createTRPCRouter({
@@ -26,7 +28,7 @@ export const xttsRouter = createTRPCRouter({
       };
     } catch (error) {
       console.error("Error fetching speakers:", error);
-      throw new Error("Failed to fetch speakers.");
+      throw new Error("ERROR to fetch speakers.");
     }
   }),
   getLanguages: publicProcedure.query(async ({}) => {
@@ -41,39 +43,14 @@ export const xttsRouter = createTRPCRouter({
       return languages as string[];
     } catch (error) {
       console.error("Error fetching languages:", error);
-      throw new Error("Failed to fetch languages.");
+      throw new Error("ERROR to fetch languages.");
     }
   }),
-  ttsStream: publicProcedure
-    .input(
-      z.object({ text: z.string(), speaker: z.string(), language: z.string() })
-    )
-    .mutation(async ({ input }) => {
-      // Added async
-      try {
-        const response = await fetch(`${XTTS_API_URL}/tts_stream`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(input),
-        });
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        // Assuming the API returns a URL or data for the stream
-        // This part might need adjustment based on the actual API response for streaming
-        const audioData = await response.text(); // Or response.blob() or response.json()
-        return audioData; // Return the appropriate data for the frontend to handle streaming
-      } catch (error) {
-        console.error("Streaming synthesis error:", error);
-        throw new Error("Failed to perform streaming synthesis.");
-      }
-    }),
   tts: publicProcedure
     .input(
       z.object({
-        speakerId: z.string(),
+        audioFileId: z.string().uuid(),
+        speakerId: z.string().uuid(),
         text: z.string(),
         language: z.string(),
       })
@@ -105,22 +82,53 @@ export const xttsRouter = createTRPCRouter({
       }
       if (bufferText) chunks.push(bufferText);
 
+      const responses = await Promise.all(
+        chunks.map(async (chunk, index) => {
+          return await ctx.db.audioChunk.create({
+            data: {
+              audioFileId: input.audioFileId,
+              text: chunk,
+              sequence: index,
+            },
+          });
+        })
+      );
+
       // 2️⃣ For each chunk, fetch WAV (JSON or raw), decode, strip header
       const pcmBuffers: Buffer[] = [];
-      for (const chunk of chunks) {
+      for (let index = 0; index < chunks.length; index++) {
+        const audioChunk = responses[index];
+        if (!audioChunk) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: `Audio chunk not found`,
+          });
+        }
+        const chunkId = audioChunk.id;
+
+        await ctx.db.audioChunk.update({
+          where: { id: audioChunk.id },
+          data: { status: AudioChunkStatus.PROCESSING },
+        });
+
         let resp: Response;
         try {
           resp = await fetch(`${XTTS_API_URL}/tts`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              text: chunk,
+              text: audioChunk.text,
               speaker_embedding: speaker.speakerEmbedding,
               gpt_cond_latent: speaker.gptCondLatent,
               language: input.language,
             }),
           });
         } catch (err: unknown) {
+          await ctx.db.audioChunk.update({
+            where: { id: chunkId },
+            data: { status: AudioChunkStatus.ERROR },
+          });
+
           throw new TRPCError({
             code: "BAD_GATEWAY",
             message: `Could not reach TTS server: ${
@@ -130,6 +138,11 @@ export const xttsRouter = createTRPCRouter({
         }
 
         if (!resp.ok) {
+          await ctx.db.audioChunk.update({
+            where: { id: chunkId },
+            data: { status: AudioChunkStatus.ERROR },
+          });
+
           const txt = await resp.text();
           throw new TRPCError({
             code: "BAD_GATEWAY",
@@ -157,12 +170,48 @@ export const xttsRouter = createTRPCRouter({
         }
 
         if (wavBuffer.length <= 44) {
+          await ctx.db.audioChunk.update({
+            where: { id: chunkId },
+            data: { status: AudioChunkStatus.ERROR },
+          });
+
           throw new TRPCError({
             code: "BAD_GATEWAY",
             message: `Received buffer too small to be WAV (${wavBuffer.length} bytes)`,
           });
         }
 
+        //upload to S3
+        const audioId = `${input.speakerId}_${Date.now()}_${Math.random().toString(36).substring(2, 10)}.wav`;
+        try {
+          await s3Client.send(
+            new PutObjectCommand({
+              Bucket: env.CLOUD_FLARE_AUDIO_BUCKET_NAME,
+              Key: audioId,
+              Body: wavBuffer,
+              ContentType: "audio/wav",
+            })
+          );
+        } catch (err) {
+          console.error("S3 upload error:", err);
+
+          await ctx.db.audioChunk.update({
+            where: { id: chunkId },
+            data: { status: AudioChunkStatus.ERROR },
+          });
+
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: `ERROR to upload audio to storage: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          });
+        }
+
+        await ctx.db.audioChunk.update({
+          where: { id: chunkId },
+          data: { status: AudioChunkStatus.PROCESSED },
+        });
         // strip off the 44-byte WAV header, keep only PCM
         pcmBuffers.push(wavBuffer.slice(44));
       }
@@ -176,6 +225,7 @@ export const xttsRouter = createTRPCRouter({
         text: input.text,
         speakerId: input.speakerId,
         language: input.language,
+        audioFileId: input.audioFileId,
       };
     }),
 });

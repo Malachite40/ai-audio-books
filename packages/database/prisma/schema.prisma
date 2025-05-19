@@ -85,3 +85,38 @@ model Speaker {
     createdAt        DateTime @default(now()) @db.Timestamptz()
     updatedAt        DateTime @default(now()) @updatedAt @db.Timestamptz()
 }
+
+enum AudioFileStatus {
+    PENDING
+    PROCESSING
+    PROCESSED
+    ERROR
+}
+
+model AudioFile {
+    id          String          @id @default(uuid())
+    status      AudioFileStatus @default(PENDING)
+    createdAt   DateTime        @default(now()) @db.Timestamptz()
+    updatedAt   DateTime        @default(now()) @updatedAt @db.Timestamptz()
+    AudioChunks AudioChunk[]
+}
+
+enum AudioChunkStatus {
+    PENDING
+    PROCESSING
+    PROCESSED
+    ERROR
+}
+
+model AudioChunk {
+    id          String           @id @default(uuid())
+    sequence    Int
+    text        String
+    status      AudioChunkStatus @default(PENDING)
+    createdAt   DateTime         @default(now()) @db.Timestamptz()
+    updatedAt   DateTime         @default(now()) @updatedAt @db.Timestamptz()
+    audioFileId String
+    audioFile   AudioFile        @relation(fields: [audioFileId], references: [id], onDelete: Cascade)
+
+    @@unique([audioFileId, sequence])
+}

@@ -19,6 +19,10 @@ export const env = createEnv({
     APPLE_KEY_ID: z.string(),
     APPLE_PRIVATE_KEY: z.string(),
     APPLE_BUNDLE_ID: z.string(),
+    CLOUD_FLARE_ACCESS_KEY_ID: z.string(),
+    CLOUD_FLARE_SECRET_ACCESS_KEY: z.string(),
+    CLOUD_FLARE_R2_ENDPOINT: z.string().url(),
+    CLOUD_FLARE_AUDIO_BUCKET_NAME: z.string(),
   },
 
   /**
@@ -48,6 +52,10 @@ export const env = createEnv({
     APPLE_KEY_ID: process.env.APPLE_KEY_ID,
     APPLE_PRIVATE_KEY: process.env.APPLE_PRIVATE_KEY,
     APPLE_BUNDLE_ID: process.env.APPLE_BUNDLE_ID,
+    CLOUD_FLARE_ACCESS_KEY_ID: process.env.CLOUD_FLARE_ACCESS_KEY_ID,
+    CLOUD_FLARE_SECRET_ACCESS_KEY: process.env.CLOUD_FLARE_SECRET_ACCESS_KEY,
+    CLOUD_FLARE_R2_ENDPOINT: process.env.CLOUD_FLARE_R2_ENDPOINT,
+    CLOUD_FLARE_AUDIO_BUCKET_NAME: process.env.CLOUD_FLARE_AUDIO_BUCKET_NAME,
   },
   /**
    * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially

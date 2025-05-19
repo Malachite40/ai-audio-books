@@ -7,7 +7,7 @@ export type BaseContext = {
 
 export const createNextTRPCContext = async (opts: { headers: Headers }) => {
   return {
-    db: prisma as PrismaClient,
+    db: prisma,
     walletAddress: opts.headers.get("x-wallet-address") as string | undefined,
   } satisfies BaseContext;
 };

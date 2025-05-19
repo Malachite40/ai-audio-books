@@ -1,5 +1,6 @@
 "use client";
 import AudioPlayer from "@/components/audio/audio-player";
+import { Clip, useAudioClipsStore } from "@/store/audio-clips-store";
 import { api } from "@/trpc/react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@workspace/ui/components/button";
@@ -19,22 +20,31 @@ import {
   SelectValue,
 } from "@workspace/ui/components/select";
 import { Textarea } from "@workspace/ui/components/textarea";
+import { cn } from "@workspace/ui/lib/utils";
 import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
 // Audio Clip component for each history item
 interface AudioClipProps {
-  clip: {
-    id: string;
-    src: string;
-    text: string;
-  };
+  clip: Clip;
 }
+
 const AudioClip = ({ clip }: AudioClipProps) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [hasOverflow, setHasOverflow] = useState(false);
   const textRef = useRef<HTMLParagraphElement>(null);
+  const removeClip = useAudioClipsStore((state) => state.removeClip);
+
+  const audioFile = api.audio.chunks.fetchAll.useQuery(
+    {
+      audioFileId: clip.id,
+    },
+    {
+      enabled: !clip.src,
+      refetchInterval: 500,
+    }
+  );
 
   useEffect(() => {
     if (textRef.current) {
@@ -44,6 +54,28 @@ const AudioClip = ({ clip }: AudioClipProps) => {
       setHasOverflow(hasTextOverflow);
     }
   }, [clip.text]);
+
+  // show loading state
+  if (!clip.src) {
+    return (
+      <div className="border rounded-lg p-4 flex gap-1">
+        {audioFile.data?.audioFile.AudioChunks.map((chunk) => {
+          return (
+            <div
+              key={chunk.id}
+              className={cn(
+                "w-full h-2",
+                chunk.status === "PROCESSING" && "bg-yellow-500",
+                chunk.status === "PROCESSED" && "bg-green-500",
+                chunk.status === "ERROR" && "bg-red-500",
+                chunk.status === "PENDING" && "bg-gray-500"
+              )}
+            ></div>
+          );
+        })}
+      </div>
+    );
+  }
 
   return (
     <div className="border rounded-lg p-4">
@@ -66,17 +98,21 @@ const AudioClip = ({ clip }: AudioClipProps) => {
         </div>
       </div>
       <AudioPlayer src={clip.src} />
+
+      <Button
+        variant="destructive"
+        onClick={() => removeClip(clip.id)}
+        className="mt-2"
+      >
+        Remove
+      </Button>
     </div>
   );
 };
 
 // Audio History component
 interface AudioHistoryProps {
-  audioHistory: Array<{
-    id: string;
-    src: string;
-    text: string;
-  }>;
+  audioHistory: Clip[];
 }
 
 const AudioHistory = ({ audioHistory }: AudioHistoryProps) => {
@@ -101,13 +137,9 @@ const FormSchema = z.object({
 });
 
 const TestClient = () => {
-  const [audioHistory, setAudioHistory] = useState<
-    Array<{
-      id: string;
-      src: string;
-      text: string;
-    }>
-  >([]);
+  const clips = useAudioClipsStore((state) => state.clips);
+  const addClip = useAudioClipsStore((state) => state.addClip);
+  const updateClip = useAudioClipsStore((state) => state.updateClip);
 
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
@@ -120,27 +152,29 @@ const TestClient = () => {
 
   const { data: languages } = api.xtts.getLanguages.useQuery();
 
-  const synthesizeStreamingMutation = api.xtts.ttsStream.useMutation({
-    onSuccess: (data) => {},
+  const createAudioFile = api.audio.create.useMutation({
+    onSuccess: (data) => {
+      addClip({ id: data.audioFile.id });
+
+      console.log("Audio file created:", data);
+    },
     onError: (error) => {
-      console.error("Streaming synthesis error:", error);
+      console.error("Error creating audio file:", error);
     },
   });
 
   const synthesizeOneShotMutation = api.xtts.tts.useMutation({
     onSuccess: (data) => {
-      setAudioHistory((prev) => [
-        { ...data, id: crypto.randomUUID() },
-        ...prev,
-      ]);
+      updateClip({ ...data, id: data.audioFileId });
     },
     onError: (error) => {
       console.error("One-shot synthesis error:", error);
     },
   });
 
-  const onSubmitOneShot = (values: z.infer<typeof FormSchema>) => {
-    synthesizeOneShotMutation.mutate(values);
+  const onSubmitOneShot = async (values: z.infer<typeof FormSchema>) => {
+    const { audioFile } = await createAudioFile.mutateAsync({});
+    synthesizeOneShotMutation.mutate({ ...values, audioFileId: audioFile.id });
   };
 
   const {
@@ -225,6 +259,7 @@ const TestClient = () => {
                 <FormControl>
                   <Textarea
                     rows={4}
+                    className="max-h-[400px]"
                     placeholder="Enter text to synthesize"
                     {...field}
                   />
@@ -251,13 +286,8 @@ const TestClient = () => {
         </form>
       </Form>
 
-      <AudioHistory audioHistory={audioHistory} />
+      <AudioHistory audioHistory={clips} />
 
-      {synthesizeStreamingMutation.error && (
-        <p className="text-red-500 mt-2">
-          Streaming Error: {synthesizeStreamingMutation.error.message}
-        </p>
-      )}
       {synthesizeOneShotMutation.error && (
         <p className="text-red-500 mt-2">
           One-Shot Error: {synthesizeOneShotMutation.error.message}
