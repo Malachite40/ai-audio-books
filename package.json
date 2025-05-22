@@ -26,5 +26,9 @@
   },
   "resolutions": {
     "react-hook-form": "7.55.0"
-  }
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ]
 }

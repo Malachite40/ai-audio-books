@@ -3,7 +3,6 @@ import { createJSONStorage, persist } from "zustand/middleware";
 
 export interface Clip {
   id: string;
-  src?: string;
   text?: string;
 }
 

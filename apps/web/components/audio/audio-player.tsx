@@ -5,25 +5,25 @@ import { Download, PauseIcon, PlayIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 interface AudioPlayerProps {
-  src: string; // full HTTP or data URL
+  src: string;
 }
 
 const AudioPlayer = ({ src }: AudioPlayerProps) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState<number | undefined>(0); // Allow undefined
-  const [duration, setDuration] = useState<number | undefined>(0); // Allow undefined
+  const [currentTime, setCurrentTime] = useState<number | undefined>(0);
+  const [duration, setDuration] = useState<number | undefined>(0);
   const [error, setError] = useState<string | null>(null);
-  const [isSeeking, setIsSeeking] = useState(false); // To prevent time update while seeking
+  const [isSeeking, setIsSeeking] = useState(false);
 
   // whenever src changes, load it
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
     audio.src = src;
-    audio.load(); // make sure metadata (duration) is re-loaded
-    setError(null); // clear any previous error
-    setIsPlaying(false); // reset play state
+    audio.load();
+    setError(null);
+    setIsPlaying(false);
   }, [src]);
 
   // attach listeners
@@ -63,7 +63,7 @@ const AudioPlayer = ({ src }: AudioPlayerProps) => {
       audio.removeEventListener("ended", onEnded);
       audio.removeEventListener("error", onError);
     };
-  }, [isSeeking]); // Re-attach if isSeeking changes
+  }, [isSeeking]);
 
   const togglePlay = () => {
     const audio = audioRef.current;
@@ -78,8 +78,7 @@ const AudioPlayer = ({ src }: AudioPlayerProps) => {
   };
 
   const formatTime = (t: number | undefined) => {
-    // Accept number or undefined
-    if (t === undefined || isNaN(t) || t === Infinity) return "0:00"; // Handle undefined case
+    if (t === undefined || isNaN(t) || t === Infinity) return "0:00";
     const m = Math.floor(t / 60);
     const s = Math.floor(t % 60)
       .toString()
@@ -100,7 +99,7 @@ const AudioPlayer = ({ src }: AudioPlayerProps) => {
   const handleSeekEnd = (value: number[]) => {
     const audio = audioRef.current;
     if (!audio) return;
-    audio.currentTime = value[0] ?? 0; // Use default of 0 if value[0] is undefined
+    audio.currentTime = value[0] ?? 0;
     setCurrentTime(value[0]);
     setIsSeeking(false);
   };

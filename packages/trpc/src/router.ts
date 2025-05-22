@@ -1,6 +1,7 @@
 import { audioRouter } from "./routers/audio";
 import { speakersRouter } from "./routers/speakers";
 import { usersRouter } from "./routers/users";
+import { workersRouter } from "./routers/workers";
 import { xttsRouter } from "./routers/xtts";
 import { createCallerFactory, createTRPCRouter } from "./trpc";
 
@@ -9,6 +10,7 @@ export const appRouter = createTRPCRouter({
   xtts: xttsRouter,
   speakers: speakersRouter,
   audio: audioRouter,
+  workers: workersRouter,
 });
 
 // export type definition of API

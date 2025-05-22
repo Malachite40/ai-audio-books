@@ -1,6 +1,6 @@
 "use client";
-import AudioPlayer from "@/components/audio/audio-player";
-import { Clip, useAudioClipsStore } from "@/store/audio-clips-store";
+import { AudioHistory } from "@/components/audio/audio-history";
+import { useAudioClipsStore } from "@/store/audio-clips-store";
 import { api } from "@/trpc/react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@workspace/ui/components/button";
@@ -20,115 +20,8 @@ import {
   SelectValue,
 } from "@workspace/ui/components/select";
 import { Textarea } from "@workspace/ui/components/textarea";
-import { cn } from "@workspace/ui/lib/utils";
-import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-
-// Audio Clip component for each history item
-interface AudioClipProps {
-  clip: Clip;
-}
-
-const AudioClip = ({ clip }: AudioClipProps) => {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [hasOverflow, setHasOverflow] = useState(false);
-  const textRef = useRef<HTMLParagraphElement>(null);
-  const removeClip = useAudioClipsStore((state) => state.removeClip);
-
-  const audioFile = api.audio.chunks.fetchAll.useQuery(
-    {
-      audioFileId: clip.id,
-    },
-    {
-      enabled: !clip.src,
-      refetchInterval: 500,
-    }
-  );
-
-  useEffect(() => {
-    if (textRef.current) {
-      // Check if the content height is greater than the line-clamped height
-      const hasTextOverflow =
-        textRef.current.scrollHeight > textRef.current.clientHeight;
-      setHasOverflow(hasTextOverflow);
-    }
-  }, [clip.text]);
-
-  // show loading state
-  if (!clip.src) {
-    return (
-      <div className="border rounded-lg p-4 flex gap-1">
-        {audioFile.data?.audioFile.AudioChunks.map((chunk) => {
-          return (
-            <div
-              key={chunk.id}
-              className={cn(
-                "w-full h-2",
-                chunk.status === "PROCESSING" && "bg-yellow-500",
-                chunk.status === "PROCESSED" && "bg-green-500",
-                chunk.status === "ERROR" && "bg-red-500",
-                chunk.status === "PENDING" && "bg-gray-500"
-              )}
-            ></div>
-          );
-        })}
-      </div>
-    );
-  }
-
-  return (
-    <div className="border rounded-lg p-4">
-      <div className="mb-2">
-        <div
-          onClick={() => hasOverflow && setIsExpanded(!isExpanded)}
-          className={`${hasOverflow ? "cursor-pointer" : ""}`}
-        >
-          <p
-            ref={textRef}
-            className={`text-sm italic mb-1 ${isExpanded ? "" : "line-clamp-2"}`}
-          >
-            {clip.text}
-          </p>
-          {hasOverflow && (
-            <span className="text-xs text-blue-500">
-              {isExpanded ? "Show less" : "Show more"}
-            </span>
-          )}
-        </div>
-      </div>
-      <AudioPlayer src={clip.src} />
-
-      <Button
-        variant="destructive"
-        onClick={() => removeClip(clip.id)}
-        className="mt-2"
-      >
-        Remove
-      </Button>
-    </div>
-  );
-};
-
-// Audio History component
-interface AudioHistoryProps {
-  audioHistory: Clip[];
-}
-
-const AudioHistory = ({ audioHistory }: AudioHistoryProps) => {
-  if (audioHistory.length === 0) return null;
-
-  return (
-    <div className="mt-8">
-      <h2 className="text-xl font-bold mb-4">Audio History</h2>
-      <div className="space-y-4">
-        {audioHistory.map((clip) => (
-          <AudioClip key={clip.id} clip={clip} />
-        ))}
-      </div>
-    </div>
-  );
-};
 
 const FormSchema = z.object({
   speakerId: z.string().uuid().min(1, "Please select a speaker."),
@@ -165,6 +58,7 @@ const TestClient = () => {
 
   const synthesizeOneShotMutation = api.xtts.tts.useMutation({
     onSuccess: (data) => {
+      if (data.src) data.src = "";
       updateClip({ ...data, id: data.audioFileId });
     },
     onError: (error) => {
@@ -173,7 +67,10 @@ const TestClient = () => {
   });
 
   const onSubmitOneShot = async (values: z.infer<typeof FormSchema>) => {
-    const { audioFile } = await createAudioFile.mutateAsync({});
+    const { audioFile } = await createAudioFile.mutateAsync({
+      speakerId: values.speakerId,
+      text: values.text,
+    });
     synthesizeOneShotMutation.mutate({ ...values, audioFileId: audioFile.id });
   };
 

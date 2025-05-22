@@ -8,7 +8,7 @@ export const imagesRouter = createTRPCRouter({
   getPresignedPost: authenticatedProcedure.mutation(async ({ ctx }) => {
     const imageId = uuidv4();
     const presignedPost = await createPresignedPost(s3Client, {
-      Bucket: env.CLOUD_FLARE_AUDIO_BUCKET_NAME,
+      Bucket: env.NEXT_PUBLIC_CLOUD_FLARE_AUDIO_BUCKET_NAME,
       Key: imageId,
     });
 

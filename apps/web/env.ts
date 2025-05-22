@@ -21,8 +21,8 @@ export const env = createEnv({
     APPLE_BUNDLE_ID: z.string(),
     CLOUD_FLARE_ACCESS_KEY_ID: z.string(),
     CLOUD_FLARE_SECRET_ACCESS_KEY: z.string(),
-    CLOUD_FLARE_R2_ENDPOINT: z.string().url(),
-    CLOUD_FLARE_AUDIO_BUCKET_NAME: z.string(),
+    BROKER: z.string().url(),
+    REDIS_URL: z.string().url(),
   },
 
   /**
@@ -33,6 +33,9 @@ export const env = createEnv({
   client: {
     NEXT_PUBLIC_BASE_URL: z.string().url(),
     NEXT_PUBLIC_BETTER_AUTH_URL: z.string().url(),
+    NEXT_PUBLIC_CLOUD_FLARE_R2_ENDPOINT: z.string().url(),
+    NEXT_PUBLIC_CLOUD_FLARE_AUDIO_BUCKET_NAME: z.string(),
+    NEXT_PUBLIC_AUDIO_BUCKET_URL: z.string().url(),
   },
 
   /**
@@ -54,8 +57,13 @@ export const env = createEnv({
     APPLE_BUNDLE_ID: process.env.APPLE_BUNDLE_ID,
     CLOUD_FLARE_ACCESS_KEY_ID: process.env.CLOUD_FLARE_ACCESS_KEY_ID,
     CLOUD_FLARE_SECRET_ACCESS_KEY: process.env.CLOUD_FLARE_SECRET_ACCESS_KEY,
-    CLOUD_FLARE_R2_ENDPOINT: process.env.CLOUD_FLARE_R2_ENDPOINT,
-    CLOUD_FLARE_AUDIO_BUCKET_NAME: process.env.CLOUD_FLARE_AUDIO_BUCKET_NAME,
+    NEXT_PUBLIC_CLOUD_FLARE_R2_ENDPOINT:
+      process.env.NEXT_PUBLIC_CLOUD_FLARE_R2_ENDPOINT,
+    NEXT_PUBLIC_CLOUD_FLARE_AUDIO_BUCKET_NAME:
+      process.env.NEXT_PUBLIC_CLOUD_FLARE_AUDIO_BUCKET_NAME,
+    NEXT_PUBLIC_AUDIO_BUCKET_URL: process.env.NEXT_PUBLIC_AUDIO_BUCKET_URL,
+    BROKER: process.env.BROKER,
+    REDIS_URL: process.env.REDIS_URL,
   },
   /**
    * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially

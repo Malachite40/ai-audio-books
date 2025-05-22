@@ -10,5 +10,13 @@ services:
       POSTGRES_PASSWORD: password
     volumes:
       - db-data:/var/lib/postgresql/data
+  rabbit:
+    image: rabbitmq
+    ports:
+      - "5672:5672"
+  redis:
+    image: redis
+    ports:
+      - "6379:6379"
 volumes:
   db-data:

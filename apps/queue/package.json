@@ -1,0 +1,18 @@
+{
+  "name": "queue",
+  "module": "index.ts",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run ./index.ts",
+    "build": "bun run"
+  },
+  "dependencies": {
+    "@workspace/trpc": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

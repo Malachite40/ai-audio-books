@@ -5,13 +5,12 @@ import { z } from "zod";
 import { env } from "../env";
 import { s3Client } from "../s3";
 import { createTRPCRouter, publicProcedure } from "../trpc";
-const XTTS_API_URL = "http://charhub-inference-5:8000"; // Define the API endpoint
 
 export const xttsRouter = createTRPCRouter({
   getStudioSpeakers: publicProcedure.query(async ({}) => {
     // Added async
     try {
-      const response = await fetch(`${XTTS_API_URL}/studio_speakers`);
+      const response = await fetch(`${env.XTTS_API_URL}/studio_speakers`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -34,7 +33,7 @@ export const xttsRouter = createTRPCRouter({
   getLanguages: publicProcedure.query(async ({}) => {
     // Added async
     try {
-      const response = await fetch(`${XTTS_API_URL}/languages`);
+      const response = await fetch(`${env.XTTS_API_URL}/languages`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -66,38 +65,16 @@ export const xttsRouter = createTRPCRouter({
         });
       }
 
-      // 1️⃣ Split text into chunks of ≤ chunkSize chars by sentence boundaries
-      const chunkSize = 200;
-      const sentences = input.text.match(/[^\.!\?]+[\.!\?]+/g) || [];
-      const chunks: string[] = [];
-      let bufferText = "";
-
-      for (const sentence of sentences) {
-        if ((bufferText + sentence).length > chunkSize && bufferText) {
-          chunks.push(bufferText);
-          bufferText = sentence;
-        } else {
-          bufferText += sentence;
-        }
-      }
-      if (bufferText) chunks.push(bufferText);
-
-      const responses = await Promise.all(
-        chunks.map(async (chunk, index) => {
-          return await ctx.db.audioChunk.create({
-            data: {
-              audioFileId: input.audioFileId,
-              text: chunk,
-              sequence: index,
-            },
-          });
-        })
-      );
+      // 1️⃣ Fetch all chunks for this audio file
+      const audioChunks = await ctx.db.audioChunk.findMany({
+        where: { audioFileId: input.audioFileId },
+        orderBy: { sequence: "asc" },
+      });
 
       // 2️⃣ For each chunk, fetch WAV (JSON or raw), decode, strip header
       const pcmBuffers: Buffer[] = [];
-      for (let index = 0; index < chunks.length; index++) {
-        const audioChunk = responses[index];
+      for (let index = 0; index < audioChunks.length; index++) {
+        const audioChunk = audioChunks[index];
         if (!audioChunk) {
           throw new TRPCError({
             code: "NOT_FOUND",
@@ -113,7 +90,7 @@ export const xttsRouter = createTRPCRouter({
 
         let resp: Response;
         try {
-          resp = await fetch(`${XTTS_API_URL}/tts`, {
+          resp = await fetch(`${env.XTTS_API_URL}/tts`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -182,16 +159,18 @@ export const xttsRouter = createTRPCRouter({
         }
 
         //upload to S3
-        const audioId = `${input.speakerId}_${Date.now()}_${Math.random().toString(36).substring(2, 10)}.wav`;
+        const audioId = `${audioChunk.id}.wav`;
         try {
-          await s3Client.send(
-            new PutObjectCommand({
-              Bucket: env.CLOUD_FLARE_AUDIO_BUCKET_NAME,
-              Key: audioId,
-              Body: wavBuffer,
-              ContentType: "audio/wav",
-            })
-          );
+          const put = new PutObjectCommand({
+            Bucket: env.NEXT_PUBLIC_CLOUD_FLARE_AUDIO_BUCKET_NAME,
+            Key: audioId,
+            Body: wavBuffer,
+            ContentType: "audio/wav",
+          });
+          console.log({
+            url: env.NEXT_PUBLIC_AUDIO_BUCKET_URL + "/" + audioId,
+          });
+          await s3Client.send(put);
         } catch (err) {
           console.error("S3 upload error:", err);
 
@@ -209,8 +188,13 @@ export const xttsRouter = createTRPCRouter({
         }
 
         await ctx.db.audioChunk.update({
-          where: { id: chunkId },
-          data: { status: AudioChunkStatus.PROCESSED },
+          where: {
+            id: chunkId,
+          },
+          data: {
+            status: AudioChunkStatus.PROCESSED,
+            url: env.NEXT_PUBLIC_AUDIO_BUCKET_URL + "/" + audioId,
+          },
         });
         // strip off the 44-byte WAV header, keep only PCM
         pcmBuffers.push(wavBuffer.slice(44));
