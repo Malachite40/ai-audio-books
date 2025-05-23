@@ -11,4 +11,4 @@ cmds = ['bun run build']
 
 [start]
 work_dir = 'apps/web'
-cmd = 'bun run start'
+cmd = 'bun run --cwd apps/web start'
