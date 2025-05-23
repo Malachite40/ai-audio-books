@@ -1,6 +1,8 @@
 import z from "zod";
+import { client } from "../queue/client";
 import { createTRPCRouter, publicProcedure } from "../trpc";
 import { audioChunkRouter } from "./audioChunk";
+import { audioChunkInput } from "./workers";
 
 export const audioRouter = createTRPCRouter({
   chunks: audioChunkRouter,
@@ -45,13 +47,13 @@ export const audioRouter = createTRPCRouter({
         })
       );
 
-      // for (const chunk of responses) {
-      //   const task = client.createTask("tasks.processAudioChunk");
-      //   task.applyAsync([
-      //     { id: chunk.id } satisfies z.infer<typeof audioChunkInput>,
-      //   ]);
-      //   return { audioFile };
-      // }
+      for (const chunk of responses) {
+        const task = client.createTask("tasks.processAudioChunk");
+        task.applyAsync([
+          { id: chunk.id } satisfies z.infer<typeof audioChunkInput>,
+        ]);
+        return { audioFile };
+      }
 
       return { audioFile };
     }),

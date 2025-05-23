@@ -41,6 +41,10 @@ export const workersRouter = createTRPCRouter({
       }
       const speaker = audioChunk.audioFile.speaker;
       console.log("Speaker info:", speaker);
+      //@ts-ignore
+      console.log("speaker.speakerEmbedding:", speaker.speakerEmbedding.length);
+      //@ts-ignore
+      console.log("speaker.gptCondLatent:", speaker.gptCondLatent.length);
 
       const chunkId = audioChunk.id;
 

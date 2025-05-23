@@ -71,7 +71,7 @@ const TestClient = () => {
       speakerId: values.speakerId,
       text: values.text,
     });
-    synthesizeOneShotMutation.mutate({ ...values, audioFileId: audioFile.id });
+    // synthesizeOneShotMutation.mutate({ ...values, audioFileId: audioFile.id });
   };
 
   const {

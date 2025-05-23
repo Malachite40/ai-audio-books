@@ -15,7 +15,19 @@
     },
     "dev": {
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      "dependsOn": [
+        "generate"
+      ]
+    },
+    "generate": {
+      "dependsOn": [
+        "^generate"
+      ],
+      "cache": false,
+      "outputs": [
+        "packages/database/generated/**"
+      ]
     }
   }
 }
