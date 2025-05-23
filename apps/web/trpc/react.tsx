@@ -1,4 +1,5 @@
 "use client";
+import { env } from "@/env";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { httpBatchStreamLink, loggerLink } from "@trpc/client";
 import { createTRPCReact } from "@trpc/react-query";
@@ -35,7 +36,7 @@ export function TRPCReactProvider(props: { children: React.ReactNode }) {
         }),
         httpBatchStreamLink({
           transformer: SuperJSON,
-          url: getBaseUrl() + "/api/trpc",
+          url: env.NEXT_PUBLIC_BASE_URL + "/api/trpc",
           headers: async () => {
             const headers = new Headers();
             headers.set("x-trpc-source", "nextjs-react");
@@ -53,8 +54,4 @@ export function TRPCReactProvider(props: { children: React.ReactNode }) {
       </api.Provider>
     </QueryClientProvider>
   );
-}
-
-function getBaseUrl() {
-  return `http://localhost:${process.env.PORT ?? 3000}`;
 }
