@@ -126,6 +126,12 @@ export const inworldRouter = createTRPCRouter({
         { id: audioFile.id } satisfies z.infer<typeof processAudioFileInput>,
       ]);
 
+      // deduct credit
+      await ctx.db.credits.update({
+        where: { userId: ctx.user.id },
+        data: { amount: { decrement: input.text.length } },
+      });
+
       return {
         audioFile,
         chunkCount: createdChunks.length,
