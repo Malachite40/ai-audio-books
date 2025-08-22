@@ -20,12 +20,8 @@
   "engines": {
     "node": ">=20"
   },
-  "pnpm": {
-    "overrides": {
-      "@trpc/server": "11.1.0"
-    }
-  },
-  "resolutions": {
+  "overrides": {
+    "@trpc/server": "11.1.0",
     "react-hook-form": "7.55.0"
   },
   "workspaces": [
