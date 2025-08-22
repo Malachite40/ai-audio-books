@@ -371,7 +371,7 @@ export const workersRouter = createTRPCRouter({
       });
 
       // Kick off TTS/processing for each chunk
-      const BATCH_SIZE = 5;
+      const BATCH_SIZE = 7;
       for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
         const batch = chunks.slice(i, i + BATCH_SIZE);
         await Promise.all(
