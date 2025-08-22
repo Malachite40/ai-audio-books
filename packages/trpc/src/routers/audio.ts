@@ -1,60 +1,77 @@
 import z from "zod";
-import { client } from "../queue/client";
 import { createTRPCRouter, publicProcedure } from "../trpc";
 import { audioChunkRouter } from "./audioChunk";
-import { audioChunkInput } from "./workers";
+import { inworldRouter } from "./inworld";
 
 export const audioRouter = createTRPCRouter({
+  inworld: inworldRouter,
   chunks: audioChunkRouter,
-  create: publicProcedure
+  fetchAll: publicProcedure
     .input(
       z.object({
-        text: z.string(),
-        speakerId: z.string(),
+        page: z.number().optional().default(1),
+        take: z.number().max(50).optional().default(10),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const [audioFiles, totalCount] = await Promise.all([
+        ctx.db.audioFile.findMany({
+          take: input.take,
+          skip: (input.page - 1) * input.take,
+          where: {
+            deletedAt: null,
+          },
+          orderBy: {
+            createdAt: "desc",
+          },
+          select: {
+            id: true,
+            name: true,
+            AudioChunks: true,
+            speakerId: true,
+            status: true,
+            createdAt: true,
+            deletedAt: true,
+            speaker: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        }),
+        ctx.db.audioFile.count({
+          where: {
+            deletedAt: null,
+          },
+        }),
+      ]);
+      return { audioFiles, count: totalCount };
+    }),
+  delete: publicProcedure
+    .input(
+      z.object({
+        id: z.string(),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const audioFile = await ctx.db.audioFile.create({
+      await ctx.db.audioFile.update({
+        where: {
+          id: input.id,
+        },
         data: {
-          speakerId: input.speakerId,
+          deletedAt: new Date(),
         },
       });
-
-      const chunkSize = 200;
-      const sentences = input.text.match(/[^\.!\?]+[\.!\?]+/g) || [];
-      const chunks: string[] = [];
-      let bufferText = "";
-
-      for (const sentence of sentences) {
-        if ((bufferText + sentence).length > chunkSize && bufferText) {
-          chunks.push(bufferText);
-          bufferText = sentence;
-        } else {
-          bufferText += sentence;
-        }
-      }
-      if (bufferText) chunks.push(bufferText);
-
-      const responses = await Promise.all(
-        chunks.map(async (chunk, index) => {
-          return await ctx.db.audioChunk.create({
-            data: {
-              audioFileId: audioFile.id,
-              text: chunk,
-              sequence: index,
-            },
-          });
-        })
-      );
-
-      for (const chunk of responses) {
-        const task = client.createTask("tasks.processAudioChunk");
-        task.applyAsync([
-          { id: chunk.id } satisfies z.infer<typeof audioChunkInput>,
-        ]);
-        return { audioFile };
-      }
-
+    }),
+  fetch: publicProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const audioFile = await ctx.db.audioFile.findUnique({
+        where: {
+          id: input.id,
+        },
+      });
       return { audioFile };
     }),
 });

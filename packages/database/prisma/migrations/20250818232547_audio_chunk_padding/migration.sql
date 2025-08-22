@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "AudioChunk" ADD COLUMN     "paddingEndMs" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "paddingStartMs" INTEGER NOT NULL DEFAULT 0;

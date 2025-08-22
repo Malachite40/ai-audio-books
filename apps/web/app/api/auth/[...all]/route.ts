@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { auth } from "@workspace/trpc/server";
 import { toNextJsHandler } from "better-auth/next-js";
 import { NextRequest } from "next/server";
 

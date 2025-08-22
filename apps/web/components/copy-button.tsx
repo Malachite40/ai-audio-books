@@ -12,7 +12,13 @@ import {
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 
-export default function CopyButton({ text }: { text: string }) {
+export default function CopyButton({
+  text,
+  info = "Click to Copy",
+}: {
+  text: string;
+  info?: string;
+}) {
   const [copied, setCopied] = useState<boolean>(false);
 
   const handleCopy = async () => {
@@ -59,9 +65,7 @@ export default function CopyButton({ text }: { text: string }) {
             </div>
           </Button>
         </TooltipTrigger>
-        <TooltipContent className="px-2 py-1 text-xs">
-          Click to copy
-        </TooltipContent>
+        <TooltipContent>{info}</TooltipContent>
       </Tooltip>
     </TooltipProvider>
   );

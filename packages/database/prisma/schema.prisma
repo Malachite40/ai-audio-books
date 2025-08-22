@@ -24,6 +24,8 @@ model User {
     banned     Boolean?
     banReason  String?
     banExpires DateTime?
+    Credits    Credits?
+    AudioFile  AudioFile[]
 
     @@unique([email])
     @@map("user")
@@ -79,9 +81,11 @@ model Verification {
 model Speaker {
     id               String      @id @default(uuid())
     name             String
+    order            Int?
+    exampleAudio     String?
     image            String?
-    gptCondLatent    Json
-    speakerEmbedding Json
+    gptCondLatent    Json?
+    speakerEmbedding Json?
     createdAt        DateTime    @default(now()) @db.Timestamptz()
     updatedAt        DateTime    @default(now()) @updatedAt @db.Timestamptz()
     AudioFiles       AudioFile[]
@@ -96,12 +100,16 @@ enum AudioFileStatus {
 
 model AudioFile {
     id          String          @id @default(uuid())
+    ownerId     String?
+    name        String          @default("")
+    owner       User?           @relation(fields: [ownerId], references: [id], onDelete: Cascade)
     status      AudioFileStatus @default(PENDING)
     speakerId   String
     speaker     Speaker         @relation(fields: [speakerId], references: [id], onDelete: Cascade)
     lang        String          @default("en")
     createdAt   DateTime        @default(now()) @db.Timestamptz()
     updatedAt   DateTime        @default(now()) @updatedAt @db.Timestamptz()
+    deletedAt   DateTime?       @db.Timestamptz()
     AudioChunks AudioChunk[]
 }
 
@@ -113,15 +121,25 @@ enum AudioChunkStatus {
 }
 
 model AudioChunk {
-    id          String           @id @default(uuid())
-    sequence    Int
-    url         String?
-    text        String
-    status      AudioChunkStatus @default(PENDING)
-    createdAt   DateTime         @default(now()) @db.Timestamptz()
-    updatedAt   DateTime         @default(now()) @updatedAt @db.Timestamptz()
-    audioFileId String
-    audioFile   AudioFile        @relation(fields: [audioFileId], references: [id], onDelete: Cascade)
+    id             String           @id @default(uuid())
+    sequence       Int
+    url            String?
+    text           String
+    paddingStartMs Int              @default(0)
+    paddingEndMs   Int              @default(0)
+    status         AudioChunkStatus @default(PENDING)
+    createdAt      DateTime         @default(now()) @db.Timestamptz()
+    updatedAt      DateTime         @default(now()) @updatedAt @db.Timestamptz()
+    audioFileId    String
+    audioFile      AudioFile        @relation(fields: [audioFileId], references: [id], onDelete: Cascade)
 
     @@unique([audioFileId, sequence])
+}
+
+model Credits {
+    userId    String   @id @unique
+    user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+    amount    Int
+    createdAt DateTime @default(now()) @db.Timestamptz()
+    updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz()
 }

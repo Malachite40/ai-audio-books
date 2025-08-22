@@ -9,10 +9,20 @@ export const env = createEnv({
    * isn't built with invalid env vars.
    */
   server: {
+    BETTER_AUTH_URL: z.string().url(),
+    GOOGLE_CLIENT_SECRET: z.string(),
+    GOOGLE_CLIENT_ID: z.string(),
+
     DATABASE_URL: z.string().url(),
     CLOUD_FLARE_ACCESS_KEY_ID: z.string(),
     CLOUD_FLARE_SECRET_ACCESS_KEY: z.string(),
     XTTS_API_URL: z.string().url(),
+    INWORLD_API_KEY: z.string(),
+    APPLE_CLIENT_ID: z.string(),
+    APPLE_TEAM_ID: z.string(),
+    APPLE_KEY_ID: z.string(),
+    APPLE_PRIVATE_KEY: z.string(),
+    APPLE_BUNDLE_ID: z.string(),
   },
 
   /**
@@ -42,6 +52,15 @@ export const env = createEnv({
       process.env.NEXT_PUBLIC_CLOUD_FLARE_AUDIO_BUCKET_NAME,
     NEXT_PUBLIC_AUDIO_BUCKET_URL: process.env.NEXT_PUBLIC_AUDIO_BUCKET_URL,
     XTTS_API_URL: process.env.XTTS_API_URL,
+    INWORLD_API_KEY: process.env.INWORLD_API_KEY,
+    APPLE_CLIENT_ID: process.env.APPLE_CLIENT_ID,
+    APPLE_TEAM_ID: process.env.APPLE_TEAM_ID,
+    APPLE_KEY_ID: process.env.APPLE_KEY_ID,
+    APPLE_PRIVATE_KEY: process.env.APPLE_PRIVATE_KEY,
+    APPLE_BUNDLE_ID: process.env.APPLE_BUNDLE_ID,
+    BETTER_AUTH_URL: process.env.BETTER_AUTH_URL,
+    GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
   },
   /**
    * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially

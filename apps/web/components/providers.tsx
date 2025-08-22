@@ -7,7 +7,9 @@ import * as React from "react";
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <TRPCReactProvider>
-      <NuqsAdapter>{children}</NuqsAdapter>
+      <React.Suspense>
+        <NuqsAdapter>{children}</NuqsAdapter>
+      </React.Suspense>
     </TRPCReactProvider>
   );
 }

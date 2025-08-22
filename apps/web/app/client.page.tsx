@@ -1,7 +1,7 @@
 import { SignInWithGoogle } from "@/components/auth/sign-in-with-google";
 import { SignOutButton } from "@/components/auth/sign-out-button";
-import { auth } from "@/lib/auth";
 import { api } from "@/trpc/server";
+import { auth } from "@workspace/trpc/server";
 import { headers } from "next/headers";
 
 export default async function Page() {

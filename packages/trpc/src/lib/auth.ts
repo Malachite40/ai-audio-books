@@ -1,10 +1,10 @@
-import { env } from "@/env";
 import { expo } from "@better-auth/expo";
 import { prisma } from "@workspace/database";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { nextCookies } from "better-auth/next-js";
 import { admin } from "better-auth/plugins";
+import { env } from "../env";
 import { APPLE_SECRET_ID } from "./apple-web-token";
 
 const APP_SCHEME = "ai-audio-books";

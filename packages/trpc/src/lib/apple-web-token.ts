@@ -1,5 +1,5 @@
-import { env } from "@/env";
 import jwt from "jsonwebtoken";
+import { env } from "../env";
 
 const privateKey = env.APPLE_PRIVATE_KEY.replace(/\\n/g, "\n");
 
