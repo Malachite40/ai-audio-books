@@ -12,7 +12,7 @@ RUN bun install
 
 ENV NODE_ENV=production
 
-RUN bun run build --filter=trpc
+RUN bun run build --filter=@workspace/trpc
 
 # Start the queue. This uses apps/queue/package.json "start"
 # e.g. "start": "bun run ./index.ts"
