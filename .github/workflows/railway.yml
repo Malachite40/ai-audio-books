@@ -23,8 +23,8 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
-      - name: Install Railway
-        run: yarn global add @railway/cli
+      - name: Ensure Railway CLI is available
+        run: npx --package @railway/cli railway --version
 
       - name: Deploy Repository
         run: |

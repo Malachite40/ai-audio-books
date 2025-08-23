@@ -1,0 +1,28 @@
+# dependencies
+node_modules
+**/node_modules
+.pnpm-store
+**/.pnpm-store
+.bun
+**/.bun
+
+# build outputs / caches
+dist
+**/dist
+build
+**/build
+.turbo
+**/.turbo
+.next
+**/.next
+
+# misc
+*.log
+.git
+.DS_Store
+
+# env files (optional)
+# Keep these ignored if you pass env at runtime; un-ignore an example file.
+.env
+.env.*
+!env.example
