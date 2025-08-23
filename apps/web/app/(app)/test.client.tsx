@@ -15,6 +15,7 @@ import { Textarea } from "@workspace/ui/components/textarea";
 import { AudioHistoryDrawer } from "@/components/audio-history-drawer";
 import AudioClip from "@/components/audio/audio-clip";
 import ExampleAudioToggle from "@/components/example-audio-toggle";
+import Logo from "@/components/svgs/logo";
 import { Input } from "@workspace/ui/components/input";
 import {
   Select,
@@ -93,6 +94,26 @@ const TestClient = () => {
 
   return (
     <div className="container mx-auto p-4 flex flex-col justify-center">
+      {!audioFile.data?.audioFile && selectedAudioFileId.length > 0 && (
+        <div className="mb-4 w-full justify-center flex items-center flex-col">
+          <Logo className="size-30" />
+          <p className="mb-4">No audio file found.</p>
+
+          {/* Create new audio file */}
+          <Button
+            className="flex gap-2"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setSelectedAudioFileId("");
+            }}
+            variant={"outline"}
+          >
+            <AudioLinesIcon className="h-4 w-4" />
+            Create New Audio File
+          </Button>
+        </div>
+      )}
       <Form {...form}>
         <form className={cn(selectedAudioFileId.length > 0 ? "hidden" : "")}>
           {/* File name */}

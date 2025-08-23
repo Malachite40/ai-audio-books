@@ -11,11 +11,17 @@ services:
     volumes:
       - db-data:/var/lib/postgresql/data
   rabbit:
-    image: rabbitmq
+    image: rabbitmq:4.1-management
     ports:
       - "5672:5672"
+      - "15672:15672" # optional: management UI at http://localhost:15672
+    environment:
+      RABBITMQ_DEFAULT_USER: worker
+      RABBITMQ_DEFAULT_PASS: worker
+      RABBITMQ_DEFAULT_VHOST: /
+
   redis:
-    image: redis
+    image: redis:7-alpine
     ports:
       - "6379:6379"
 volumes:

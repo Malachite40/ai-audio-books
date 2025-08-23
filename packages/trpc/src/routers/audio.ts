@@ -14,12 +14,20 @@ export const audioRouter = createTRPCRouter({
       })
     )
     .query(async ({ ctx, input }) => {
+      if (!ctx.user) {
+        return {
+          audioFiles: [],
+          count: 0,
+        };
+      }
+
       const [audioFiles, totalCount] = await Promise.all([
         ctx.db.audioFile.findMany({
           take: input.take,
           skip: (input.page - 1) * input.take,
           where: {
             deletedAt: null,
+            ownerId: ctx.user.id,
           },
           orderBy: {
             createdAt: "desc",
@@ -43,6 +51,7 @@ export const audioRouter = createTRPCRouter({
         ctx.db.audioFile.count({
           where: {
             deletedAt: null,
+            ownerId: ctx.user.id,
           },
         }),
       ]);
@@ -70,6 +79,7 @@ export const audioRouter = createTRPCRouter({
       const audioFile = await ctx.db.audioFile.findUnique({
         where: {
           id: input.id,
+          ownerId: ctx.user?.id ?? "",
         },
       });
       return { audioFile };

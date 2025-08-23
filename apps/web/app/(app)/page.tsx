@@ -1,4 +1,4 @@
-import TestClient from "./inworld/test.client";
+import TestClient from "./test.client";
 
 export type HomeProps = {};
 
