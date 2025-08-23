@@ -151,7 +151,7 @@ export const inworldRouter = createTRPCRouter({
         },
       });
 
-      // Retry processing for each failed chunk
+      // Retry processing for each failed chunks
       await Promise.all(
         failedChunks.map((chunk) => {
           const task = client.createTask(
