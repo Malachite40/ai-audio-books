@@ -22,6 +22,7 @@ import { Input } from "@workspace/ui/components/input";
 import { DownloadIcon, PauseIcon, PlayIcon } from "lucide-react/icons";
 import { useForm } from "react-hook-form";
 
+import { authClient } from "@/lib/auth-client";
 import { AudioFile } from "@workspace/database";
 import {
   Tooltip,
@@ -739,6 +740,7 @@ export const AudioClip = ({ af }: AudioClipProps) => {
   };
 
   const retryMutation = api.audio.inworld.retry.useMutation();
+  const { data: userData } = authClient.useSession();
 
   // ───────────────
   //  JSX
@@ -1029,7 +1031,8 @@ export const AudioClip = ({ af }: AudioClipProps) => {
       </div>
 
       <div className="flex gap-4 items-center">
-        {chunks.some((c: any) => c.status === "ERROR") && (
+        {(chunks.some((c) => c.status === "ERROR") ||
+          userData?.user.role === "admin") && (
           <Button
             variant="outline"
             onClick={() => retryMutation.mutate({ audioFileId: af.id })}

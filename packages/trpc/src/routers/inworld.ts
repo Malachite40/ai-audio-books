@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server";
+import { AudioChunkStatus } from "@workspace/database";
 import { z } from "zod";
 import { TASK_NAMES } from "../queue";
 import { client } from "../queue/client";
@@ -144,7 +145,9 @@ export const inworldRouter = createTRPCRouter({
       const failedChunks = await ctx.db.audioChunk.findMany({
         where: {
           audioFileId: input.audioFileId,
-          status: "ERROR",
+          status: {
+            notIn: [AudioChunkStatus.PROCESSED],
+          },
         },
       });
 

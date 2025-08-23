@@ -186,10 +186,6 @@ export const workersRouter = createTRPCRouter({
   processAudioChunkWithInworld: publicProcedure
     .input(audioChunkInput)
     .mutation(async ({ ctx, input }) => {
-      console.log(
-        "Starting processing of audio chunk with Inworld API",
-        input.id
-      );
       const audioChunk = await ctx.db.audioChunk.findUnique({
         where: { id: input.id },
         include: {
@@ -205,7 +201,6 @@ export const workersRouter = createTRPCRouter({
           },
         },
       });
-      console.log("Retrieved audio chunk:", audioChunk);
 
       if (!audioChunk) {
         console.error("Audio chunk not found:", input.id);
@@ -217,12 +212,10 @@ export const workersRouter = createTRPCRouter({
 
       const chunkId = audioChunk.id;
 
-      console.log(`Updating audio chunk ${chunkId} status to PROCESSING`);
       await ctx.db.audioChunk.update({
         where: { id: audioChunk.id },
         data: { status: AudioChunkStatus.PROCESSING },
       });
-      console.log("Audio chunk status updated to PROCESSING.");
 
       let resp: Response;
       try {
@@ -258,7 +251,6 @@ export const workersRouter = createTRPCRouter({
       }
 
       if (!resp.ok) {
-        console.error("Inworld TTS API returned error status:", resp.status);
         await ctx.db.audioChunk.update({
           where: { id: chunkId },
           data: { status: AudioChunkStatus.ERROR },
@@ -319,7 +311,6 @@ export const workersRouter = createTRPCRouter({
 
       // Upload to S3
       const audioId = `${audioChunk.id}.mp3`;
-      console.log("Uploading Inworld audio to S3 with key:", audioId);
       try {
         const put = new PutObjectCommand({
           Bucket: env.NEXT_PUBLIC_CLOUD_FLARE_AUDIO_BUCKET_NAME,
@@ -332,7 +323,6 @@ export const workersRouter = createTRPCRouter({
           env.NEXT_PUBLIC_AUDIO_BUCKET_URL + "/" + audioId
         );
         await s3Client.send(put);
-        console.log("S3 upload completed successfully.");
       } catch (err) {
         console.error("S3 upload error:", err);
         await ctx.db.audioChunk.update({
@@ -347,7 +337,6 @@ export const workersRouter = createTRPCRouter({
         });
       }
 
-      console.log("Updating audio chunk status to PROCESSED.");
       await ctx.db.audioChunk.update({
         where: {
           id: chunkId,
