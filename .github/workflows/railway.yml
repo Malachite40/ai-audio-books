@@ -27,6 +27,8 @@ jobs:
         run: npx --package @railway/cli railway --version
 
       - name: Deploy Repository
-        run: npx --package @railway/cli railway up -d -s "ai-audio-books"
+        run: |
+          npx --package @railway/cli railway up -d -s "ai-audio-books"
+          npx --package @railway/cli railway up -d -s "queue"
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
