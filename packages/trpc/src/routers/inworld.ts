@@ -34,6 +34,7 @@ export const inworldRouter = createTRPCRouter({
           speakerId: input.speakerId,
           name: input.name,
           ownerId: ctx.user.id,
+          public: input.public,
         },
       });
 
