@@ -54,6 +54,7 @@ const PaddingSchema = z.object({
  *  - Throttled UI clock updates
  *  - Smarter polling & limited fetch concurrency
  *  - Lazy WAV export (on click)
+ *  - iOS unlock + future scheduling guards
  */
 
 export const AudioClip = ({ af }: AudioClipProps) => {
@@ -106,7 +107,6 @@ export const AudioClip = ({ af }: AudioClipProps) => {
   const [bufferedDuration, setBufferedDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  // Used to force re-evaluation of allChunksLoaded when af.id changes
   const [audioFileVersion, setAudioFileVersion] = useState(0);
 
   // Scrubbing state: pause while dragging to avoid jumping
@@ -125,7 +125,7 @@ export const AudioClip = ({ af }: AudioClipProps) => {
       seekTo(value);
     }
     if (wasPlayingBeforeScrubRef.current) {
-      await ensureAudioUnlocked(); // iOS: make sure context is running before rescheduling
+      await ensureAudioUnlocked(); // iOS: ensure running before rescheduling
       scheduleFrom(pausedOffset.current);
       startRef.current = audioRef.current!.currentTime;
       setIsPlaying(true);
@@ -137,25 +137,19 @@ export const AudioClip = ({ af }: AudioClipProps) => {
 
   // Reset all state and refs when af.id changes (new audio file selected)
   useEffect(() => {
-    // Pause and stop all audio
     setIsPlaying(false);
     isPlayingRef.current = false;
-    // Reset UI state
     setCurrentTime(0);
     setBufferedDuration(0);
-    // Reset refs
     pausedOffset.current = 0;
     startRef.current = 0;
     scheduleIdxRef.current = 0;
     scheduleLocalRef.current = 0;
     nextStartRef.current = 0;
-    // Clear buffers and timeline
     buffersRef.current.clear();
     timelineRef.current = [];
-    // Stop any active nodes and scheduler
     if (audioRef.current) {
       try {
-        // Stop all active nodes
         const nodes = Array.from(activeNodesRef.current);
         activeNodesRef.current.clear();
         for (const n of nodes) {
@@ -172,7 +166,6 @@ export const AudioClip = ({ af }: AudioClipProps) => {
       clearInterval(schedulerTimerRef.current);
       schedulerTimerRef.current = null;
     }
-    // Force re-evaluation of allChunksLoaded when af.id changes
     setAudioFileVersion((v) => v + 1);
   }, [af.id]);
 
@@ -182,7 +175,6 @@ export const AudioClip = ({ af }: AudioClipProps) => {
   const audioFileQuery = api.audio.chunks.fetchAll.useQuery(
     { audioFileId: af.id },
     {
-      // Poll until all chunks are PROCESSED, then stop polling
       refetchInterval: (data) => {
         const chunks = data.state.data?.audioFile?.AudioChunks ?? [];
         const allDone =
@@ -232,7 +224,7 @@ export const AudioClip = ({ af }: AudioClipProps) => {
             clearTimeout(timeout);
             if (!res.ok) throw new Error("network");
             return await res.arrayBuffer();
-          } catch (err) {
+          } catch {
             if (attempt === retries - 1) return undefined;
             await new Promise((r) => setTimeout(r, 300));
           }
@@ -265,16 +257,24 @@ export const AudioClip = ({ af }: AudioClipProps) => {
   });
 
   // ───────────────
-  //  Init / teardown AudioContext
+  //  Init / teardown AudioContext (creation is fine pre-gesture; playback needs unlock)
   // ───────────────
   useEffect(() => {
     const ctx = new (window.AudioContext ||
       (window as any).webkitAudioContext)();
     audioRef.current = ctx;
     nextStartRef.current = ctx.currentTime;
+
+    const onState = () => {
+      // Helpful when debugging iOS: look for "suspended" or "interrupted"
+      // console.debug("AudioContext state:", ctx.state);
+    };
+    ctx.addEventListener?.("statechange", onState);
+
     return () => {
       stopActiveNodes();
       stopScheduler();
+      ctx.removeEventListener?.("statechange", onState);
       ctx.close();
       audioRef.current = null;
       buffersRef.current.clear();
@@ -284,7 +284,10 @@ export const AudioClip = ({ af }: AudioClipProps) => {
   }, []);
 
   // ─────────────────────────────
-  //  iOS Safari: unlock/resume on gesture + 1-frame silent tick
+  //  iOS Safari: robust unlock
+  //   - capture first gesture at the document level
+  //   - resume on visibility regain if we were playing
+  //   - 1-frame silent tick scheduled slightly in the future
   // ─────────────────────────────
   const unlockedRef = useRef(false);
   async function ensureAudioUnlocked() {
@@ -304,8 +307,7 @@ export const AudioClip = ({ af }: AudioClipProps) => {
           const s = ctx.createBufferSource();
           s.buffer = b;
           s.connect(ctx.destination);
-          // schedule a hair into the future to avoid "past" start
-          s.start(ctx.currentTime + 0.01);
+          s.start(Math.max(ctx.currentTime + 0.02, 0.02)); // schedule into the future
           s.onended = () => {
             try {
               s.disconnect();
@@ -316,6 +318,37 @@ export const AudioClip = ({ af }: AudioClipProps) => {
       }
     }
   }
+
+  // Capture the *first* real gesture anywhere on the page (in case Button swallows pointerdown)
+  useEffect(() => {
+    const onceOpts: AddEventListenerOptions = {
+      once: true,
+      passive: true,
+      capture: true,
+    };
+    const handler = () => {
+      void ensureAudioUnlocked();
+    };
+    document.addEventListener("pointerdown", handler, onceOpts);
+    document.addEventListener("touchend", handler, onceOpts);
+    document.addEventListener("mousedown", handler, onceOpts);
+    return () => {
+      document.removeEventListener("pointerdown", handler, onceOpts as any);
+      document.removeEventListener("touchend", handler, onceOpts as any);
+      document.removeEventListener("mousedown", handler, onceOpts as any);
+    };
+  }, []);
+
+  // Resume after tab returns to foreground if we were playing
+  useEffect(() => {
+    const onVisibility = () => {
+      if (!document.hidden && isPlayingRef.current) {
+        void ensureAudioUnlocked();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
 
   // ─────────────────────────────
   //  Decode newly fetched WAVs
@@ -328,16 +361,14 @@ export const AudioClip = ({ af }: AudioClipProps) => {
       let didChange = false;
       for (const { arrayBuffer, chunk } of wavFilesQuery.data) {
         if (buffersRef.current.has(chunk.sequence)) continue; // already decoded
-        let decoded: AudioBuffer | null = null;
         try {
-          // clone ArrayBuffer before decode
-          decoded = await ctx.decodeAudioData(arrayBuffer.slice(0));
+          const decoded = await ctx.decodeAudioData(arrayBuffer.slice(0));
+          if (decoded) {
+            buffersRef.current.set(chunk.sequence, decoded);
+            didChange = true;
+          }
         } catch {
-          continue;
-        }
-        if (decoded) {
-          buffersRef.current.set(chunk.sequence, decoded);
-          didChange = true;
+          // ignore decode failures; chunk will simply be skipped
         }
       }
       if (didChange) rebuildTimeline();
@@ -381,7 +412,6 @@ export const AudioClip = ({ af }: AudioClipProps) => {
     timelineRef.current = tl;
     setBufferedDuration(cursor);
 
-    // If playing, re-schedule from the current visible time so changes apply immediately
     if (isPlayingRef.current) {
       scheduleFrom(currentTime);
       startRef.current = audioRef.current!.currentTime;
@@ -390,7 +420,7 @@ export const AudioClip = ({ af }: AudioClipProps) => {
 
   // Rebuild timeline when padding metadata changes
   useEffect(() => {
-    if (!buffersRef.current.size) return; // nothing decoded yet
+    if (!buffersRef.current.size) return;
     rebuildTimeline();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -468,9 +498,13 @@ export const AudioClip = ({ af }: AudioClipProps) => {
       } else if (local < seg.padStartSec + seg.buffer.duration) {
         const offsetInBuf = local - seg.padStartSec; // inside audio
         const src = mkNode(ctx, seg.buffer);
-        // clamp "when" into the future to avoid past-start on iOS after resume
-        when = Math.max(when, ctx.currentTime + 0.01);
-        src.start(when, offsetInBuf);
+        // clamp start into the future to avoid "past start" on iOS after resume
+        when = Math.max(when, ctx.currentTime + 0.02);
+        try {
+          src.start(when, offsetInBuf);
+        } catch {
+          /* ignore */
+        }
         const playDur = seg.buffer.duration - offsetInBuf;
         when += playDur;
         local += playDur;
@@ -501,7 +535,7 @@ export const AudioClip = ({ af }: AudioClipProps) => {
     seekPointer(fromSec);
 
     // guard: schedule slightly into the future (iOS resume has currentTime stalls)
-    const EPS = 0.02;
+    const EPS = 0.03;
     nextStartRef.current = Math.max(
       ctx.currentTime + EPS,
       nextStartRef.current || 0
@@ -515,7 +549,6 @@ export const AudioClip = ({ af }: AudioClipProps) => {
     );
   };
 
-  // Replacement for old scheduleFrom
   const scheduleFrom = (offsetSec: number) => {
     if (!audioRef.current) return;
     startScheduler(offsetSec);
@@ -681,15 +714,8 @@ export const AudioClip = ({ af }: AudioClipProps) => {
     }
   };
 
-  const allChunksLoaded = (() => {
-    // Add audioFileVersion to dependencies to force re-evaluation on af.id change
-    return (
-      Array.isArray(chunks) &&
-      chunks.length > 0 &&
-      chunks.every((c: any) => buffersRef.current.has(c.sequence)) &&
-      chunks.every((c: any) => c.status === "PROCESSED")
-    );
-  })();
+  // IMPORTANT: enable Play as soon as *any* audio is buffered (mobile UX)
+  const hasAnyBuffered = bufferedDuration > 0;
 
   // ───────────────
   //  Lazy WAV export (on click)
@@ -750,6 +776,13 @@ export const AudioClip = ({ af }: AudioClipProps) => {
   }
 
   const handleDownload = async () => {
+    // allow download once everything is decoded
+    const allChunksLoaded =
+      Array.isArray(chunks) &&
+      chunks.length > 0 &&
+      chunks.every((c: any) => buffersRef.current.has(c.sequence)) &&
+      chunks.every((c: any) => c.status === "PROCESSED");
+
     if (!allChunksLoaded) return;
     setIsBuildingWav(true);
     try {
@@ -760,7 +793,6 @@ export const AudioClip = ({ af }: AudioClipProps) => {
         : [];
 
       const wavBlob = await new Promise<Blob>((resolve) => {
-        // yield to keep UI responsive; for very long audio consider a Web Worker
         setTimeout(() => resolve(encodeWAV(ordered)), 0);
       });
 
@@ -784,13 +816,21 @@ export const AudioClip = ({ af }: AudioClipProps) => {
   //  JSX
   // ───────────────
   return (
-    <div className="sm:border rounded-lg sm:p-4">
+    // Capture pointer/touch at container level too (some UI Buttons swallow pointerdown)
+    <div
+      className="sm:border rounded-lg sm:p-4"
+      onPointerDownCapture={() => void ensureAudioUnlocked()}
+      onTouchStartCapture={() => void ensureAudioUnlocked()}
+      onMouseDownCapture={() => void ensureAudioUnlocked()}
+    >
       <div className="flex items-center justify-between gap-3 mb-2">
         <div className="flex items-center gap-3">
           <Button
-            onPointerDown={ensureAudioUnlocked} // iOS: unlock on real gesture
+            // keep per-button unlock as well
+            onPointerDown={() => void ensureAudioUnlocked()}
+            onTouchStart={() => void ensureAudioUnlocked()}
             onClick={isPlaying ? handlePause : handlePlay}
-            disabled={!allChunksLoaded}
+            disabled={!hasAnyBuffered}
           >
             {isPlaying ? (
               <PauseIcon className="h-4 w-4" />
@@ -808,7 +848,6 @@ export const AudioClip = ({ af }: AudioClipProps) => {
           {chunks.length > 0 && (
             <span className="text-xs text-muted-foreground">
               {(() => {
-                // Sum all characters in all chunks
                 const totalChars = chunks.reduce(
                   (sum, c) => sum + (c.text?.length || 0),
                   0
@@ -825,7 +864,7 @@ export const AudioClip = ({ af }: AudioClipProps) => {
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
-                  disabled={!allChunksLoaded || isBuildingWav}
+                  disabled={isBuildingWav}
                   variant="outline"
                   onClick={handleDownload}
                 >
