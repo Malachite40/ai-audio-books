@@ -118,13 +118,14 @@ export const AudioClip = ({ af }: AudioClipProps) => {
     wasPlayingBeforeScrubRef.current = isPlayingRef.current;
     if (isPlayingRef.current) handlePause();
   };
-  const handleScrubEnd = (value?: number) => {
+  const handleScrubEnd = async (value?: number) => {
     if (!isScrubbingRef.current) return;
     isScrubbingRef.current = false;
     if (typeof value === "number") {
       seekTo(value);
     }
     if (wasPlayingBeforeScrubRef.current) {
+      await ensureAudioUnlocked(); // iOS: make sure context is running before rescheduling
       scheduleFrom(pausedOffset.current);
       startRef.current = audioRef.current!.currentTime;
       setIsPlaying(true);
@@ -171,9 +172,6 @@ export const AudioClip = ({ af }: AudioClipProps) => {
       clearInterval(schedulerTimerRef.current);
       schedulerTimerRef.current = null;
     }
-    // Optionally, close and recreate AudioContext (optional, only if needed)
-    // If you want to fully reset the context, you could close and recreate it here.
-    // But for now, just clear state.
     // Force re-evaluation of allChunksLoaded when af.id changes
     setAudioFileVersion((v) => v + 1);
   }, [af.id]);
@@ -284,6 +282,40 @@ export const AudioClip = ({ af }: AudioClipProps) => {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ─────────────────────────────
+  //  iOS Safari: unlock/resume on gesture + 1-frame silent tick
+  // ─────────────────────────────
+  const unlockedRef = useRef(false);
+  async function ensureAudioUnlocked() {
+    let ctx = audioRef.current;
+    if (!ctx || ctx.state === "closed") {
+      ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      audioRef.current = ctx;
+    }
+
+    if (ctx.state !== "running") {
+      try {
+        await ctx.resume();
+      } catch {}
+      if (!unlockedRef.current) {
+        try {
+          const b = ctx.createBuffer(1, 1, ctx.sampleRate);
+          const s = ctx.createBufferSource();
+          s.buffer = b;
+          s.connect(ctx.destination);
+          // schedule a hair into the future to avoid "past" start
+          s.start(ctx.currentTime + 0.01);
+          s.onended = () => {
+            try {
+              s.disconnect();
+            } catch {}
+          };
+        } catch {}
+        unlockedRef.current = true;
+      }
+    }
+  }
 
   // ─────────────────────────────
   //  Decode newly fetched WAVs
@@ -436,6 +468,8 @@ export const AudioClip = ({ af }: AudioClipProps) => {
       } else if (local < seg.padStartSec + seg.buffer.duration) {
         const offsetInBuf = local - seg.padStartSec; // inside audio
         const src = mkNode(ctx, seg.buffer);
+        // clamp "when" into the future to avoid past-start on iOS after resume
+        when = Math.max(when, ctx.currentTime + 0.01);
         src.start(when, offsetInBuf);
         const playDur = seg.buffer.duration - offsetInBuf;
         when += playDur;
@@ -465,7 +499,13 @@ export const AudioClip = ({ af }: AudioClipProps) => {
     stopScheduler();
 
     seekPointer(fromSec);
-    nextStartRef.current = ctx.currentTime;
+
+    // guard: schedule slightly into the future (iOS resume has currentTime stalls)
+    const EPS = 0.02;
+    nextStartRef.current = Math.max(
+      ctx.currentTime + EPS,
+      nextStartRef.current || 0
+    );
 
     // Fill initial window immediately, then keep topping up
     tickSchedule();
@@ -482,11 +522,9 @@ export const AudioClip = ({ af }: AudioClipProps) => {
   };
 
   const handlePlay = async () => {
-    if (!audioRef.current) return;
-    try {
-      await audioRef.current.resume();
-    } catch {}
-    startRef.current = audioRef.current.currentTime;
+    await ensureAudioUnlocked();
+    const ctx = audioRef.current!;
+    startRef.current = ctx.currentTime;
     setIsPlaying(true);
     scheduleFrom(pausedOffset.current);
   };
@@ -750,6 +788,7 @@ export const AudioClip = ({ af }: AudioClipProps) => {
       <div className="flex items-center justify-between gap-3 mb-2">
         <div className="flex items-center gap-3">
           <Button
+            onPointerDown={ensureAudioUnlocked} // iOS: unlock on real gesture
             onClick={isPlaying ? handlePause : handlePlay}
             disabled={!allChunksLoaded}
           >

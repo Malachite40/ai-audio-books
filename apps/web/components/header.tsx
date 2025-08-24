@@ -27,7 +27,9 @@ export function Header(props: HeaderProps) {
     <div className="h-12 flex w-full justify-between items-center px-4 border-b border-border">
       <Link href={"/"} className="flex gap-2 justify-center items-center">
         <Logo className="size-10" />
-        <span className="text-lg font-semibold">Instant Audio Online</span>
+        {userData && (
+          <span className="text-lg font-semibold">Instant Audio Online</span>
+        )}
       </Link>
       <div className=""></div>
       <div className="flex gap-2 justify-center items-center">
