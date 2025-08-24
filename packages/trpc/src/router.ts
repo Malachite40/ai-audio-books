@@ -3,12 +3,10 @@ import { creditsRouter } from "./routers/credits";
 import { speakersRouter } from "./routers/speakers";
 import { usersRouter } from "./routers/users";
 import { workersRouter } from "./routers/workers";
-import { xttsRouter } from "./routers/xtts";
 import { createCallerFactory, createTRPCRouter } from "./trpc";
 
 export const appRouter = createTRPCRouter({
   users: usersRouter,
-  xtts: xttsRouter,
   speakers: speakersRouter,
   audio: audioRouter,
   workers: workersRouter,

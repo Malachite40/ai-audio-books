@@ -1,6 +1,5 @@
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { TRPCError } from "@trpc/server";
-import { AudioChunkStatus } from "@workspace/database";
 import z from "zod";
 import { env } from "../env";
 import { client } from "../queue/client";
@@ -57,7 +56,7 @@ export const workersRouter = createTRPCRouter({
       console.log(`Updating audio chunk ${chunkId} status to PROCESSING`);
       await ctx.db.audioChunk.update({
         where: { id: audioChunk.id },
-        data: { status: AudioChunkStatus.PROCESSING },
+        data: { status: "PROCESSING" },
       });
       console.log("Audio chunk status updated to PROCESSING.");
 
@@ -82,7 +81,7 @@ export const workersRouter = createTRPCRouter({
         console.error("Error calling TTS server:", err);
         await ctx.db.audioChunk.update({
           where: { id: chunkId },
-          data: { status: AudioChunkStatus.ERROR },
+          data: { status: "ERROR" },
         });
         throw new TRPCError({
           code: "BAD_GATEWAY",
@@ -96,7 +95,7 @@ export const workersRouter = createTRPCRouter({
         console.error("TTS server returned error status:", resp.status);
         await ctx.db.audioChunk.update({
           where: { id: chunkId },
-          data: { status: AudioChunkStatus.ERROR },
+          data: { status: "ERROR" },
         });
         const txt = await resp.text();
         console.error("TTS server error response:", txt);
@@ -132,7 +131,7 @@ export const workersRouter = createTRPCRouter({
         console.error("Received buffer too small to be WAV:", wavBuffer.length);
         await ctx.db.audioChunk.update({
           where: { id: chunkId },
-          data: { status: AudioChunkStatus.ERROR },
+          data: { status: "ERROR" },
         });
         throw new TRPCError({
           code: "BAD_GATEWAY",
@@ -160,7 +159,7 @@ export const workersRouter = createTRPCRouter({
         console.error("S3 upload error:", err);
         await ctx.db.audioChunk.update({
           where: { id: chunkId },
-          data: { status: AudioChunkStatus.ERROR },
+          data: { status: "ERROR" },
         });
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
@@ -176,7 +175,7 @@ export const workersRouter = createTRPCRouter({
           id: chunkId,
         },
         data: {
-          status: AudioChunkStatus.PROCESSED,
+          status: "PROCESSED",
           url: env.NEXT_PUBLIC_AUDIO_BUCKET_URL + "/" + audioId,
         },
       });
@@ -214,7 +213,7 @@ export const workersRouter = createTRPCRouter({
 
       await ctx.db.audioChunk.update({
         where: { id: audioChunk.id },
-        data: { status: AudioChunkStatus.PROCESSING },
+        data: { status: "PROCESSING" },
       });
 
       let resp: Response;
@@ -240,7 +239,7 @@ export const workersRouter = createTRPCRouter({
         console.error("Error calling Inworld TTS API:", err);
         await ctx.db.audioChunk.update({
           where: { id: chunkId },
-          data: { status: AudioChunkStatus.ERROR },
+          data: { status: "ERROR" },
         });
         throw new TRPCError({
           code: "BAD_GATEWAY",
@@ -253,7 +252,7 @@ export const workersRouter = createTRPCRouter({
       if (!resp.ok) {
         await ctx.db.audioChunk.update({
           where: { id: chunkId },
-          data: { status: AudioChunkStatus.ERROR },
+          data: { status: "ERROR" },
         });
         const txt = await resp.text();
         console.error("Inworld TTS API error response:", txt);
@@ -283,7 +282,7 @@ export const workersRouter = createTRPCRouter({
         console.error("Failed to parse Inworld TTS API response:", err);
         await ctx.db.audioChunk.update({
           where: { id: chunkId },
-          data: { status: AudioChunkStatus.ERROR },
+          data: { status: "ERROR" },
         });
         throw new TRPCError({
           code: "BAD_GATEWAY",
@@ -301,7 +300,7 @@ export const workersRouter = createTRPCRouter({
         );
         await ctx.db.audioChunk.update({
           where: { id: chunkId },
-          data: { status: AudioChunkStatus.ERROR },
+          data: { status: "ERROR" },
         });
         throw new TRPCError({
           code: "BAD_GATEWAY",
@@ -327,7 +326,7 @@ export const workersRouter = createTRPCRouter({
         console.error("S3 upload error:", err);
         await ctx.db.audioChunk.update({
           where: { id: chunkId },
-          data: { status: AudioChunkStatus.ERROR },
+          data: { status: "ERROR" },
         });
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
@@ -342,7 +341,7 @@ export const workersRouter = createTRPCRouter({
           id: chunkId,
         },
         data: {
-          status: AudioChunkStatus.PROCESSED,
+          status: "PROCESSED",
           url: env.NEXT_PUBLIC_AUDIO_BUCKET_URL + "/" + audioId,
         },
       });
