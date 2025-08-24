@@ -1,5 +1,4 @@
 import { TRPCError } from "@trpc/server";
-import { AudioChunkStatus } from "@workspace/database";
 import { z } from "zod";
 import { TASK_NAMES } from "../queue";
 import { client } from "../queue/client";
@@ -18,6 +17,7 @@ export const inworldRouter = createTRPCRouter({
         text: z.string().min(1, "text is required"),
         speakerId: z.string(),
         chunkSize: z.number().int().positive().max(2000).optional(),
+        public: z.boolean(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -146,7 +146,7 @@ export const inworldRouter = createTRPCRouter({
         where: {
           audioFileId: input.audioFileId,
           status: {
-            notIn: [AudioChunkStatus.PROCESSED],
+            notIn: ["PROCESSED"],
           },
         },
       });

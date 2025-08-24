@@ -746,7 +746,7 @@ export const AudioClip = ({ af }: AudioClipProps) => {
   //  JSX
   // ───────────────
   return (
-    <div className="border rounded-lg p-4">
+    <div className="sm:border rounded-lg sm:p-4">
       <div className="flex items-center justify-between gap-3 mb-2">
         <div className="flex items-center gap-3">
           <Button
@@ -764,7 +764,7 @@ export const AudioClip = ({ af }: AudioClipProps) => {
           </span>
         </div>
 
-        <div className="flex justify-between gap-3 items-center">
+        <div className="flex justify-between gap-2 items-center">
           {/* cost calculation */}
           {chunks.length > 0 && (
             <span className="text-xs text-muted-foreground">
@@ -780,26 +780,28 @@ export const AudioClip = ({ af }: AudioClipProps) => {
             </span>
           )}
 
-          <CopyButton info={"Click to copy transcript"} text={transcript} />
+          <div className="hidden sm:flex gap-2 items-center">
+            <CopyButton info={"Click to copy transcript"} text={transcript} />
 
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                disabled={!allChunksLoaded || isBuildingWav}
-                variant="outline"
-                onClick={handleDownload}
-              >
-                {isBuildingWav ? (
-                  "Building…"
-                ) : (
-                  <DownloadIcon className="h-4 w-4" />
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Download WAV file</p>
-            </TooltipContent>
-          </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  disabled={!allChunksLoaded || isBuildingWav}
+                  variant="outline"
+                  onClick={handleDownload}
+                >
+                  {isBuildingWav ? (
+                    "Building…"
+                  ) : (
+                    <DownloadIcon className="h-4 w-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Download WAV file</p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
         </div>
       </div>
 

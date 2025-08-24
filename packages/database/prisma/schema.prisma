@@ -106,6 +106,7 @@ model AudioFile {
     status      AudioFileStatus @default(PENDING)
     speakerId   String
     speaker     Speaker         @relation(fields: [speakerId], references: [id], onDelete: Cascade)
+    public      Boolean         @default(false)
     lang        String          @default("en")
     createdAt   DateTime        @default(now()) @db.Timestamptz()
     updatedAt   DateTime        @default(now()) @updatedAt @db.Timestamptz()

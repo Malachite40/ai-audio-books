@@ -75,6 +75,7 @@ export const audioRouter = createTRPCRouter({
     }),
   fetch: publicProcedure
     .input(z.object({ id: z.string() }))
+    .output(z.object({ audioFile: z.any() }))
     .query(async ({ ctx, input }) => {
       const audioFile = await ctx.db.audioFile.findUnique({
         where: {
