@@ -42,12 +42,35 @@ const enforceUserIsAuthed = t.middleware(async ({ ctx, next }) => {
     });
   }
 
+  if (!ctx.user?.stripeCustomerId) {
+    throw new TRPCError({
+      code: "UNAUTHORIZED",
+      message: "Stripe customer ID not found.",
+    });
+  }
+
+  if (!ctx.stripeCustomerId) {
+    throw new TRPCError({
+      code: "UNAUTHORIZED",
+      message: "Stripe customer ID not found.",
+    });
+  }
+
+  if (!ctx.subscription) {
+    throw new TRPCError({
+      code: "UNAUTHORIZED",
+      message: "Subscription not found.",
+    });
+  }
+
   return next({
     ctx: {
       ...ctx,
       user,
       session,
       credits: ctx.credits,
+      subscription: ctx.subscription,
+      stripeCustomerId: ctx.stripeCustomerId,
     },
   });
 });

@@ -23,6 +23,10 @@ export const env = createEnv({
     CLOUD_FLARE_SECRET_ACCESS_KEY: z.string(),
     BROKER: z.string().url(),
     REDIS_URL: z.string().url(),
+    STRIPE_BASIC_PLAN: z.string(),
+    STRIPE_PRO_PLAN: z.string(),
+    TAX_RATE_ID: z.string(),
+    STRIPE_WEBHOOK_SECRET: z.string(),
   },
 
   /**
@@ -64,6 +68,10 @@ export const env = createEnv({
     NEXT_PUBLIC_AUDIO_BUCKET_URL: process.env.NEXT_PUBLIC_AUDIO_BUCKET_URL,
     BROKER: process.env.BROKER,
     REDIS_URL: process.env.REDIS_URL,
+    STRIPE_BASIC_PLAN: process.env.STRIPE_BASIC_PLAN,
+    STRIPE_PRO_PLAN: process.env.STRIPE_PRO_PLAN,
+    TAX_RATE_ID: process.env.TAX_RATE_ID,
+    STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
   },
   /**
    * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially

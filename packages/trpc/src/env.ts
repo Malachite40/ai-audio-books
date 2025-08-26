@@ -23,6 +23,9 @@ export const env = createEnv({
     APPLE_KEY_ID: z.string(),
     APPLE_PRIVATE_KEY: z.string(),
     APPLE_BUNDLE_ID: z.string(),
+    STRIPE_BASIC_PLAN: z.string(),
+    STRIPE_PRO_PLAN: z.string(),
+    TAX_RATE_ID: z.string(),
   },
 
   /**
@@ -61,6 +64,9 @@ export const env = createEnv({
     BETTER_AUTH_URL: process.env.BETTER_AUTH_URL,
     GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+    STRIPE_BASIC_PLAN: process.env.STRIPE_BASIC_PLAN,
+    STRIPE_PRO_PLAN: process.env.STRIPE_PRO_PLAN,
+    TAX_RATE_ID: process.env.TAX_RATE_ID,
   },
   /**
    * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially

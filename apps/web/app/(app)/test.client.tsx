@@ -12,11 +12,11 @@ import {
 } from "@workspace/ui/components/form";
 import { Textarea } from "@workspace/ui/components/textarea";
 
-import { AudioHistoryDrawer } from "@/components/audio-history-drawer";
 import AudioClip from "@/components/audio/audio-clip";
 import { ConfirmAudioVisibility } from "@/components/confirm-audio-visibility";
 import ExampleAudioToggle from "@/components/example-audio-toggle";
 import Logo from "@/components/svgs/logo";
+import { useAudioHistoryStore } from "@/store/audio-history-store";
 import { Input } from "@workspace/ui/components/input";
 import {
   Select,
@@ -45,6 +45,8 @@ const TestClient = () => {
     "id",
     parseAsString.withDefault("").withOptions({})
   );
+
+  const { setOpen: setAudioHistoryOpen } = useAudioHistoryStore();
 
   const audioFile = api.audio.fetch.useQuery({ id: selectedAudioFileId });
 
@@ -247,8 +249,6 @@ const TestClient = () => {
                   ? "Synthesizing..."
                   : "Synthesize One-Shot"}
               </Button>
-
-              <AudioHistoryDrawer />
             </div>
           </form>
         </Form>
@@ -256,20 +256,6 @@ const TestClient = () => {
         {audioFile.data && audioFile.data.audioFile && (
           <div className="flex flex-col gap-4">
             <AudioClip af={audioFile.data.audioFile} />
-            <div className="flex gap-4">
-              <Button
-                className="flex gap-2"
-                variant="outline"
-                onClick={() => {
-                  setSelectedAudioFileId("");
-                }}
-              >
-                <AudioLinesIcon className="h-4 w-4" />
-                <span>New Audio File</span>
-              </Button>
-
-              <AudioHistoryDrawer />
-            </div>
           </div>
         )}
 

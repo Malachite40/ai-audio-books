@@ -1,30 +1,36 @@
 "use client";
 import Logo from "@/components/svgs/logo";
 import { authClient } from "@/lib/auth-client";
+import { api } from "@/trpc/react";
 import { RiGoogleFill } from "@remixicon/react";
 import {
   Avatar,
   AvatarFallback,
   AvatarImage,
 } from "@workspace/ui/components/avatar";
-import { Button } from "@workspace/ui/components/button";
+import { Button, buttonVariants } from "@workspace/ui/components/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
-import { LogOut } from "lucide-react";
+import { AudioLinesIcon, DollarSign, GemIcon, LogOut } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Fragment } from "react";
+import { AudioHistoryDrawer } from "./audio-history-drawer";
 
 export type HeaderProps = {};
 
 export function Header(props: HeaderProps) {
-  const { data: userData } = authClient.useSession();
   const router = useRouter();
+
+  const { data: userData } = authClient.useSession();
+  const { data: subscriptionData } = api.subscriptions.self.useQuery();
+
   return (
-    <div className="h-12 flex w-full justify-between items-center px-4 border-b border-border">
+    <div className="h-12 flex w-full justify-between items-center px-4 border-b border-border top-0 sticky">
       <Link href={"/"} className="flex gap-2 justify-center items-center">
         <Logo className="size-10" />
         {userData && (
@@ -36,27 +42,49 @@ export function Header(props: HeaderProps) {
         {/* credits */}
         <div className=""></div>
 
-        {/* Dropdown menu with Avatar as trigger and Login button */}
         {userData?.user ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Avatar>
-                <AvatarImage src={userData.user.image ?? ""} />
-                <AvatarFallback>{userData.user.name[0]}</AvatarFallback>
-              </Avatar>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="" align="end">
-              <DropdownMenuItem
-                onClick={async () => {
-                  await authClient.signOut();
-                  router.refresh();
-                }}
-              >
-                <LogOut />
-                Log out
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <Fragment>
+            <AudioHistoryDrawer />
+            <Link href={"/"} className={buttonVariants({ variant: "outline" })}>
+              <AudioLinesIcon className="h-4 w-4" />
+              Create
+            </Link>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Avatar>
+                  <AvatarImage src={userData.user.image ?? ""} />
+                  <AvatarFallback>{userData.user.name[0]}</AvatarFallback>
+                </Avatar>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="" align="end">
+                {subscriptionData?.subscription?.plan === "FREE" ? (
+                  <Link href={"/subscribe"}>
+                    <DropdownMenuItem>
+                      <GemIcon />
+                      Subscribe
+                    </DropdownMenuItem>
+                  </Link>
+                ) : (
+                  <Link href={"/billing"}>
+                    <DropdownMenuItem>
+                      <DollarSign />
+                      <span className="capitalize">Billing</span>
+                    </DropdownMenuItem>
+                  </Link>
+                )}
+
+                <DropdownMenuItem
+                  onClick={async () => {
+                    await authClient.signOut();
+                    router.refresh();
+                  }}
+                >
+                  <LogOut />
+                  Log out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </Fragment>
         ) : (
           <Button
             onClick={(e) => {

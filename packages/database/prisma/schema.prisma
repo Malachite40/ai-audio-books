@@ -20,14 +20,16 @@ model User {
     sessions         Session[]
     accounts         Account[]
 
-    role       String?
-    banned     Boolean?
-    banReason  String?
-    banExpires DateTime?
-    Credits    Credits?
-    AudioFile  AudioFile[]
+    role         String?
+    banned       Boolean?
+    banReason    String?
+    banExpires   DateTime?
+    Credits      Credits?
+    AudioFile    AudioFile[]
+    Subscription Subscriptions?
 
     @@unique([email])
+    @@index([stripeCustomerId])
     @@map("user")
 }
 
@@ -135,6 +137,23 @@ model AudioChunk {
     audioFile      AudioFile        @relation(fields: [audioFileId], references: [id], onDelete: Cascade)
 
     @@unique([audioFileId, sequence])
+}
+
+enum SubscriptionPlans {
+    FREE
+    BASIC
+    PRO
+}
+
+model Subscriptions {
+    id                   String            @id @default(uuid())
+    userId               String            @unique
+    plan                 SubscriptionPlans
+    stripeSubscriptionId String?
+    createdAt            DateTime          @default(now())
+    updatedAt            DateTime          @default(now()) @updatedAt
+
+    User User @relation(fields: [userId], references: [id])
 }
 
 model Credits {

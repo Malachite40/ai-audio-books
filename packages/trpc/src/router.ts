@@ -1,6 +1,8 @@
 import { audioRouter } from "./routers/audio";
 import { creditsRouter } from "./routers/credits";
 import { speakersRouter } from "./routers/speakers";
+import { stripeRouter } from "./routers/stripe";
+import { subscriptionsRouter } from "./routers/subscriptions";
 import { usersRouter } from "./routers/users";
 import { workersRouter } from "./routers/workers";
 import { createCallerFactory, createTRPCRouter } from "./trpc";
@@ -11,6 +13,8 @@ export const appRouter = createTRPCRouter({
   audio: audioRouter,
   workers: workersRouter,
   credits: creditsRouter,
+  stripe: stripeRouter,
+  subscriptions: subscriptionsRouter,
 });
 
 // export type definition of API

@@ -10,7 +10,8 @@
     "lint": "next lint",
     "lint:fix": "next lint --fix",
     "typecheck": "tsc --noEmit",
-    "tunnel": "ngrok http --domain=many-macaque-evolving.ngrok-free.app 3000"
+    "tunnel": "ngrok http --domain=many-macaque-evolving.ngrok-free.app 3000",
+    "stripe": "stripe listen --forward-to localhost:3000/api/webhooks/stripe"
   },
   "dependencies": {
     "@better-auth/expo": "^1.2.7",
@@ -38,6 +39,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-hook-form": "^7.55.0",
+    "stripe": "^18.4.0",
     "superjson": "^2.2.2",
     "zod": "^3.24.2",
     "zustand": "^5.0.4"

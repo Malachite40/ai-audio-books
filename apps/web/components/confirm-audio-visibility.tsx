@@ -1,5 +1,9 @@
+// components/confirm-audio-visibility.tsx
+"use client";
+
 import * as React from "react";
 
+import { useAudioVisibilityPrefStore } from "@/store/use-audio-visibility-pref";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -12,6 +16,7 @@ import {
   AlertDialogTrigger,
 } from "@workspace/ui/components/alert-dialog";
 import { buttonVariants } from "@workspace/ui/components/button";
+import { Checkbox } from "@workspace/ui/components/checkbox";
 import { Label } from "@workspace/ui/components/label";
 import { Switch } from "@workspace/ui/components/switch";
 import { cn } from "@workspace/ui/lib/utils";
@@ -40,7 +45,10 @@ export type ConfirmAudioVisibilityProps = {
   onIsPublicChange?: (value: boolean) => void;
 
   /** Action handlers */
-  onConfirm?: (args: { isPublic: boolean }) => Promise<void> | void;
+  onConfirm?: (args: {
+    isPublic: boolean;
+    saveChoice?: boolean;
+  }) => Promise<void> | void;
   onCancel?: () => Promise<void> | void;
 
   /** Labels */
@@ -73,23 +81,41 @@ export function ConfirmAudioVisibility({
 
   className,
 }: ConfirmAudioVisibilityProps) {
-  // Support controlled OR uncontrolled public toggle
-  const [internalIsPublic, setInternalIsPublic] =
-    React.useState<boolean>(defaultIsPublic);
+  // Persisted preference (null means not set yet)
+  const preferredIsPublic = useAudioVisibilityPrefStore(
+    (s) => s.preferredIsPublic
+  );
+  const setPreferredIsPublic = useAudioVisibilityPrefStore(
+    (s) => s.setPreferredIsPublic
+  );
 
-  // When dialog opens, reset the uncontrolled value to default
+  // Support controlled OR uncontrolled public toggle
+  const [internalIsPublic, setInternalIsPublic] = React.useState<boolean>(
+    preferredIsPublic ?? defaultIsPublic
+  );
+
+  // Local state for "Save my choice" checkbox
+  const [saveChoice, setSaveChoice] = React.useState<boolean>(false);
+
+  // When dialog opens, reset the uncontrolled value, favoring saved preference if present
   React.useEffect(() => {
     if (open && isPublic === undefined) {
-      setInternalIsPublic(defaultIsPublic);
+      setInternalIsPublic(
+        preferredIsPublic !== null ? preferredIsPublic : defaultIsPublic
+      );
+      setSaveChoice(false);
     }
-  }, [open, defaultIsPublic, isPublic]);
+  }, [open, defaultIsPublic, isPublic, preferredIsPublic]);
 
   const publicValue = isPublic ?? internalIsPublic;
   const setPublicValue = onIsPublicChange ?? setInternalIsPublic;
 
   const handleConfirm = async () => {
     try {
-      await onConfirm?.({ isPublic: publicValue });
+      if (saveChoice) {
+        setPreferredIsPublic(publicValue);
+      }
+      await onConfirm?.({ isPublic: publicValue, saveChoice });
     } finally {
       onOpenChange(false);
     }
@@ -133,6 +159,20 @@ export function ConfirmAudioVisibility({
             aria-label="Toggle to make the audio public"
           />
         </div>
+
+        {/* Save my choice checkbox (layout-matched) */}
+        <Label className="hover:bg-accent/50 mt-2 flex items-start gap-3 rounded-lg border p-3 has-[[aria-checked=true]]:border-blue-600 has-[[aria-checked=true]]:bg-blue-50 dark:has-[[aria-checked=true]]:border-blue-900 dark:has-[[aria-checked=true]]:bg-blue-950">
+          <Checkbox
+            id="save-choice"
+            checked={saveChoice}
+            onCheckedChange={(v) => setSaveChoice(!!v)}
+            disabled={isPending}
+            className="data-[state=checked]:border-blue-600 data-[state=checked]:bg-blue-600 data-[state=checked]:text-white dark:data-[state=checked]:border-blue-700 dark:data-[state=checked]:bg-blue-700"
+          />
+          <div className="grid gap-1.5 font-normal">
+            <p className="text-sm leading-none font-medium">Save my choice</p>
+          </div>
+        </Label>
 
         <AlertDialogFooter>
           {onConfirm && (

@@ -1,0 +1,11 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "stripe": { "cache": false, "persistent": true },
+    "dev": {
+      "cache": false,
+      "persistent": true,
+      "with": ["web#stripe"] 
+    }
+  }
+}
