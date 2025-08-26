@@ -30,7 +30,7 @@ export function Header(props: HeaderProps) {
   const { data: subscriptionData } = api.subscriptions.self.useQuery();
 
   return (
-    <div className="h-12 flex w-full justify-between items-center px-4 border-b border-border top-0 sticky">
+    <div className="h-12 flex w-full justify-between items-center px-4 border-b border-border top-0 sticky bg-background">
       <Link href={"/"} className="flex gap-2 justify-center items-center">
         <Logo className="size-10" />
         {userData && (
