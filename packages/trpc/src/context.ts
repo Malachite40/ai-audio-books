@@ -45,7 +45,7 @@ export const createNextTRPCContext = async (opts: { headers: Headers }) => {
       credits = await prisma.credits.create({
         data: {
           userId: user.id,
-          amount: 5000,
+          amount: 20_000,
         },
       });
     }

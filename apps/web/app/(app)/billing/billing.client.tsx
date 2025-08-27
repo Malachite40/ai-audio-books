@@ -114,7 +114,7 @@ export function BillingClient(props: BillingClientProps) {
     <div className="flex items-center justify-center w-full px-4">
       <div className="w-full max-w-md space-y-3">
         <div className="flex items-center justify-between">
-          <span className="text-sm font-medium">Characters remaining</span>
+          <span className="text-sm font-medium">Credits remaining</span>
           <span className="text-sm tabular-nums opacity-80">{label}</span>
         </div>
 
@@ -124,11 +124,6 @@ export function BillingClient(props: BillingClientProps) {
             value={isLoading ? 0 : Math.max(0, Math.min(100, progressValue))}
             className="flex-1"
           />
-          <span className="text-xs w-12 text-right tabular-nums">
-            {isLoading
-              ? "--%"
-              : `${Math.round(Math.max(0, Math.min(100, progressValue)))}%`}
-          </span>
         </div>
 
         <div className="w-full flex flex-col space-y-6">

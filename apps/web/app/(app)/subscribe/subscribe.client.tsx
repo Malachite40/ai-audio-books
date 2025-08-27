@@ -118,7 +118,7 @@ export default function SubscribeClientPage({
                 <li className="flex space-x-2">
                   <CheckIcon className="mt-0.5 h-4 w-4" />
                   <span className="text-muted-foreground">
-                    20k characters / month (≈ 0.5 h)
+                    20k Credits / month (≈ 0.5 h)
                   </span>
                 </li>
                 <li className="flex space-x-2">
@@ -175,7 +175,7 @@ export default function SubscribeClientPage({
                 <li className="flex space-x-2">
                   <CheckIcon className="mt-0.5 h-4 w-4" />
                   <span className="text-muted-foreground">
-                    1M characters / month (≈ 25 h)
+                    1M Credits / month ~ 25 hours
                   </span>
                 </li>
                 <li className="flex space-x-2">
@@ -211,7 +211,7 @@ export default function SubscribeClientPage({
                 <li className="flex space-x-2">
                   <CheckIcon className="mt-0.5 h-4 w-4" />
                   <span className="text-muted-foreground">
-                    Overage: $1 per 100k chars
+                    Overage: $1 per 100k credits
                   </span>
                 </li>
               </ul>
@@ -257,7 +257,7 @@ export default function SubscribeClientPage({
                 <li className="flex space-x-2">
                   <CheckIcon className="mt-0.5 h-4 w-4" />
                   <span className="text-muted-foreground">
-                    5M characters / month (≈ 125 h)
+                    5M Credits / month ~ 125 hours
                   </span>
                 </li>
                 <li className="flex space-x-2">
@@ -293,7 +293,7 @@ export default function SubscribeClientPage({
                 <li className="flex space-x-2">
                   <CheckIcon className="mt-0.5 h-4 w-4" />
                   <span className="text-muted-foreground">
-                    Overage: $1 per 100k chars
+                    Overage: $1 per 100k credits
                   </span>
                 </li>
               </ul>
@@ -437,7 +437,7 @@ export default function SubscribeClientPage({
           {/* Footnote */}
           <p className="mt-6 text-xs text-muted-foreground">
             Additional credits can be purchased at a rate of{" "}
-            <span className="font-medium">$1 per 100k characters</span>.
+            <span className="font-medium">$1 per 100k credits</span>.
           </p>
         </div>
       </div>

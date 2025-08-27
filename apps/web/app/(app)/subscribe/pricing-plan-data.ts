@@ -1,6 +1,6 @@
 // Features shown in the comparison table
 export const featureNames = [
-  "Included Characters / Month",
+  "Included Credits / Month",
   "Rollover (Unused Characters)",
   "Large Text Support (No Chunking)",
   "Auto Stitching + Natural Padding",
@@ -22,7 +22,7 @@ export const planFeatures: PlanFeature[] = [
   {
     type: "Starter",
     features: [
-      { name: "Included Characters / Month", value: "20k (~0.5 h)" },
+      { name: "Included Credits / Month", value: "20k (~0.5 h)" },
       { name: "Rollover (Unused Characters)", value: "Unlimited" },
       { name: "Large Text Support (No Chunking)" },
       { name: "Auto Stitching + Natural Padding" },
@@ -39,7 +39,7 @@ export const planFeatures: PlanFeature[] = [
   {
     type: "Basic",
     features: [
-      { name: "Included Characters / Month", value: "1,000,000 (~25 h)" },
+      { name: "Included Credits / Month", value: "1,000,000 (~25 h)" },
       { name: "Rollover (Unused Characters)", value: "Unlimited" },
       { name: "Large Text Support (No Chunking)" },
       { name: "Auto Stitching + Natural Padding" },
@@ -55,7 +55,7 @@ export const planFeatures: PlanFeature[] = [
   {
     type: "Pro",
     features: [
-      { name: "Included Characters / Month", value: "5,000,000 (~125 h)" },
+      { name: "Included Credits / Month", value: "5,000,000 (~125 h)" },
       { name: "Rollover (Unused Characters)", value: "Unlimited" },
       { name: "Large Text Support (No Chunking)" },
       { name: "Auto Stitching + Natural Padding" },
