@@ -36,7 +36,7 @@ export default function RootLayout({
         content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
       />
       <body
-        className={`${fontSans.variable} ${fontMono.variable} font-sans antialiased flex flex-1`}
+        className={`${fontSans.variable} ${fontMono.variable} font-sans antialiased`}
       >
         <Providers>{children}</Providers>
       </body>

@@ -13,6 +13,8 @@ import {
 } from "@workspace/ui/components/table";
 import { format } from "date-fns";
 import { Loader, Trash2 } from "lucide-react";
+import { Route } from "next";
+import { usePathname, useRouter } from "next/navigation";
 import { parseAsString, useQueryState } from "nuqs";
 import { useState } from "react";
 import { PaginationBar } from "../pagination-bar";
@@ -21,7 +23,9 @@ interface AudioHistoryProps {}
 const pageSize = 5;
 export const AudioHistory = ({}: AudioHistoryProps) => {
   const [page, setPage] = useState(1);
-
+  const pathname = usePathname();
+  const router = useRouter();
+  console.log({ pathname });
   const { open, setOpen: setAudioHistoryOpen } = useAudioHistoryStore();
 
   const [selectedAudioFileId, setSelectedAudioFileId] = useQueryState(
@@ -80,7 +84,12 @@ export const AudioHistory = ({}: AudioHistoryProps) => {
               return (
                 <TableRow
                   onClick={() => {
-                    setSelectedAudioFileId(af.id);
+                    // if not on root
+                    if (pathname !== "/") {
+                      router.push(`/?id=${af.id}` as Route);
+                    } else {
+                      setSelectedAudioFileId(af.id);
+                    }
                     setAudioHistoryOpen(false);
                   }}
                   key={af.id}

@@ -58,7 +58,7 @@ export function BillingClient(props: BillingClientProps) {
   const isLoading = subscriptionLoading || creditsLoading;
 
   return (
-    <div className="flex items-center justify-center w-full">
+    <div className="flex items-center justify-center w-full px-4">
       <div className="w-full max-w-md space-y-3">
         <div className="flex items-center justify-between">
           <span className="text-sm font-medium">Characters remaining</span>

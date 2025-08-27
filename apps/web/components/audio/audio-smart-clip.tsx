@@ -67,7 +67,7 @@ export default function AudioClipSmart({ af }: AudioClipProps) {
     <>
       {isIOSMobileSafari && showNotice && (
         <div className="space-y-3">
-          <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-900">
+          <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-900 mb-6">
             <div className="font-semibold mb-1">
               Heads up: iPhone Silent Mode can mute web audio
             </div>

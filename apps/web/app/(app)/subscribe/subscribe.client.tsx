@@ -29,12 +29,15 @@ import { featureNames, planFeatures } from "./pricing-plan-data";
 /**
  * Instant Audio Online – Pricing
  * -----------------------------------------------------
- * Tailored from the provided template with IAO-specific plans & features.
- * - Plans: Free, Pay-as-you-go, Pro Publisher
- * - Key differentiator surfaced: paste-long-text → single polished audio
+ * - Plans: Starter (Free), Basic ($11.99), Pro ($39.99)
+ * - Monthly only, unlimited rollover, $1 per 100k overage on paid plans
  */
 
-export default function SubscribeClientPage() {
+export default function SubscribeClientPage({
+  setOpen,
+}: {
+  setOpen: (open: boolean) => void;
+}) {
   const router = useRouter();
   const { data } = authClient.useSession();
   const stripeCreateCheckoutSessionMutation =
@@ -45,18 +48,18 @@ export default function SubscribeClientPage() {
     });
 
   return (
-    <div className="relative flex w-full flex-col items-center justify-center p-6">
+    <div className="relative flex w-full flex-col items-center justify-center p-6 bg-background">
       <Button
         size={"icon"}
         variant={"ghost"}
-        onClick={() => router.push("/")}
+        onClick={() => setOpen(false)}
         className="absolute end-4 top-4"
         aria-label="Close pricing"
       >
         <X />
       </Button>
 
-      <div className="container py-24 lg:py-32">
+      <div className="container py-24 lg:py-32 max-w-6xl">
         {/* Heading */}
         <div className="mx-auto mb-10 max-w-2xl text-center lg:mb-14">
           <h2 className="scroll-m-20 border-b pb-2 text-3xl font-semibold tracking-tight">
@@ -68,7 +71,7 @@ export default function SubscribeClientPage() {
           </p>
         </div>
 
-        {/* Toggle (kept hidden but wired for future) */}
+        {/* Toggle (hidden for now) */}
         <div className="flex hidden items-center justify-center">
           <Label htmlFor="payment-schedule" className="me-3">
             Monthly
@@ -97,6 +100,7 @@ export default function SubscribeClientPage() {
             </span>
           </Label>
         </div>
+
         {/* Pricing Cards */}
         <div className="mt-12 grid gap-6 md:grid-cols-3 lg:items-center">
           {/* Starter Card */}
@@ -106,33 +110,46 @@ export default function SubscribeClientPage() {
               <span className="text-5xl font-bold">$0</span>
             </CardHeader>
             <CardDescription className="text-center">
-              Get started with essential features for small projects.
+              Try the core experience on small projects.
             </CardDescription>
             <CardContent>
+              {/* Starter bullets */}
               <ul className="mt-7 space-y-2.5 text-sm">
                 <li className="flex space-x-2">
-                  <CheckIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                  <CheckIcon className="mt-0.5 h-4 w-4" />
                   <span className="text-muted-foreground">
-                    20k Characters / Month
+                    20k characters / month (≈ 0.5 h)
                   </span>
                 </li>
                 <li className="flex space-x-2">
-                  <CheckIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                  <CheckIcon className="mt-0.5 h-4 w-4" />
                   <span className="text-muted-foreground">
-                    Unlimited Rollover
+                    Unlimited rollover
                   </span>
                 </li>
                 <li className="flex space-x-2">
-                  <CheckIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                  <CheckIcon className="mt-0.5 h-4 w-4" />
                   <span className="text-muted-foreground">
-                    Basic Chapter Detection
+                    5 standard voices
+                  </span>
+                </li>
+                <li className="flex space-x-2">
+                  <CheckIcon className="mt-0.5 h-4 w-4" />
+                  <span className="text-muted-foreground">
+                    Basic chapter detection
+                  </span>
+                </li>
+                <li className="flex space-x-2">
+                  <CheckIcon className="mt-0.5 h-4 w-4" />
+                  <span className="text-muted-foreground">
+                    Single MP3/M4B export
                   </span>
                 </li>
               </ul>
             </CardContent>
             <CardFooter>
               <Button disabled className="w-full" variant={"outline"}>
-                Enjoy for free!
+                Enjoy for free
               </Button>
             </CardFooter>
           </Card>
@@ -145,31 +162,56 @@ export default function SubscribeClientPage() {
               </Badge>
               <CardTitle className="!mb-7">Basic</CardTitle>
               <span className="flex w-full items-end justify-center gap-1">
-                <span className="text-5xl font-bold">$12</span>
+                <span className="text-5xl font-bold">$11.99</span>
                 <span className="text-muted-foreground">/mo</span>
               </span>
             </CardHeader>
             <CardDescription className="mx-auto w-11/12 text-center">
-              Ideal for creators needing advanced features and greater capacity.
+              For creators who need more capacity and control.
             </CardDescription>
             <CardContent>
+              {/* Basic bullets */}
               <ul className="mt-7 space-y-2.5 text-sm">
                 <li className="flex space-x-2">
-                  <CheckIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                  <CheckIcon className="mt-0.5 h-4 w-4" />
                   <span className="text-muted-foreground">
-                    1M Characters/Month (~25h audio)
+                    1M characters / month (≈ 25 h)
                   </span>
                 </li>
                 <li className="flex space-x-2">
-                  <CheckIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                  <CheckIcon className="mt-0.5 h-4 w-4" />
                   <span className="text-muted-foreground">
-                    Smart Chapter Detection & Auto-Stitching
+                    Unlimited rollover
                   </span>
                 </li>
                 <li className="flex space-x-2">
-                  <CheckIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                  <CheckIcon className="mt-0.5 h-4 w-4" />
                   <span className="text-muted-foreground">
-                    API Access & Advanced SSML Controls
+                    Smart chapter detection & auto-stitching
+                  </span>
+                </li>
+                <li className="flex space-x-2">
+                  <CheckIcon className="mt-0.5 h-4 w-4" />
+                  <span className="text-muted-foreground">
+                    Large text support • single file export
+                  </span>
+                </li>
+                <li className="flex space-x-2">
+                  <CheckIcon className="mt-0.5 h-4 w-4" />
+                  <span className="text-muted-foreground">
+                    Voice library: standard
+                  </span>
+                </li>
+                <li className="flex space-x-2">
+                  <CheckIcon className="mt-0.5 h-4 w-4" />
+                  <span className="text-muted-foreground">
+                    Hosted player: 25 GB egress
+                  </span>
+                </li>
+                <li className="flex space-x-2">
+                  <CheckIcon className="mt-0.5 h-4 w-4" />
+                  <span className="text-muted-foreground">
+                    Overage: $1 per 100k chars
                   </span>
                 </li>
               </ul>
@@ -202,32 +244,56 @@ export default function SubscribeClientPage() {
             <CardHeader className="pb-2 text-center">
               <CardTitle className="mb-7">Pro</CardTitle>
               <span className="flex w-full items-end justify-center gap-1">
-                <span className="text-5xl font-bold">$40</span>
+                <span className="text-5xl font-bold">$39.99</span>
                 <span className="text-muted-foreground">/mo</span>
               </span>
             </CardHeader>
             <CardDescription className="mx-auto w-11/12 text-center">
-              For heavy users and teams needing premium, high-performance
-              features.
+              Built for heavy workloads and publishers needing premium features.
             </CardDescription>
             <CardContent>
+              {/* Pro bullets */}
               <ul className="mt-7 space-y-2.5 text-sm">
                 <li className="flex space-x-2">
-                  <CheckIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                  <CheckIcon className="mt-0.5 h-4 w-4" />
                   <span className="text-muted-foreground">
-                    5M Characters/Month (~125h audio)
+                    5M characters / month (≈ 125 h)
                   </span>
                 </li>
                 <li className="flex space-x-2">
-                  <CheckIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                  <CheckIcon className="mt-0.5 h-4 w-4" />
                   <span className="text-muted-foreground">
-                    Smart + TOC Chapter Detection
+                    Unlimited rollover
                   </span>
                 </li>
                 <li className="flex space-x-2">
-                  <CheckIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                  <CheckIcon className="mt-0.5 h-4 w-4" />
                   <span className="text-muted-foreground">
-                    Premium Voice Library & Custom Voices
+                    Smart + TOC chapter detection
+                  </span>
+                </li>
+                <li className="flex space-x-2">
+                  <CheckIcon className="mt-0.5 h-4 w-4" />
+                  <span className="text-muted-foreground">
+                    Premium & multi-voice library
+                  </span>
+                </li>
+                <li className="flex space-x-2">
+                  <CheckIcon className="mt-0.5 h-4 w-4" />
+                  <span className="text-muted-foreground">
+                    Batch upload: unlimited
+                  </span>
+                </li>
+                <li className="flex space-x-2">
+                  <CheckIcon className="mt-0.5 h-4 w-4" />
+                  <span className="text-muted-foreground">
+                    Hosted player: 150 GB egress
+                  </span>
+                </li>
+                <li className="flex space-x-2">
+                  <CheckIcon className="mt-0.5 h-4 w-4" />
+                  <span className="text-muted-foreground">
+                    Overage: $1 per 100k chars
                   </span>
                 </li>
               </ul>
@@ -271,7 +337,7 @@ export default function SubscribeClientPage() {
               <TableRow className="bg-muted hover:bg-muted">
                 <TableHead className="w-3/12 text-primary">Features</TableHead>
                 <TableHead className="w-2/12 text-center text-lg font-medium text-primary">
-                  Free
+                  Starter
                 </TableHead>
                 <TableHead className="w-2/12 text-center text-lg font-medium text-primary">
                   Basic
@@ -283,23 +349,24 @@ export default function SubscribeClientPage() {
             </TableHeader>
             <TableBody>
               {featureNames.map((feature) => {
-                const freeFeature = planFeatures[0]?.features.find(
+                const starter = planFeatures[0]?.features.find(
                   (f) => f.name === feature
                 );
-                const paygFeature = planFeatures[1]?.features.find(
+                const basic = planFeatures[1]?.features.find(
                   (f) => f.name === feature
                 );
-                const proFeature = planFeatures[2]?.features.find(
+                const pro = planFeatures[2]?.features.find(
                   (f) => f.name === feature
                 );
+
                 return (
                   <TableRow key={feature} className="text-muted-foreground">
                     <TableCell>{feature}</TableCell>
                     <TableCell className="text-center">
                       <div className="flex justify-center">
-                        {freeFeature && freeFeature?.value ? (
-                          <div>{freeFeature.value}</div>
-                        ) : freeFeature ? (
+                        {starter && starter?.value ? (
+                          <div>{starter.value}</div>
+                        ) : starter ? (
                           <CheckIcon className="h-5 w-5 text-primary" />
                         ) : (
                           <MinusIcon className="h-5 w-5" />
@@ -308,9 +375,9 @@ export default function SubscribeClientPage() {
                     </TableCell>
                     <TableCell className="text-center">
                       <div className="flex justify-center">
-                        {paygFeature && paygFeature?.value ? (
-                          <div>{paygFeature.value}</div>
-                        ) : paygFeature ? (
+                        {basic && basic?.value ? (
+                          <div>{basic.value}</div>
+                        ) : basic ? (
                           <CheckIcon className="h-5 w-5 text-primary" />
                         ) : (
                           <MinusIcon className="h-5 w-5" />
@@ -319,9 +386,9 @@ export default function SubscribeClientPage() {
                     </TableCell>
                     <TableCell className="text-center">
                       <div className="flex justify-center">
-                        {proFeature && proFeature?.value ? (
-                          <div>{proFeature.value}</div>
-                        ) : proFeature ? (
+                        {pro && pro?.value ? (
+                          <div>{pro.value}</div>
+                        ) : pro ? (
                           <CheckIcon className="h-5 w-5 text-primary" />
                         ) : (
                           <MinusIcon className="h-5 w-5" />
@@ -369,9 +436,8 @@ export default function SubscribeClientPage() {
 
           {/* Footnote */}
           <p className="mt-6 text-xs text-muted-foreground">
-            * "Unlimited" length is subject to fair use limits to prevent abuse;
-            extremely large jobs may be split automatically but are stitched
-            into a single export.
+            Additional credits can be purchased at a rate of{" "}
+            <span className="font-medium">$1 per 100k characters</span>.
           </p>
         </div>
       </div>
