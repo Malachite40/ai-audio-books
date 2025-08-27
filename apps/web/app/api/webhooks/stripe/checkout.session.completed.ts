@@ -21,8 +21,6 @@ export async function handleCheckoutSessionCompleted(
     expand: ["data.price.product"], // get product details in one go
   });
 
-  console.log({ lineItems });
-
   for (const item of lineItems.data) {
     if (!item.price) continue;
     const priceId = item.price.id;
