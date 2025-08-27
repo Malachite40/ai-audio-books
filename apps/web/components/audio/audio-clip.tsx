@@ -23,7 +23,7 @@ import {
   FormMessage,
 } from "@workspace/ui/components/form";
 import { Input } from "@workspace/ui/components/input";
-import { DownloadIcon, PauseIcon, PlayIcon } from "lucide-react/icons";
+import { DownloadIcon, Loader2, PauseIcon, PlayIcon } from "lucide-react/icons";
 import { useForm } from "react-hook-form";
 
 import { authClient } from "@/lib/auth-client";
@@ -1078,7 +1078,8 @@ export const AudioClip = ({ af }: AudioClipProps) => {
       onMouseDownCapture={() => void ensureAudioUnlocked()}
     >
       <AudioClipSmart af={af} />
-
+      {/* Title */}
+      <h3 className="text-lg font-semibold mb-4">{af.name}</h3>
       {/* Unified controls (one button and one slider for both modes) */}
       <div className="flex items-center justify-between gap-3 mb-2">
         <div className="flex items-center gap-3">
@@ -1089,11 +1090,11 @@ export const AudioClip = ({ af }: AudioClipProps) => {
             disabled={!canPlay || stitchedIsBuilding}
           >
             {stitchedIsBuilding ? (
-              "Preparing…"
+              <Loader2 className="size-4 animate-spin" />
             ) : isPlaying ? (
-              <PauseIcon className="h-4 w-4" />
+              <PauseIcon className="size-4" />
             ) : (
-              <PlayIcon className="h-4 w-4" />
+              <PlayIcon className="size-4" />
             )}
           </Button>
           <span className="tabular-nums">
@@ -1127,7 +1128,7 @@ export const AudioClip = ({ af }: AudioClipProps) => {
                   {isBuildingWav ? (
                     "Building…"
                   ) : (
-                    <DownloadIcon className="h-4 w-4" />
+                    <DownloadIcon className="size-4" />
                   )}
                 </Button>
               </TooltipTrigger>
@@ -1156,11 +1157,11 @@ export const AudioClip = ({ af }: AudioClipProps) => {
           if (v == null) return;
           handleScrubEnd(v);
         }}
-        className="w-full mb-2 h-10"
+        className="w-full h-10"
       />
 
       {/* Chunk status bar */}
-      <div className="py-4 flex w-full gap-px">
+      <div className="py-4 flex w-full sm:gap-px">
         {chunks.map((chunk: any) => {
           const seg = timelineRef.current.find(
             (s) => s.sequence === chunk.sequence
@@ -1210,7 +1211,7 @@ export const AudioClip = ({ af }: AudioClipProps) => {
 
       {/* Transcript snippet */}
       <div className="flex flex-col w-full">
-        <span className="text-sm text-muted-foreground min-h-[125px]">
+        <span className="text-sm text-muted-foreground min-h-[200px] sm:min-h-[125px]">
           {chunks.find((c) => c.sequence === activeSequence)?.text}
         </span>
       </div>

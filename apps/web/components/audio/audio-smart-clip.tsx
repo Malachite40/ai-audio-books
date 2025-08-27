@@ -36,13 +36,13 @@ export default function AudioClipSmart({ af }: AudioClipProps) {
         <div className="space-y-3">
           <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-900 mb-6">
             <div className="font-semibold mb-1">
-              Heads up: Silent Mode can mute web audio
+              Silent Mode can mute web audio!
             </div>
             <p className="text-sm leading-relaxed">
               Mobile browsers can mute audio in Silent Mode. Please switch to
               Ring or disable Silent Mode to ensure no audio is muted!
             </p>
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="mt-3 flex flex-wrap gap-2 justify-end">
               <Button variant="outline" onClick={() => setShowNotice(false)}>
                 Got it
               </Button>
