@@ -1,3 +1,4 @@
+import { useAreYouSure } from "@/hooks/use-are-you-sure";
 import { usePagination } from "@/hooks/use-pagination";
 import { useAudioHistoryStore } from "@/store/audio-history-store";
 import { api } from "@/trpc/react";
@@ -25,7 +26,7 @@ export const AudioHistory = ({}: AudioHistoryProps) => {
   const [page, setPage] = useState(1);
   const pathname = usePathname();
   const router = useRouter();
-  console.log({ pathname });
+
   const { open, setOpen: setAudioHistoryOpen } = useAudioHistoryStore();
 
   const [selectedAudioFileId, setSelectedAudioFileId] = useQueryState(
@@ -56,8 +57,23 @@ export const AudioHistory = ({}: AudioHistoryProps) => {
     },
   });
 
+  const { AreYouSure, showAreYouSure, setShowAreYouSure, setObject, object } =
+    useAreYouSure<{ id: string; name: string }>();
+
   return (
     <div className="">
+      <AreYouSure
+        title={`Are you sure you want to delete ${object?.name}?`}
+        onCancel={async () => {
+          setShowAreYouSure(false);
+        }}
+        onConfirm={async () => {
+          if (!object) return;
+          deleteAudioFileMutation.mutate({
+            id: object.id,
+          });
+        }}
+      />
       <Table>
         <TableHeader>
           <TableRow>
@@ -123,10 +139,8 @@ export const AudioHistory = ({}: AudioHistoryProps) => {
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        if (!selectedAudioFileId) return;
-                        deleteAudioFileMutation.mutate({
-                          id: selectedAudioFileId,
-                        });
+                        setObject({ id: af.id, name: af.name });
+                        setShowAreYouSure(true);
                       }}
                     >
                       {isDeleting ? (

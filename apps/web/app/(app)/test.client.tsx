@@ -155,7 +155,7 @@ const TestClient = () => {
                 control={form.control}
                 name="speakerId"
                 render={({ field }) => (
-                  <FormItem className="">
+                  <FormItem>
                     <FormLabel>Speaker</FormLabel>
                     <FormControl>
                       <Select

@@ -43,7 +43,7 @@ export function Header(props: HeaderProps) {
         </div>
       )}
       <div className="h-12 z-1 flex w-full justify-center items-center border-b border-border top-0 sticky bg-background ">
-        <div className="flex w-full justify-between items-center xl:p-0 px-2 md:px-4 max-w-6xl">
+        <div className="flex w-full justify-between items-center xl:p-0 px-2 md:px-4 ">
           <Link href={"/"} className="flex gap-2 justify-center items-center">
             <Logo className="size-10" />
             {userData && (

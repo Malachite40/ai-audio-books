@@ -1,3 +1,7 @@
+// ──────────────────────────────────────────────────────────────────────────────
+// File: components/AudioClip.tsx
+// ──────────────────────────────────────────────────────────────────────────────
+
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
@@ -51,12 +55,19 @@ const PaddingSchema = z.object({
 
 /**
  * AudioClip – Optimized for long audio (10+ minutes)
- *  - JIT scheduling with short lookahead window
- *  - Throttled UI clock updates
- *  - Smarter polling & limited fetch concurrency
- *  - Lazy WAV export (on click)
- *  - iOS unlock + future scheduling guards
+ *
+ * Unified Play/Pause:
+ *  - On mobile (small screens) we play a fully stitched WAV via <audio> for stability.
+ *  - On larger screens we play via JIT chunk scheduler (AudioContext) for scalability.
+ *
+ * The single Play/Pause button seamlessly switches between stitched vs. chunked modes,
+ * and scrubbing works consistently for both.
  */
+
+// Playability clamps to avoid landing *after* the end and to keep some frames to schedule
+const END_EPSILON = 1e-3;
+const clampPlayable = (offset: number, duration: number) =>
+  Math.min(Math.max(0, offset), Math.max(0, duration - END_EPSILON));
 
 export const AudioClip = ({ af }: AudioClipProps) => {
   // Advanced options toggle and forms
@@ -71,7 +82,19 @@ export const AudioClip = ({ af }: AudioClipProps) => {
   });
 
   // ──────────────────────────
-  //  Audio graph & timeline
+  //  Responsive: mobile vs desktop
+  // ──────────────────────────
+  const [isSmallScreen, setIsSmallScreen] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 639px)"); // Tailwind 'sm' breakpoint
+    const apply = () => setIsSmallScreen(!!mq.matches);
+    apply();
+    mq.addEventListener?.("change", apply);
+    return () => mq.removeEventListener?.("change", apply);
+  }, []);
+
+  // ──────────────────────────
+  //  Audio graph & timeline (chunk scheduler path)
   // ──────────────────────────
   const audioRef = useRef<AudioContext | null>(null);
   const activeNodesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
@@ -89,10 +112,10 @@ export const AudioClip = ({ af }: AudioClipProps) => {
   const startRef = useRef<number>(0); // ctx.currentTime when we hit Play
   const pausedOffset = useRef<number>(0); // where in the timeline we are when paused
 
-  // Decoded buffers by sequence
+  // Decoded buffers by sequence (shared by both modes)
   const buffersRef = useRef<Map<number, AudioBuffer>>(new Map());
 
-  // Computed, padded timeline
+  // Computed, padded timeline (shared by both modes)
   const timelineRef = useRef<
     {
       sequence: number;
@@ -104,33 +127,64 @@ export const AudioClip = ({ af }: AudioClipProps) => {
     }[]
   >([]);
 
-  // UI state
-  const [bufferedDuration, setBufferedDuration] = useState(0);
-  const [currentTime, setCurrentTime] = useState(0);
+  // UI state (unified)
+  const [bufferedDuration, setBufferedDuration] = useState(0); // scheduler timeline duration
+  const [currentTime, setCurrentTime] = useState(0); // unified current time (stitched or scheduler)
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioFileVersion, setAudioFileVersion] = useState(0);
 
-  // Scrubbing state: pause while dragging to avoid jumping
+  // Which playback path are we currently *using* (while playing)?
+  // "stitched" uses <audio> element; "scheduler" uses WebAudio chunk scheduler.
+  const playbackModeRef = useRef<"stitched" | "scheduler" | null>(null);
+
+  // Scrubbing state (unified): pause while dragging to avoid jumping
   const isScrubbingRef = useRef(false);
   const wasPlayingBeforeScrubRef = useRef(false);
   const handleScrubStart = () => {
     if (isScrubbingRef.current) return;
     isScrubbingRef.current = true;
     wasPlayingBeforeScrubRef.current = isPlayingRef.current;
-    if (isPlayingRef.current) handlePause();
+
+    if (playbackModeRef.current === "stitched") {
+      try {
+        audioElRef.current?.pause();
+      } catch {}
+      setIsPlaying(false);
+    } else if (playbackModeRef.current === "scheduler") {
+      handlePauseScheduler();
+    }
   };
   const handleScrubEnd = async (value?: number) => {
     if (!isScrubbingRef.current) return;
     isScrubbingRef.current = false;
     if (typeof value === "number") {
-      seekTo(value);
+      if (playbackModeRef.current === "stitched") {
+        const el = audioElRef.current;
+        const targetDuration = stitchedDisplayDuration();
+        const t = clampPlayable(value, targetDuration);
+        if (el) {
+          try {
+            el.currentTime = t;
+          } catch {}
+          pausedOffset.current = el.currentTime;
+          setCurrentTime(el.currentTime);
+        } else {
+          pausedOffset.current = t;
+          setCurrentTime(t);
+        }
+      } else {
+        seekToScheduler(value);
+      }
     }
     if (wasPlayingBeforeScrubRef.current) {
-      await ensureAudioUnlocked(); // iOS: ensure running before rescheduling
-      scheduleFrom(pausedOffset.current);
-      startRef.current = audioRef.current!.currentTime;
-      setIsPlaying(true);
+      await ensureAudioUnlocked(); // iOS: ensure running before resuming
+      if (shouldUseStitched()) {
+        await playStitchedFrom(pausedOffset.current);
+      } else {
+        playSchedulerFrom(pausedOffset.current);
+      }
     }
+    wasPlayingBeforeScrubRef.current = false;
   };
   useEffect(() => {
     isPlayingRef.current = isPlaying;
@@ -149,6 +203,8 @@ export const AudioClip = ({ af }: AudioClipProps) => {
     nextStartRef.current = 0;
     buffersRef.current.clear();
     timelineRef.current = [];
+    playbackModeRef.current = null;
+
     if (audioRef.current) {
       try {
         const nodes = Array.from(activeNodesRef.current);
@@ -167,6 +223,10 @@ export const AudioClip = ({ af }: AudioClipProps) => {
       clearInterval(schedulerTimerRef.current);
       schedulerTimerRef.current = null;
     }
+
+    // stitched cleanup
+    cleanupStitched();
+
     setAudioFileVersion((v) => v + 1);
   }, [af.id]);
 
@@ -258,20 +318,15 @@ export const AudioClip = ({ af }: AudioClipProps) => {
   });
 
   // ───────────────
-  //  Init / teardown AudioContext (creation is fine pre-gesture; playback needs unlock)
+  //  Init / teardown AudioContext (scheduler path)
   // ───────────────
   useEffect(() => {
     const ctx = new (window.AudioContext ||
       (window as any).webkitAudioContext)();
     audioRef.current = ctx;
     nextStartRef.current = ctx.currentTime;
-
-    const onState = () => {
-      // Helpful when debugging iOS: look for "suspended" or "interrupted"
-      // console.debug("AudioContext state:", ctx.state);
-    };
+    const onState = () => {};
     ctx.addEventListener?.("statechange", onState);
-
     return () => {
       stopActiveNodes();
       stopScheduler();
@@ -286,9 +341,6 @@ export const AudioClip = ({ af }: AudioClipProps) => {
 
   // ─────────────────────────────
   //  iOS Safari: robust unlock
-  //   - capture first gesture at the document level
-  //   - resume on visibility regain if we were playing
-  //   - 1-frame silent tick scheduled slightly in the future
   // ─────────────────────────────
   const unlockedRef = useRef(false);
   async function ensureAudioUnlocked() {
@@ -297,7 +349,6 @@ export const AudioClip = ({ af }: AudioClipProps) => {
       ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
       audioRef.current = ctx;
     }
-
     if (ctx.state !== "running") {
       try {
         await ctx.resume();
@@ -308,7 +359,7 @@ export const AudioClip = ({ af }: AudioClipProps) => {
           const s = ctx.createBufferSource();
           s.buffer = b;
           s.connect(ctx.destination);
-          s.start(Math.max(ctx.currentTime + 0.02, 0.02)); // schedule into the future
+          s.start(Math.max(ctx.currentTime + 0.02, 0.02));
           s.onended = () => {
             try {
               s.disconnect();
@@ -320,7 +371,7 @@ export const AudioClip = ({ af }: AudioClipProps) => {
     }
   }
 
-  // Capture the *first* real gesture anywhere on the page (in case Button swallows pointerdown)
+  // Capture first gesture
   useEffect(() => {
     const onceOpts: AddEventListenerOptions = {
       once: true,
@@ -340,46 +391,37 @@ export const AudioClip = ({ af }: AudioClipProps) => {
     };
   }, []);
 
-  // Resume after tab returns to foreground if we were playing
+  // Resume after foreground
   useEffect(() => {
     const onVisibility = () => {
-      if (!document.hidden && isPlayingRef.current) {
-        void ensureAudioUnlocked();
-      }
+      if (!document.hidden && isPlayingRef.current) void ensureAudioUnlocked();
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, []);
 
-  // ─────────────────────────────
-  //  Decode newly fetched WAVs
-  // ─────────────────────────────
+  // Decode newly fetched WAVs
   useEffect(() => {
     (async () => {
       if (!audioRef.current || !wavFilesQuery.data?.length) return;
       const ctx = audioRef.current;
-
       let didChange = false;
       for (const { arrayBuffer, chunk } of wavFilesQuery.data) {
-        if (buffersRef.current.has(chunk.sequence)) continue; // already decoded
+        if (buffersRef.current.has(chunk.sequence)) continue;
         try {
           const decoded = await ctx.decodeAudioData(arrayBuffer.slice(0));
           if (decoded) {
             buffersRef.current.set(chunk.sequence, decoded);
             didChange = true;
           }
-        } catch {
-          // ignore decode failures; chunk will simply be skipped
-        }
+        } catch {}
       }
       if (didChange) rebuildTimeline();
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wavFilesQuery.data]);
 
-  // ─────────────────────────────
-  //  Rebuild timeline from buffers + metadata
-  // ─────────────────────────────
+  // Rebuild timeline from buffers + metadata
   const rebuildTimeline = () => {
     const sorted = chunks;
     const tl: {
@@ -390,11 +432,10 @@ export const AudioClip = ({ af }: AudioClipProps) => {
       padStartSec: number;
       padEndSec: number;
     }[] = [];
-
     let cursor = 0;
     for (const ch of sorted) {
       const buf = buffersRef.current.get(ch.sequence);
-      if (!buf) continue; // skip not-yet-decoded
+      if (!buf) continue;
       const padStartSec = (ch.paddingStartMs ?? 0) / 1000;
       const padEndSec = (ch.paddingEndMs ?? 0) / 1000;
       const start = cursor;
@@ -409,17 +450,32 @@ export const AudioClip = ({ af }: AudioClipProps) => {
       });
       cursor = end;
     }
-
     timelineRef.current = tl;
     setBufferedDuration(cursor);
 
+    // If currently playing, re-schedule / re-sync
     if (isPlayingRef.current) {
-      scheduleFrom(currentTime);
-      startRef.current = audioRef.current!.currentTime;
+      if (playbackModeRef.current === "scheduler") {
+        scheduleFromScheduler(currentTime);
+        startRef.current = audioRef.current!.currentTime;
+      } else if (playbackModeRef.current === "stitched") {
+        // Keep stitched el in sync with UI current time if timeline length changes
+        const el = audioElRef.current;
+        if (el) {
+          try {
+            if (!isScrubbingRef.current) {
+              el.currentTime = Math.min(
+                el.currentTime,
+                stitchedDisplayDuration()
+              );
+            }
+          } catch {}
+        }
+      }
     }
   };
 
-  // Rebuild timeline when padding metadata changes
+  // Rebuild timeline when padding changes
   useEffect(() => {
     if (!buffersRef.current.size) return;
     rebuildTimeline();
@@ -431,9 +487,9 @@ export const AudioClip = ({ af }: AudioClipProps) => {
       .join("|"),
   ]);
 
-  // ─────────────────────────────
-  //  JIT Scheduling (lookahead window)
-  // ─────────────────────────────
+  // ────────────────────────────────────────────────────────────────────────────
+  //  CHUNK SCHEDULER IMPLEMENTATION
+  // ────────────────────────────────────────────────────────────────────────────
   const stopActiveNodes = () => {
     const nodes = Array.from(activeNodesRef.current);
     activeNodesRef.current.clear();
@@ -468,7 +524,6 @@ export const AudioClip = ({ af }: AudioClipProps) => {
     return s;
   };
 
-  // Move the scheduling pointers to an absolute timeline second
   const seekPointer = (offsetSec: number) => {
     const tl = timelineRef.current;
     let i = tl.findIndex((c) => offsetSec < c.end);
@@ -482,49 +537,40 @@ export const AudioClip = ({ af }: AudioClipProps) => {
     const ctx = audioRef.current!;
     const tl = timelineRef.current;
     if (!tl.length) return;
-
     let i = scheduleIdxRef.current;
     let local = scheduleLocalRef.current;
     let when = nextStartRef.current || ctx.currentTime;
     const horizon = ctx.currentTime + LOOKAHEAD_S;
-
     while (when < horizon && i < tl.length) {
       const seg = tl[i]!;
       const total = seg.padStartSec + seg.buffer.duration + seg.padEndSec;
-
       if (local < seg.padStartSec) {
-        const wait = seg.padStartSec - local; // leading silence
+        const wait = seg.padStartSec - local;
         when += wait;
         local += wait;
       } else if (local < seg.padStartSec + seg.buffer.duration) {
-        const offsetInBuf = local - seg.padStartSec; // inside audio
+        const offsetInBuf = local - seg.padStartSec;
         const src = mkNode(ctx, seg.buffer);
-        // clamp start into the future to avoid "past start" on iOS after resume
         when = Math.max(when, ctx.currentTime + 0.02);
         try {
           src.start(when, offsetInBuf);
-        } catch {
-          /* ignore */
-        }
+        } catch {}
         const playDur = seg.buffer.duration - offsetInBuf;
         when += playDur;
         local += playDur;
       } else if (local < total) {
-        const wait = total - local; // trailing silence
+        const wait = total - local;
         when += wait;
         local += wait;
       }
-
       if (local >= total - 1e-6) {
         i += 1;
         local = 0;
       }
     }
-
     scheduleIdxRef.current = i;
     scheduleLocalRef.current = local;
     nextStartRef.current = when;
-
     if (i >= tl.length) stopScheduler();
   };
 
@@ -533,16 +579,15 @@ export const AudioClip = ({ af }: AudioClipProps) => {
     stopActiveNodes();
     stopScheduler();
 
-    seekPointer(fromSec);
+    // Clamp to just before end so there’s something to schedule
+    const clamped = clampPlayable(fromSec, bufferedDuration);
 
-    // guard: schedule slightly into the future (iOS resume has currentTime stalls)
+    seekPointer(clamped);
+
+    // IMPORTANT: reset nextStartRef so we don’t reuse a stale future time
     const EPS = 0.03;
-    nextStartRef.current = Math.max(
-      ctx.currentTime + EPS,
-      nextStartRef.current || 0
-    );
+    nextStartRef.current = ctx.currentTime + EPS;
 
-    // Fill initial window immediately, then keep topping up
     tickSchedule();
     schedulerTimerRef.current = window.setInterval(
       tickSchedule,
@@ -550,20 +595,12 @@ export const AudioClip = ({ af }: AudioClipProps) => {
     );
   };
 
-  const scheduleFrom = (offsetSec: number) => {
+  const scheduleFromScheduler = (offsetSec: number) => {
     if (!audioRef.current) return;
     startScheduler(offsetSec);
   };
 
-  const handlePlay = async () => {
-    await ensureAudioUnlocked();
-    const ctx = audioRef.current!;
-    startRef.current = ctx.currentTime;
-    setIsPlaying(true);
-    scheduleFrom(pausedOffset.current);
-  };
-
-  const handlePause = () => {
+  const handlePauseScheduler = () => {
     if (!audioRef.current) return;
     const elapsed =
       audioRef.current.currentTime - startRef.current + pausedOffset.current;
@@ -574,47 +611,292 @@ export const AudioClip = ({ af }: AudioClipProps) => {
     stopScheduler();
   };
 
-  const seekTo = (v: number) => {
-    const clamped = Math.max(0, Math.min(v, bufferedDuration));
-    pausedOffset.current = clamped;
-    setCurrentTime(clamped);
-    if (isPlayingRef.current) {
-      scheduleFrom(clamped);
+  const seekToScheduler = (v: number) => {
+    const target = clampPlayable(v, bufferedDuration);
+    pausedOffset.current = target;
+    setCurrentTime(target);
+
+    if (isPlayingRef.current && playbackModeRef.current === "scheduler") {
+      scheduleFromScheduler(target);
       startRef.current = audioRef.current!.currentTime;
     }
   };
 
-  // ─────────────────────────────
-  //  Progress clock / slider tick (throttled ~10fps)
-  // ─────────────────────────────
+  // Progress ticker (~10fps) for scheduler
   useEffect(() => {
     let raf = 0;
     let last = 0;
-    const TICK_MS = 100; // 10 fps
-
+    const TICK_MS = 100;
     const tick = (t: number) => {
-      if (isPlaying && audioRef.current) {
+      if (
+        isPlaying &&
+        audioRef.current &&
+        playbackModeRef.current === "scheduler"
+      ) {
         const elapsed =
           audioRef.current.currentTime -
           startRef.current +
           pausedOffset.current;
-
         if (t - last >= TICK_MS) {
-          if (elapsed < bufferedDuration) {
-            setCurrentTime(elapsed);
-          } else {
+          if (elapsed < bufferedDuration) setCurrentTime(elapsed);
+          else {
             setCurrentTime(bufferedDuration);
             setIsPlaying(false);
+            playbackModeRef.current = null;
           }
           last = t;
         }
         raf = requestAnimationFrame(tick);
       }
     };
-
-    if (isPlaying) raf = requestAnimationFrame(tick);
+    if (isPlaying && playbackModeRef.current === "scheduler")
+      raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPlaying, bufferedDuration]);
+
+  // ────────────────────────────────────────────────────────────────────────────
+  //  STITCHED <audio> IMPLEMENTATION (mobile path)
+  // ────────────────────────────────────────────────────────────────────────────
+  const audioElRef = useRef<HTMLAudioElement | null>(null);
+  const stitchedUrlRef = useRef<string | null>(null);
+  const [stitchedIsBuilding, setStitchedIsBuilding] = useState(false);
+  const [stitchedDuration, setStitchedDuration] = useState(0);
+
+  // expected total secs (sum of buffers) so we can show a duration early
+  const expectedDuration = useMemo(() => {
+    const ordered = (chunks ?? [])
+      .slice()
+      .sort((a: any, b: any) => a.sequence - b.sequence)
+      .map((c: any) => buffersRef.current.get(c.sequence))
+      .filter((b): b is AudioBuffer => !!b);
+    return ordered.reduce((s, b) => s + b.duration, 0);
+  }, [chunks]);
+
+  function encodeWAV(buffers: AudioBuffer[]): Blob {
+    if (!buffers.length) throw new Error("No buffers");
+    const first = buffers[0]!;
+    const numChannels = first.numberOfChannels;
+    const sampleRate = first.sampleRate;
+    let totalLength = 0;
+    for (const buf of buffers) totalLength += buf.length;
+    const result = new Float32Array(totalLength * numChannels);
+    let offset = 0;
+    for (const buf of buffers) {
+      for (let ch = 0; ch < numChannels; ch++) {
+        const data = buf.getChannelData(ch);
+        for (let i = 0; i < buf.length; i++) {
+          const idx = (offset + i) * numChannels + ch;
+          result[idx] = data[i] ?? 0;
+        }
+      }
+      offset += buf.length;
+    }
+    const pcm = new DataView(new ArrayBuffer(44 + result.length * 2));
+    function writeString(view: DataView, off: number, str: string) {
+      for (let i = 0; i < str.length; i++)
+        view.setUint8(off + i, str.charCodeAt(i));
+    }
+    writeString(pcm, 0, "RIFF");
+    pcm.setUint32(4, 36 + result.length * 2, true);
+    writeString(pcm, 8, "WAVE");
+    writeString(pcm, 12, "fmt ");
+    pcm.setUint32(16, 16, true);
+    pcm.setUint16(20, 1, true);
+    pcm.setUint16(22, numChannels, true);
+    pcm.setUint32(24, sampleRate, true);
+    pcm.setUint32(28, sampleRate * numChannels * 2, true);
+    pcm.setUint16(32, numChannels * 2, true);
+    pcm.setUint16(34, 16, true);
+    writeString(pcm, 36, "data");
+    pcm.setUint32(40, result.length * 2, true);
+    let idx = 44;
+    for (let i = 0; i < result.length; i++, idx += 2) {
+      const val = result[i] ?? 0;
+      const s = Math.max(-1, Math.min(1, val));
+      pcm.setInt16(idx, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+    }
+    return new Blob([pcm.buffer], { type: "audio/wav" });
+  }
+
+  const cleanupStitched = () => {
+    try {
+      audioElRef.current?.pause();
+    } catch {}
+    if (audioElRef.current) {
+      try {
+        audioElRef.current.src = "";
+      } catch {}
+      audioElRef.current = null;
+    }
+    if (stitchedUrlRef.current) {
+      URL.revokeObjectURL(stitchedUrlRef.current);
+      stitchedUrlRef.current = null;
+    }
+    setStitchedDuration(0);
+  };
+
+  const allChunksProcessed =
+    chunks.length > 0 && chunks.every((c: any) => c.status === "PROCESSED");
+
+  const ensureStitchedUrl = async (): Promise<string | null> => {
+    if (stitchedUrlRef.current) return stitchedUrlRef.current;
+    if (!allChunksProcessed) return null;
+
+    const ordered = (chunks ?? [])
+      .slice()
+      .sort((a: any, b: any) => a.sequence - b.sequence)
+      .map((c: any) => buffersRef.current.get(c.sequence))
+      .filter((b): b is AudioBuffer => !!b);
+    if (ordered.length !== chunks.length) return null;
+
+    setStitchedIsBuilding(true);
+    try {
+      const wavBlob = await new Promise<Blob>((resolve) =>
+        setTimeout(() => resolve(encodeWAV(ordered)), 0)
+      );
+      const url = URL.createObjectURL(wavBlob);
+      stitchedUrlRef.current = url;
+      return url;
+    } finally {
+      setStitchedIsBuilding(false);
+    }
+  };
+
+  const wiredRef = useRef(false);
+  const wireAudioEl = (el: HTMLAudioElement) => {
+    if (wiredRef.current) return;
+    wiredRef.current = true;
+
+    el.addEventListener("ended", () => {
+      setIsPlaying(false);
+      playbackModeRef.current = null;
+    });
+
+    el.addEventListener("timeupdate", () => {
+      if (!isScrubbingRef.current) {
+        setCurrentTime(el.currentTime || 0);
+        pausedOffset.current = el.currentTime || 0;
+      }
+    });
+
+    el.addEventListener("loadedmetadata", () => {
+      setStitchedDuration(
+        Number.isFinite(el.duration) ? el.duration : expectedDuration
+      );
+    });
+  };
+
+  const stitchedDisplayDuration = () =>
+    stitchedDuration || expectedDuration || 0;
+
+  // ────────────────────────────────────────────────────────────────────────────
+  //  UNIFIED PLAY/PAUSE
+  // ────────────────────────────────────────────────────────────────────────────
+
+  const shouldUseStitched = () =>
+    isSmallScreen && allChunksProcessed && buffersRef.current.size > 0;
+
+  const playStitchedFrom = async (fromSec: number) => {
+    // Pause scheduler if it was active
+    if (playbackModeRef.current === "scheduler") handlePauseScheduler();
+
+    await ensureAudioUnlocked();
+
+    const url = await ensureStitchedUrl();
+    if (!url) {
+      // Fallback if something went wrong
+      playSchedulerFrom(fromSec);
+      return;
+    }
+
+    let el = audioElRef.current;
+    if (!el) {
+      el = new Audio(url);
+      el.preload = "auto";
+      audioElRef.current = el;
+      wireAudioEl(el);
+    } else if (el.src !== url) {
+      el.src = url;
+    }
+
+    const startAt = clampPlayable(fromSec, stitchedDisplayDuration());
+    try {
+      el.currentTime = startAt;
+    } catch {}
+    pausedOffset.current = el.currentTime || startAt;
+    setCurrentTime(pausedOffset.current);
+
+    try {
+      await el.play();
+      setIsPlaying(true);
+      playbackModeRef.current = "stitched";
+      if (!Number.isFinite(el.duration)) setStitchedDuration(expectedDuration);
+    } catch {
+      // Autoplay blocked—remain paused
+      setIsPlaying(false);
+      playbackModeRef.current = null;
+    }
+  };
+
+  const pauseStitched = () => {
+    try {
+      audioElRef.current?.pause();
+    } catch {}
+    setIsPlaying(false);
+    // retain playbackModeRef so scrub-commit can auto-resume into stitched if desired
+  };
+
+  const playSchedulerFrom = (fromSec: number) => {
+    if (playbackModeRef.current === "stitched") pauseStitched();
+
+    const target = clampPlayable(fromSec, bufferedDuration);
+    scheduleFromScheduler(target);
+
+    startRef.current = audioRef.current!.currentTime;
+    setIsPlaying(true);
+    playbackModeRef.current = "scheduler";
+  };
+
+  const togglePlay = async () => {
+    // Don't toggle while scrubbing
+    if (isScrubbingRef.current) return;
+
+    // If playing → pause whichever mode is active
+    if (isPlaying) {
+      if (playbackModeRef.current === "stitched") {
+        pauseStitched();
+      } else if (playbackModeRef.current === "scheduler") {
+        handlePauseScheduler();
+      } else {
+        setIsPlaying(false);
+      }
+      return;
+    }
+
+    // If paused → choose path based on screen & readiness
+    await ensureAudioUnlocked();
+    if (shouldUseStitched()) {
+      await playStitchedFrom(pausedOffset.current);
+    } else {
+      const startAt = clampPlayable(pausedOffset.current, bufferedDuration);
+      playSchedulerFrom(startAt);
+    }
+  };
+
+  // Cleanup stitched resources on unmount / when afId changes handled above
+  useEffect(() => {
+    return () => {
+      cleanupStitched();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ────────────────────────────────────────────────────────────────────────────
+  //  Derived UI values & helpers
+  // ────────────────────────────────────────────────────────────────────────────
+
+  const hasAnyBuffered = bufferedDuration > 0;
 
   const formatTime = (sec: number) =>
     `${Math.floor(sec / 60)
@@ -623,34 +905,48 @@ export const AudioClip = ({ af }: AudioClipProps) => {
       .toString()
       .padStart(2, "0")}`;
 
-  // Active sequence for highlight & seek-by-segment
   const activeSequence = useMemo(() => {
     const tl = timelineRef.current;
     if (!tl.length) return null;
+    const t = currentTime;
     for (let i = 0; i < tl.length; i++) {
       const seg = tl[i]!;
-      if (currentTime >= seg.start && currentTime < seg.end)
-        return seg.sequence;
+      if (t >= seg.start && t < seg.end) return seg.sequence;
     }
     return null;
   }, [currentTime, bufferedDuration]);
 
   const seekToSequence = (sequence: number) => {
     const seg = timelineRef.current.find((s) => s.sequence === sequence);
-    if (!seg) return; // not buffered yet
-    seekTo(seg.start);
+    if (!seg) return;
+
+    const target = seg.start;
+    pausedOffset.current = target;
+    setCurrentTime(target);
+
+    if (isPlayingRef.current) {
+      if (shouldUseStitched()) {
+        const el = audioElRef.current;
+        const t = clampPlayable(target, stitchedDisplayDuration());
+        if (el) {
+          try {
+            el.currentTime = t;
+          } catch {}
+        } else {
+          // If no element yet, start it from the target
+          void playStitchedFrom(t);
+        }
+      } else {
+        playSchedulerFrom(target);
+        startRef.current = audioRef.current!.currentTime;
+      }
+    }
   };
 
-  // Manual append test control (retained)
-  const audioChunkSeqRef = useRef<number>(0);
-
-  // Transcript text
   const transcript = useMemo(
     () => chunks.map((c: any) => c.text).join("") ?? "",
     [chunks]
   );
-
-  // Keep padding form synced to selected chunk
   const selectedChunk = useMemo(
     () => chunks.find((c) => c.sequence === (activeSequence ?? -1)),
     [chunks, activeSequence]
@@ -675,21 +971,24 @@ export const AudioClip = ({ af }: AudioClipProps) => {
   const onSubmitPadding = async (values: z.infer<typeof PaddingSchema>) => {
     if (!selectedChunk) return;
     const wasPlaying = isPlayingRef.current;
-    if (wasPlaying) handlePause();
-
+    if (wasPlaying) {
+      if (playbackModeRef.current === "stitched") pauseStitched();
+      else handlePauseScheduler();
+    }
     await setPaddingMutation.mutateAsync({
       audioChunkId: selectedChunk.id,
       paddingStartMs: Math.max(0, Math.round(values.paddingStartMs)),
       paddingEndMs: Math.max(0, Math.round(values.paddingEndMs)),
     });
-
     await audioFileQuery.refetch();
     rebuildTimeline();
-
     if (wasPlaying) {
-      setIsPlaying(true);
-      scheduleFrom(currentTime);
-      startRef.current = audioRef.current!.currentTime;
+      if (shouldUseStitched()) {
+        await playStitchedFrom(currentTime);
+      } else {
+        playSchedulerFrom(currentTime);
+        startRef.current = audioRef.current!.currentTime;
+      }
     }
   };
 
@@ -697,93 +996,38 @@ export const AudioClip = ({ af }: AudioClipProps) => {
     values: z.infer<typeof PaddingAllSchema>
   ) => {
     const wasPlaying = isPlayingRef.current;
-    if (wasPlaying) handlePause();
-
+    if (wasPlaying) {
+      if (playbackModeRef.current === "stitched") pauseStitched();
+      else handlePauseScheduler();
+    }
     await setPaddingForAllMutation.mutateAsync({
       audioFileId: af.id,
       paddingStartMs: Math.max(0, Math.round(values.paddingStartMs)),
       paddingEndMs: Math.max(0, Math.round(values.paddingEndMs)),
     });
-
     await audioFileQuery.refetch();
     rebuildTimeline();
-
     if (wasPlaying) {
-      setIsPlaying(true);
-      scheduleFrom(currentTime);
-      startRef.current = audioRef.current!.currentTime;
+      if (shouldUseStitched()) {
+        await playStitchedFrom(currentTime);
+      } else {
+        playSchedulerFrom(currentTime);
+        startRef.current = audioRef.current!.currentTime;
+      }
     }
   };
 
-  // IMPORTANT: enable Play as soon as *any* audio is buffered (mobile UX)
-  const hasAnyBuffered = bufferedDuration > 0;
-
-  // ───────────────
-  //  Lazy WAV export (on click)
-  // ───────────────
+  // ────────────────────────────────────────────────────────────────────────────
+  //  Download (stitched WAV)
+  // ────────────────────────────────────────────────────────────────────────────
   const [isBuildingWav, setIsBuildingWav] = useState(false);
 
-  function encodeWAV(buffers: AudioBuffer[]): Blob {
-    if (!buffers.length) throw new Error("No buffers");
-    const first = buffers[0]!;
-    const numChannels = first.numberOfChannels;
-    const sampleRate = first.sampleRate;
-
-    // total length in frames
-    let totalLength = 0;
-    for (const buf of buffers) totalLength += buf.length;
-
-    // interleave all buffers
-    const result = new Float32Array(totalLength * numChannels);
-    let offset = 0;
-    for (const buf of buffers) {
-      for (let ch = 0; ch < numChannels; ch++) {
-        const data = buf.getChannelData(ch);
-        for (let i = 0; i < buf.length; i++) {
-          const idx = (offset + i) * numChannels + ch;
-          result[idx] = data[i] ?? 0;
-        }
-      }
-      offset += buf.length;
-    }
-
-    // Convert to 16-bit PCM
-    const pcm = new DataView(new ArrayBuffer(44 + result.length * 2));
-    function writeString(view: DataView, off: number, str: string) {
-      for (let i = 0; i < str.length; i++)
-        view.setUint8(off + i, str.charCodeAt(i));
-    }
-    writeString(pcm, 0, "RIFF");
-    pcm.setUint32(4, 36 + result.length * 2, true);
-    writeString(pcm, 8, "WAVE");
-    writeString(pcm, 12, "fmt ");
-    pcm.setUint32(16, 16, true); // PCM chunk size
-    pcm.setUint16(20, 1, true); // PCM format
-    pcm.setUint16(22, numChannels, true);
-    pcm.setUint32(24, sampleRate, true);
-    pcm.setUint32(28, sampleRate * numChannels * 2, true);
-    pcm.setUint16(32, numChannels * 2, true);
-    pcm.setUint16(34, 16, true); // bits per sample
-    writeString(pcm, 36, "data");
-    pcm.setUint32(40, result.length * 2, true);
-
-    let idx = 44;
-    for (let i = 0; i < result.length; i++, idx += 2) {
-      const val = result[i] ?? 0;
-      const s = Math.max(-1, Math.min(1, val));
-      pcm.setInt16(idx, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-    }
-    return new Blob([pcm.buffer], { type: "audio/wav" });
-  }
-
   const handleDownload = async () => {
-    // allow download once everything is decoded
     const allChunksLoaded =
       Array.isArray(chunks) &&
       chunks.length > 0 &&
       chunks.every((c: any) => buffersRef.current.has(c.sequence)) &&
       chunks.every((c: any) => c.status === "PROCESSED");
-
     if (!allChunksLoaded) return;
     setIsBuildingWav(true);
     try {
@@ -792,11 +1036,9 @@ export const AudioClip = ({ af }: AudioClipProps) => {
             .map((c: any) => buffersRef.current.get(c.sequence))
             .filter((b): b is AudioBuffer => !!b)
         : [];
-
       const wavBlob = await new Promise<Blob>((resolve) => {
         setTimeout(() => resolve(encodeWAV(ordered)), 0);
       });
-
       const url = URL.createObjectURL(wavBlob);
       const a = document.createElement("a");
       a.href = url;
@@ -813,11 +1055,22 @@ export const AudioClip = ({ af }: AudioClipProps) => {
   const retryMutation = api.audio.inworld.retry.useMutation();
   const { data: userData } = authClient.useSession();
 
-  // ───────────────
-  //  JSX
-  // ───────────────
+  // ────────────────────────────────────────────────────────────────────────────
+  //  Render
+  // ────────────────────────────────────────────────────────────────────────────
+
+  const displayDuration =
+    playbackModeRef.current === "stitched" || shouldUseStitched()
+      ? stitchedDisplayDuration()
+      : bufferedDuration;
+
+  const canPlay =
+    (shouldUseStitched() &&
+      allChunksProcessed &&
+      buffersRef.current.size > 0) ||
+    (!shouldUseStitched() && hasAnyBuffered);
+
   return (
-    // Capture pointer/touch at container level too (some UI Buttons swallow pointerdown)
     <div
       className="sm:border rounded-lg sm:p-4"
       onPointerDownCapture={() => void ensureAudioUnlocked()}
@@ -826,28 +1079,29 @@ export const AudioClip = ({ af }: AudioClipProps) => {
     >
       <AudioClipSmart af={af} />
 
+      {/* Unified controls (one button and one slider for both modes) */}
       <div className="flex items-center justify-between gap-3 mb-2">
         <div className="flex items-center gap-3">
           <Button
-            // keep per-button unlock as well
             onPointerDown={() => void ensureAudioUnlocked()}
             onTouchStart={() => void ensureAudioUnlocked()}
-            onClick={isPlaying ? handlePause : handlePlay}
-            disabled={!hasAnyBuffered}
+            onClick={togglePlay}
+            disabled={!canPlay || stitchedIsBuilding}
           >
-            {isPlaying ? (
+            {stitchedIsBuilding ? (
+              "Preparing…"
+            ) : isPlaying ? (
               <PauseIcon className="h-4 w-4" />
             ) : (
               <PlayIcon className="h-4 w-4" />
             )}
           </Button>
           <span className="tabular-nums">
-            {formatTime(currentTime)} / {formatTime(bufferedDuration)}
+            {formatTime(currentTime)} / {formatTime(displayDuration)}
           </span>
         </div>
 
         <div className="flex justify-between gap-2 items-center">
-          {/* cost calculation */}
           {chunks.length > 0 && (
             <span className="text-xs text-muted-foreground">
               {(() => {
@@ -863,7 +1117,6 @@ export const AudioClip = ({ af }: AudioClipProps) => {
 
           <div className="hidden sm:flex gap-2 items-center">
             <CopyButton info={"Click to copy transcript"} text={transcript} />
-
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -889,13 +1142,15 @@ export const AudioClip = ({ af }: AudioClipProps) => {
       <Slider
         value={[currentTime]}
         min={0}
-        max={Math.max(0.01, bufferedDuration)}
+        max={Math.max(0.01, displayDuration)}
         step={0.01}
         onPointerDown={handleScrubStart}
         onValueChange={([v]) => {
           if (v == null) return;
           if (!isScrubbingRef.current) handleScrubStart();
-          setCurrentTime(Math.max(0, Math.min(v, bufferedDuration)));
+          const clamped = clampPlayable(v, displayDuration);
+          setCurrentTime(clamped);
+          pausedOffset.current = clamped;
         }}
         onValueCommit={([v]) => {
           if (v == null) return;
@@ -904,6 +1159,7 @@ export const AudioClip = ({ af }: AudioClipProps) => {
         className="w-full mb-2 h-10"
       />
 
+      {/* Chunk status bar */}
       <div className="py-4 flex w-full gap-px">
         {chunks.map((chunk: any) => {
           const seg = timelineRef.current.find(
@@ -917,7 +1173,6 @@ export const AudioClip = ({ af }: AudioClipProps) => {
               key={chunk.id}
               title={`seq ${chunk.sequence} – ${chunk.status}`}
               onClick={() => {
-                audioChunkSeqRef.current = chunk.sequence;
                 if (canSeek) seekToSequence(chunk.sequence);
               }}
               aria-current={isActive ? "true" : undefined}
@@ -953,14 +1208,14 @@ export const AudioClip = ({ af }: AudioClipProps) => {
         })}
       </div>
 
-      {/* Show current chunk text */}
+      {/* Transcript snippet */}
       <div className="flex flex-col w-full">
         <span className="text-sm text-muted-foreground min-h-[125px]">
           {chunks.find((c) => c.sequence === activeSequence)?.text}
         </span>
       </div>
 
-      {/* Padding form */}
+      {/* Padding controls */}
       <div>
         {setPaddingMutation.error && (
           <p className="text-xs text-red-500 mt-2">
@@ -968,7 +1223,6 @@ export const AudioClip = ({ af }: AudioClipProps) => {
           </p>
         )}
 
-        {/* Advanced options */}
         <div className="mt-6">
           <button
             type="button"
@@ -1006,7 +1260,6 @@ export const AudioClip = ({ af }: AudioClipProps) => {
                       </FormItem>
                     )}
                   />
-
                   <FormField
                     control={paddingForm.control}
                     name="paddingEndMs"
@@ -1026,7 +1279,6 @@ export const AudioClip = ({ af }: AudioClipProps) => {
                       </FormItem>
                     )}
                   />
-
                   <Button
                     type="submit"
                     variant="outline"
@@ -1113,6 +1365,7 @@ export const AudioClip = ({ af }: AudioClipProps) => {
         </div>
       </div>
 
+      {/* Retry failed chunks */}
       <div className="flex gap-4 items-center">
         {(chunks.some((c) => c.status === "ERROR") ||
           userData?.user.role === "admin") && (
