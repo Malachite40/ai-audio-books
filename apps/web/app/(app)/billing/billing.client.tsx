@@ -1,10 +1,34 @@
 "use client";
 
 import { api } from "@/trpc/react";
+import { zodResolver } from "@hookform/resolvers/zod";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@workspace/ui/components/alert-dialog";
 import { Button } from "@workspace/ui/components/button";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@workspace/ui/components/form";
 import { Progress } from "@workspace/ui/components/progress";
+import { Slider } from "@workspace/ui/components/slider";
 import { useRouter } from "next/navigation";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { useForm } from "react-hook-form";
+import { toast } from "sonner";
+import { z } from "zod";
 
 export type BillingClientProps = {};
 
@@ -18,6 +42,8 @@ function formatNumber(n: number) {
 
 export function BillingClient(props: BillingClientProps) {
   const router = useRouter();
+
+  const [showPurchaseDialog, setShowPurchaseDialog] = useState(false);
 
   // Current subscription/plan
   const { data: subscriptionData, isLoading: subscriptionLoading } =
@@ -57,6 +83,33 @@ export function BillingClient(props: BillingClientProps) {
 
   const isLoading = subscriptionLoading || creditsLoading;
 
+  // Purchase Credits Form
+  const PurchaseFormSchema = z.object({
+    quantity: z.number().min(1).max(10), // up to $100/10m at once
+  });
+
+  const purchaseForm = useForm<z.infer<typeof PurchaseFormSchema>>({
+    resolver: zodResolver(PurchaseFormSchema),
+    defaultValues: { quantity: 1 },
+  });
+
+  const quantity = purchaseForm.watch("quantity");
+  const totalPrice = quantity * 10;
+  const totalCredits = quantity * 1_000_000;
+
+  // Use the purchase mutation from the API
+  const purchaseMutation = api.credits.purchase.useMutation({
+    onSuccess: ({ url }) => {
+      router.push(url as any);
+    },
+    onError: (error) => {
+      toast("Error", {
+        description: error.message,
+        duration: 6000,
+      });
+    },
+  });
+
   return (
     <div className="flex items-center justify-center w-full px-4">
       <div className="w-full max-w-md space-y-3">
@@ -78,17 +131,99 @@ export function BillingClient(props: BillingClientProps) {
           </span>
         </div>
 
-        <Button
-          className="w-full"
-          onClick={() =>
-            createBillingPortal.mutate({
-              return_url: window.location.href,
-            })
-          }
-          disabled={createBillingPortal.isPending}
-        >
-          {createBillingPortal.isPending ? "Opening…" : "Manage Plan"}
-        </Button>
+        <div className="w-full flex flex-col space-y-6">
+          {/* Purchase Credits Modal Trigger */}
+          <AlertDialog
+            open={showPurchaseDialog}
+            onOpenChange={setShowPurchaseDialog}
+          >
+            <AlertDialogTrigger asChild>
+              <Button
+                className="w-full mt-2"
+                variant="outline"
+                onClick={() => setShowPurchaseDialog(true)}
+              >
+                Purchase Credits
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Purchase Credits</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Select the amount of credits you want to purchase. Each
+                  increment is $10 for 1,000,000 characters.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <Form {...purchaseForm}>
+                <form
+                  onSubmit={purchaseForm.handleSubmit((values) => {
+                    purchaseMutation.mutate({
+                      quantity: values.quantity,
+                      success_url: window.location.href,
+                      cancel_url: window.location.href,
+                    });
+                  })}
+                  className="space-y-4"
+                >
+                  <FormField
+                    control={purchaseForm.control}
+                    name="quantity"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Credits to Purchase</FormLabel>
+                        <FormControl>
+                          <Slider
+                            min={1}
+                            max={10}
+                            step={1}
+                            value={[field.value]}
+                            onValueChange={([val]) => field.onChange(val)}
+                            className="w-full"
+                          />
+                        </FormControl>
+                        <div className="flex justify-between text-xs mt-1">
+                          <span>$10 / 1M</span>
+                          <span>$100 / 10M</span>
+                        </div>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <div className="text-sm font-medium text-center">
+                    <span>
+                      {`Total: $${totalPrice} for ${formatNumber(totalCredits)} characters`}
+                    </span>
+                  </div>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel type="button">Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      type="submit"
+                      disabled={purchaseMutation.isPending}
+                    >
+                      {purchaseMutation.isPending
+                        ? "Processing..."
+                        : "Checkout"}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </form>
+              </Form>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          <div className="w-full flex h-px bg-border" />
+
+          <Button
+            className="w-full"
+            onClick={() =>
+              createBillingPortal.mutate({
+                return_url: window.location.href,
+              })
+            }
+            disabled={createBillingPortal.isPending}
+          >
+            {createBillingPortal.isPending ? "Opening…" : "Manage Plan"}
+          </Button>
+        </div>
       </div>
     </div>
   );

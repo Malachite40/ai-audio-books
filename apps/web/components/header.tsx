@@ -56,7 +56,8 @@ export function Header(props: HeaderProps) {
           <div className="flex gap-2 justify-center items-center">
             {/* credits */}
 
-            {subscriptionData?.subscription?.plan === "FREE" && (
+            {(!subscriptionData?.subscription ||
+              subscriptionData?.subscription?.plan === "FREE") && (
               <Button
                 onClick={() => {
                   setShowPricing(true);
@@ -64,8 +65,14 @@ export function Header(props: HeaderProps) {
                 variant={"outline"}
                 className="flex gap-2"
               >
-                <CircleArrowUp className="h-4 w-4" />
-                Upgrade
+                {!subscriptionData?.subscription ? (
+                  <>Pricing</>
+                ) : (
+                  <>
+                    <CircleArrowUp className="h-4 w-4" />
+                    Upgrade
+                  </>
+                )}
               </Button>
             )}
 

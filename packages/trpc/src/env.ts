@@ -26,6 +26,7 @@ export const env = createEnv({
     STRIPE_BASIC_PLAN: z.string(),
     STRIPE_PRO_PLAN: z.string(),
     TAX_RATE_ID: z.string(),
+    ONE_M_CREDIT_PRICE: z.string(),
   },
 
   /**
@@ -67,6 +68,7 @@ export const env = createEnv({
     STRIPE_BASIC_PLAN: process.env.STRIPE_BASIC_PLAN,
     STRIPE_PRO_PLAN: process.env.STRIPE_PRO_PLAN,
     TAX_RATE_ID: process.env.TAX_RATE_ID,
+    ONE_M_CREDIT_PRICE: process.env.ONE_M_CREDIT_PRICE,
   },
   /**
    * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially

@@ -1,9 +1,11 @@
 import Stripe from "stripe";
+import { handleCheckoutSessionCompleted } from "./checkout.session.completed";
 import { handleCustomerSubscriptionDelete } from "./customer.subscription.deleted";
 import { handleInvoicePaid } from "./invoice.paid";
 import { handlePaymentIntentSucceeded } from "./payment_intent.succeeded";
 
 export async function handleStripeEvent(event: Stripe.Event) {
+  console.log(`Received event: ${event.type}`);
   // Handle the event
   switch (event.type) {
     case "payment_intent.succeeded":
@@ -14,6 +16,9 @@ export async function handleStripeEvent(event: Stripe.Event) {
       break;
     case "customer.subscription.deleted":
       await handleCustomerSubscriptionDelete(event);
+      break;
+    case "checkout.session.completed":
+      await handleCheckoutSessionCompleted(event);
       break;
     default:
       // Unexpected event type
