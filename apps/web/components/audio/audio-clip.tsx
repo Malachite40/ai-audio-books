@@ -1078,8 +1078,10 @@ export const AudioClip = ({ af }: AudioClipProps) => {
       onMouseDownCapture={() => void ensureAudioUnlocked()}
     >
       <AudioClipSmart af={af} />
+
       {/* Title */}
       <h3 className="text-lg font-semibold mb-4">{af.name}</h3>
+
       {/* Unified controls (one button and one slider for both modes) */}
       <div className="flex items-center justify-between gap-3 mb-2">
         <div className="flex items-center gap-3">
