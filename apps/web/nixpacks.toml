@@ -3,7 +3,7 @@ nixPkgs = ['...', 'bun']   # "..." keeps nodejs & yarn that Nixpacks injected
 
 [phases.install]
 work_dir = 'apps/web'
-cmds = ['bun install --frozen-lockfile']
+cmds = ['bun install']
 
 [phases.build]
 work_dir = 'apps/web'
