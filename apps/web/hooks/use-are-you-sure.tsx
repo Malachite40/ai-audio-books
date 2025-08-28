@@ -1,6 +1,7 @@
 "use client";
 
 import { useMediaQuery } from "@/hooks/use-media-query";
+import { MEDIA_QUERY } from "@/lib/constants";
 import { Button } from "@workspace/ui/components/button";
 import {
   Dialog,
@@ -45,7 +46,7 @@ export function useAreYouSure<T>({
     onCancel,
     isPending,
   }: AreYouSureProps) {
-    const isDesktop = useMediaQuery("(min-width: 768px)");
+    const isDesktop = useMediaQuery(MEDIA_QUERY.MD);
     const handleConfirm = async () => {
       if (onConfirm) await onConfirm();
       setOpen(false);

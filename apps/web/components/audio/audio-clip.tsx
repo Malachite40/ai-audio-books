@@ -31,7 +31,9 @@ import {
 } from "lucide-react/icons";
 import { useForm } from "react-hook-form";
 
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { authClient } from "@/lib/auth-client";
+import { MEDIA_QUERY } from "@/lib/constants";
 import { useAudioPlaybackStore } from "@/store/use-audio-playback-store";
 import { AudioFile } from "@workspace/database";
 import {
@@ -41,7 +43,6 @@ import {
 } from "@workspace/ui/components/tooltip";
 import CopyButton from "../copy-button";
 import { AudioSettingsButton } from "./audio-settings";
-import AudioClipSmart from "./audio-smart-clip";
 
 export interface AudioClipProps {
   af: AudioFile;
@@ -91,14 +92,7 @@ export const AudioClip = ({ af }: AudioClipProps) => {
   // ──────────────────────────
   //  Responsive: mobile vs desktop
   // ──────────────────────────
-  const [isSmallScreen, setIsSmallScreen] = useState(false);
-  useEffect(() => {
-    const mq = window.matchMedia("(max-width: 639px)"); // Tailwind 'sm' breakpoint
-    const apply = () => setIsSmallScreen(!!mq.matches);
-    apply();
-    mq.addEventListener?.("change", apply);
-    return () => mq.removeEventListener?.("change", apply);
-  }, []);
+  const isDesktop = useMediaQuery(MEDIA_QUERY.MD);
 
   // ──────────────────────────
   //  Audio graph & timeline (chunk scheduler path)
@@ -853,7 +847,7 @@ export const AudioClip = ({ af }: AudioClipProps) => {
 
   // Auto-stitch on mobile as soon as all chunks/buffers are ready
   useEffect(() => {
-    if (!isSmallScreen) return;
+    if (isDesktop) return;
     if (!allChunksProcessed) return;
     if (!chunks.length) return;
 
@@ -890,7 +884,7 @@ export const AudioClip = ({ af }: AudioClipProps) => {
       }
     })();
   }, [
-    isSmallScreen,
+    isDesktop,
     allChunksProcessed,
     chunks.length,
     wavFilesQuery.data,
@@ -940,7 +934,7 @@ export const AudioClip = ({ af }: AudioClipProps) => {
   }, [playbackRate]);
 
   const shouldUseStitched = () =>
-    isSmallScreen && allChunksProcessed && buffersRef.current.size > 0;
+    !isDesktop && allChunksProcessed && buffersRef.current.size > 0;
 
   const playStitchedFrom = async (fromSec: number) => {
     // Pause scheduler if it was active
@@ -1146,8 +1140,6 @@ export const AudioClip = ({ af }: AudioClipProps) => {
   // ────────────────────────────────────────────────────────────────────────────
   //  Derived UI values & helpers
   // ────────────────────────────────────────────────────────────────────────────
-
-  const hasAnyBuffered = bufferedDuration > 0;
 
   const formatTime = (sec: number) =>
     `${Math.floor(sec / 60)
@@ -1368,6 +1360,45 @@ export const AudioClip = ({ af }: AudioClipProps) => {
   const isLoadingToStart =
     !isReadyToStart || (shouldUseStitched() && stitchedIsBuilding);
 
+  const [mobileTrack, setMobileTrack] = useState<{
+    title: string;
+    artist?: string;
+    image?: string;
+    color?: string;
+    audioSrc: string;
+  } | null>(null);
+
+  // Keep the mobile track in sync with the stitched WAV URL
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      if (isDesktop) {
+        setMobileTrack(null);
+        return;
+      }
+
+      // Reuse your stitched builder. If it's already built, we use it;
+      // otherwise we await building once.
+      const url = stitchedUrlRef.current ?? (await ensureStitchedUrl());
+
+      if (!cancelled && url) {
+        setMobileTrack({
+          title: af.name,
+          // artist, image, color optional—add if you have them:
+          // artist: af.speakerName,
+          // image: af.coverUrl,
+          audioSrc: url,
+        });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // Depend on the basics that change the stitched output
+  }, [isDesktop, af.id, bufferedDuration, stitchedDuration]);
+
   return (
     <div
       className="sm:border rounded-lg sm:p-4"
@@ -1375,8 +1406,6 @@ export const AudioClip = ({ af }: AudioClipProps) => {
       onTouchStartCapture={() => void ensureAudioUnlocked()}
       onMouseDownCapture={() => void ensureAudioUnlocked()}
     >
-      <AudioClipSmart af={af} />
-
       {/* Title */}
       <h3 className="text-lg font-semibold mb-4">{af.name}</h3>
 

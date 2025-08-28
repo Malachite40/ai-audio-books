@@ -1,5 +1,9 @@
 import z from "zod";
-import { createTRPCRouter, publicProcedure } from "../trpc";
+import {
+  authenticatedProcedure,
+  createTRPCRouter,
+  publicProcedure,
+} from "../trpc";
 import { audioChunkRouter } from "./audioChunk";
 import { audioFileSettingsRouter } from "./audioFileSettings";
 import { inworldRouter } from "./inworld";
@@ -59,7 +63,7 @@ export const audioRouter = createTRPCRouter({
       ]);
       return { audioFiles, count: totalCount };
     }),
-  delete: publicProcedure
+  delete: authenticatedProcedure
     .input(
       z.object({
         id: z.string(),
@@ -69,6 +73,7 @@ export const audioRouter = createTRPCRouter({
       await ctx.db.audioFile.update({
         where: {
           id: input.id,
+          ownerId: ctx.user.id,
         },
         data: {
           deletedAt: new Date(),

@@ -109,18 +109,19 @@ export const inworldRouter = createTRPCRouter({
 
       const sentences = splitIntoSentences(input.text);
       const chunkTexts = buildChunks(sentences, CHUNK_SIZE);
-
       const createdChunks = await Promise.all(
-        chunkTexts.map((c, i) =>
-          ctx.db.audioChunk.create({
-            data: {
-              audioFileId: audioFile.id,
-              text: c,
-              sequence: i,
-              paddingEndMs: 550,
-            },
-          })
-        )
+        chunkTexts
+          .filter((c) => c.length > 0)
+          .map((c, i) =>
+            ctx.db.audioChunk.create({
+              data: {
+                audioFileId: audioFile.id,
+                text: c,
+                sequence: i,
+                paddingEndMs: 550,
+              },
+            })
+          )
       );
 
       const task = client.createTask(TASK_NAMES.processAudioFile);

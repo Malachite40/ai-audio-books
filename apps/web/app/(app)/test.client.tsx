@@ -3,10 +3,9 @@ import AudioClip from "@/components/audio/audio-clip";
 import { ConfirmAudioVisibility } from "@/components/confirm-audio-visibility";
 import ExampleAudioToggle from "@/components/example-audio-toggle";
 import Logo from "@/components/svgs/logo";
-import { useAudioHistoryStore } from "@/store/use-audio-history-store";
 import { api } from "@/trpc/react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, buttonVariants } from "@workspace/ui/components/button";
+import { Button } from "@workspace/ui/components/button";
 import {
   Form,
   FormControl,
@@ -26,28 +25,17 @@ import {
 import { Textarea } from "@workspace/ui/components/textarea";
 import { cn } from "@workspace/ui/lib/utils";
 import { AudioLinesIcon } from "lucide-react";
-import Link from "next/link";
 import { parseAsString, useQueryState } from "nuqs";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
+import { toast } from "sonner";
 import { z } from "zod";
 
+import { LoginRequiredDialog } from "@/components/login-required-modal";
+import { NotEnoughCreditsDialog } from "@/components/not-enough-credits-modal";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { authClient } from "@/lib/auth-client";
-import { RiGoogleFill } from "@remixicon/react";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@workspace/ui/components/dialog";
-import {
-  Drawer,
-  DrawerContent,
-  DrawerDescription,
-  DrawerHeader,
-  DrawerTitle,
-} from "@workspace/ui/components/drawer";
+import { MEDIA_QUERY } from "@/lib/constants";
 
 // --- Schema ---
 const FormSchema = z.object({
@@ -57,156 +45,15 @@ const FormSchema = z.object({
   public: z.boolean(),
 });
 
-function useIsDesktop() {
-  const [isDesktop, setIsDesktop] = useState(false);
-  useEffect(() => {
-    const mql = window.matchMedia("(min-width: 768px)");
-    const onChange = (e: MediaQueryListEvent) => setIsDesktop(e.matches);
-    setIsDesktop(mql.matches);
-    mql.addEventListener("change", onChange);
-    return () => mql.removeEventListener("change", onChange);
-  }, []);
-  return isDesktop;
-}
-
-function ResponsiveModal({
-  open,
-  onOpenChange,
-  title,
-  description,
-  children,
-}: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  title: string;
-  description?: string;
-  children?: React.ReactNode;
-}) {
-  const isDesktop = useIsDesktop();
-  if (isDesktop) {
-    return (
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-[420px]">
-          <DialogHeader>
-            <DialogTitle>{title}</DialogTitle>
-            {description ? (
-              <DialogDescription>{description}</DialogDescription>
-            ) : null}
-          </DialogHeader>
-          <div className="mt-2">{children}</div>
-        </DialogContent>
-      </Dialog>
-    );
-  }
-  return (
-    <Drawer open={open} onOpenChange={onOpenChange}>
-      <DrawerContent>
-        <DrawerHeader className="text-left">
-          <DrawerTitle>{title}</DrawerTitle>
-          {description ? (
-            <DrawerDescription>{description}</DrawerDescription>
-          ) : null}
-        </DrawerHeader>
-        <div className="px-4 pb-4">{children}</div>
-      </DrawerContent>
-    </Drawer>
-  );
-}
-
-function LoginRequiredDialog({
-  open,
-  onOpenChange,
-}: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-}) {
-  return (
-    <ResponsiveModal open={open} onOpenChange={onOpenChange} title="Login">
-      <div className="flex gap-2 mt-2">
-        <Button
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            authClient.signIn.social({
-              provider: "google",
-              callbackURL: window.location.href,
-            });
-          }}
-          variant={"outline"}
-          className="flex-1 items-center gap-2"
-        >
-          <RiGoogleFill className="opacity-60" size={16} />
-          Login with Google
-        </Button>
-      </div>
-    </ResponsiveModal>
-  );
-}
-
-function NotEnoughCreditsDialog({
-  open,
-  onOpenChange,
-  needed,
-  available,
-}: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  needed: number;
-  available: number;
-}) {
-  const deficit = Math.max(0, needed - available);
-  return (
-    <ResponsiveModal
-      open={open}
-      onOpenChange={onOpenChange}
-      title="Not enough credits"
-      description="Your text exceeds your current credit balance."
-    >
-      <div className="space-y-3 text-sm">
-        <div className="flex items-center justify-between border-b border-border pb-2">
-          <span>Required (chars)</span>
-          <span className="font-medium">{needed.toLocaleString()}</span>
-        </div>
-        <div className="flex items-center justify-between border-b border-border pb-2">
-          <span>Available</span>
-          <span className="font-medium">{available.toLocaleString()}</span>
-        </div>
-        <div className="flex items-center justify-between ">
-          <span>Short by</span>
-          <span className="font-semibold">{deficit.toLocaleString()}</span>
-        </div>
-        <div className="pt-2 flex gap-2">
-          <Button
-            variant="outline"
-            className="flex-1"
-            onClick={() => onOpenChange(false)}
-          >
-            Close
-          </Button>
-          <Link
-            href="/billing"
-            className={buttonVariants({ className: "flex-1" })}
-          >
-            Go to billing
-          </Link>
-        </div>
-      </div>
-    </ResponsiveModal>
-  );
-}
-
-// --- Main component ---
 const TestClient = () => {
   const [showConfirm, setShowConfirm] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
   const [showCredits, setShowCredits] = useState(false);
-
+  const isDesktop = useMediaQuery(MEDIA_QUERY.MD);
   const [selectedAudioFileId, setSelectedAudioFileId] = useQueryState(
     "id",
     parseAsString.withDefault("").withOptions({})
   );
-
-  const { setOpen: setAudioHistoryOpen } = useAudioHistoryStore();
 
   // Auth state (assumes next-auth). If you don't use next-auth, swap this for your auth query.
   const { data: userData } = authClient.useSession();
@@ -239,6 +86,10 @@ const TestClient = () => {
     },
     onError: (error) => {
       console.error("Error creating audio file:", error);
+      toast("Error", {
+        description: error.message,
+        duration: 6000,
+      });
     },
   });
 
@@ -313,7 +164,7 @@ const TestClient = () => {
         }}
       />
 
-      <div className="container mx-auto p-4 flex flex-col justify-center max-w-5xl">
+      <div className="container mx-auto p-4 flex flex-col md:justify-center max-w-5xl">
         {/* Loading State */}
         {audioFile.isLoading && selectedAudioFileId.length > 0 && (
           <div className="mb-4 w-full gap-4 text-primary justify-center flex items-center flex-col animate-pulse duration-100">
@@ -321,6 +172,7 @@ const TestClient = () => {
           </div>
         )}
 
+        {/* Error page: Create new audio file */}
         {!audioFile.isLoading &&
           !audioFile.data?.audioFile &&
           selectedAudioFileId.length > 0 && (
@@ -342,6 +194,7 @@ const TestClient = () => {
             </div>
           )}
 
+        {/* Create new audio file form */}
         <Form {...form}>
           <form className={cn(selectedAudioFileId.length > 0 ? "hidden" : "")}>
             {/* File name */}
@@ -472,16 +325,11 @@ const TestClient = () => {
           </form>
         </Form>
 
+        {/* Render Audio */}
         {audioFile.data?.audioFile && (
           <div className="flex flex-col gap-4">
             <AudioClip af={audioFile.data.audioFile} />
           </div>
-        )}
-
-        {createAudioFile.error && (
-          <p className="text-red-500 mt-2">
-            One-Shot Error: {createAudioFile.error.message}
-          </p>
         )}
       </div>
     </>

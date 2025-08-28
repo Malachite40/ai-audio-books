@@ -8,6 +8,7 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 import { useAudioPlaybackStore } from "@/store/use-audio-playback-store";
 import * as React from "react";
 
+import { MEDIA_QUERY } from "@/lib/constants";
 import { Button } from "@workspace/ui/components/button";
 import {
   Dialog,
@@ -92,7 +93,7 @@ const PlaybackSettingsForm = React.memo(function PlaybackSettingsForm({
 
 export function AudioSettingsButton() {
   const [open, setOpen] = React.useState(false);
-  const isDesktop = useMediaQuery("(min-width: 768px)");
+  const isDesktop = useMediaQuery(MEDIA_QUERY.MD);
 
   const playbackRate = useAudioPlaybackStore((s) => s.playbackRate);
   const setPlaybackRate = useAudioPlaybackStore((s) => s.setPlaybackRate);
