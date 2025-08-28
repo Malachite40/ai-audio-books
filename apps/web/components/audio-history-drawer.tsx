@@ -12,11 +12,6 @@ import {
   DrawerTitle,
   DrawerTrigger,
 } from "@workspace/ui/components/drawer";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@workspace/ui/components/tooltip";
 import { AudioHistory } from "./audio/audio-history";
 
 export type AudioHistoryDrawerProps = {};
@@ -25,16 +20,11 @@ export function AudioHistoryDrawer() {
   const { open, setOpen } = useAudioHistoryStore();
   return (
     <Drawer open={open} onOpenChange={setOpen}>
-      <Tooltip>
-        <DrawerTrigger asChild>
-          <TooltipTrigger asChild>
-            <Button type="button" variant="ghost">
-              History
-            </Button>
-          </TooltipTrigger>
-        </DrawerTrigger>
-        <TooltipContent>Audio History</TooltipContent>
-      </Tooltip>
+      <DrawerTrigger asChild>
+        <Button type="button" variant="ghost">
+          History
+        </Button>
+      </DrawerTrigger>
       <DrawerContent className="h-9/12">
         <DrawerHeader>
           <DrawerTitle>Audio History</DrawerTitle>
