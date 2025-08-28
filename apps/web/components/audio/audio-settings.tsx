@@ -4,7 +4,7 @@
 
 "use client";
 
-import { useMediaQuery } from "@/hooks/use-media-query"; // same pattern as example
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { useAudioPlaybackStore } from "@/store/use-audio-playback-store";
 import * as React from "react";
 
@@ -31,6 +31,65 @@ import { Label } from "@workspace/ui/components/label";
 import { Slider } from "@workspace/ui/components/slider";
 import { SettingsIcon } from "lucide-react";
 
+// ── HOISTED OUTSIDE so it doesn't remount on every parent re-render ──────────
+type PlaybackSettingsFormProps = {
+  playbackRate: number;
+  applyRate: (v: number) => void;
+  className?: string;
+};
+
+const PlaybackSettingsForm = React.memo(function PlaybackSettingsForm({
+  playbackRate,
+  applyRate,
+  className = "",
+}: PlaybackSettingsFormProps) {
+  return (
+    <form className={`grid items-start gap-4 ${className}`}>
+      <div className="flex items-center justify-between">
+        <Label htmlFor="playback-speed" className="text-sm">
+          Speed
+        </Label>
+        <div
+          className="text-sm tabular-nums"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {playbackRate.toFixed(2)}×
+        </div>
+      </div>
+
+      <Slider
+        id="playback-speed"
+        value={[playbackRate]}
+        onValueChange={([v]) => {
+          if (typeof v === "number") applyRate(v);
+        }}
+        min={0.5}
+        max={2}
+        step={0.05}
+        aria-label="Playback speed"
+      />
+
+      {/* Quick presets */}
+      <div className="mt-2 flex flex-wrap gap-2 justify-between">
+        {[0.75, 1, 1.25, 1.5, 1.75, 2].map((v) => (
+          <Button
+            key={v}
+            type="button" // ← prevent implicit submit
+            variant={
+              Math.abs(playbackRate - v) < 0.0001 ? "default" : "outline"
+            }
+            onClick={() => applyRate(v)}
+            aria-pressed={Math.abs(playbackRate - v) < 0.0001}
+          >
+            {v}
+          </Button>
+        ))}
+      </div>
+    </form>
+  );
+});
+
 export function AudioSettingsButton() {
   const [open, setOpen] = React.useState(false);
   const isDesktop = useMediaQuery("(min-width: 768px)");
@@ -54,51 +113,6 @@ export function AudioSettingsButton() {
     </Button>
   );
 
-  function PlaybackSettingsForm({ className = "" }: { className?: string }) {
-    return (
-      <form className={`grid items-start gap-4 ${className}`}>
-        <div className="flex items-center justify-between">
-          <Label htmlFor="playback-speed" className="text-sm">
-            Speed
-          </Label>
-          <div
-            className="text-sm tabular-nums"
-            aria-live="polite"
-            aria-atomic="true"
-          >
-            {playbackRate.toFixed(2)}×
-          </div>
-        </div>
-
-        <Slider
-          id="playback-speed"
-          value={[playbackRate]}
-          onValueChange={([v]) => {
-            if (typeof v === "number") applyRate(v);
-          }}
-          min={0.5}
-          max={2}
-          step={0.05}
-          aria-label="Playback speed"
-        />
-
-        {/* Quick presets */}
-        <div className="mt-2 flex flex-wrap gap-2 justify-between">
-          {[0.75, 1, 1.25, 1.5, 1.75, 2].map((v) => (
-            <Button
-              key={v}
-              variant={playbackRate === v ? "default" : "outline"}
-              onClick={() => applyRate(v)}
-              aria-pressed={playbackRate === v}
-            >
-              {v}
-            </Button>
-          ))}
-        </div>
-      </form>
-    );
-  }
-
   if (isDesktop) {
     // Desktop: Dialog
     return (
@@ -112,7 +126,10 @@ export function AudioSettingsButton() {
               automatically.
             </DialogDescription>
           </DialogHeader>
-          <PlaybackSettingsForm />
+          <PlaybackSettingsForm
+            playbackRate={playbackRate}
+            applyRate={applyRate}
+          />
         </DialogContent>
       </Dialog>
     );
@@ -122,7 +139,6 @@ export function AudioSettingsButton() {
   return (
     <Drawer open={open} onOpenChange={setOpen}>
       <DrawerTrigger asChild>{Trigger}</DrawerTrigger>
-
       <DrawerContent>
         <DrawerHeader className="text-left">
           <DrawerTitle>Playback settings</DrawerTitle>
@@ -131,7 +147,11 @@ export function AudioSettingsButton() {
           </DrawerDescription>
         </DrawerHeader>
 
-        <PlaybackSettingsForm className="px-4" />
+        <PlaybackSettingsForm
+          playbackRate={playbackRate}
+          applyRate={applyRate}
+          className="px-4"
+        />
 
         <DrawerFooter className="pt-2">
           <DrawerClose asChild>
