@@ -112,26 +112,36 @@ const TestClient = () => {
         }}
       />
       <div className="container mx-auto p-4 flex flex-col justify-center max-w-5xl">
-        {!audioFile.data?.audioFile && selectedAudioFileId.length > 0 && (
-          <div className="mb-4 w-full justify-center flex items-center flex-col">
-            <Logo className="size-30" />
-            <p className="mb-4">No audio file found.</p>
-
-            {/* Create new audio file */}
-            <Button
-              className="flex gap-2"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setSelectedAudioFileId("");
-              }}
-              variant={"outline"}
-            >
-              <AudioLinesIcon className="h-4 w-4" />
-              Create New Audio File
-            </Button>
+        {/* Loading State */}
+        {audioFile.isLoading && selectedAudioFileId.length > 0 && (
+          <div className="mb-4 w-full gap-4 text-primary justify-center flex items-center flex-col animate-pulse duration-100">
+            <p className="mb-4">Loading...</p>
           </div>
         )}
+
+        {!audioFile.isLoading &&
+          !audioFile.data?.audioFile &&
+          selectedAudioFileId.length > 0 && (
+            <div className="mb-4 w-full justify-center flex items-center flex-col">
+              <Logo className="size-30" />
+              <p className="mb-4">No audio file found.</p>
+
+              {/* Create new audio file */}
+              <Button
+                className="flex gap-2"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setSelectedAudioFileId("");
+                }}
+                variant={"outline"}
+              >
+                <AudioLinesIcon className="h-4 w-4" />
+                Create New Audio File
+              </Button>
+            </div>
+          )}
+
         <Form {...form}>
           <form className={cn(selectedAudioFileId.length > 0 ? "hidden" : "")}>
             {/* File name */}

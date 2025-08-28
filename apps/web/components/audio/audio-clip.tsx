@@ -23,7 +23,7 @@ import {
   FormMessage,
 } from "@workspace/ui/components/form";
 import { Input } from "@workspace/ui/components/input";
-import { DownloadIcon, Loader2, PauseIcon, PlayIcon } from "lucide-react/icons";
+import { DownloadIcon, PauseIcon, PlayIcon } from "lucide-react/icons";
 import { useForm } from "react-hook-form";
 
 import { authClient } from "@/lib/auth-client";
@@ -1083,8 +1083,8 @@ export const AudioClip = ({ af }: AudioClipProps) => {
       <h3 className="text-lg font-semibold mb-4">{af.name}</h3>
 
       {/* Unified controls (one button and one slider for both modes) */}
-      <div className="flex items-center justify-between gap-3 mb-2">
-        <div className="flex items-center gap-3">
+      <div className="flex-row-reverse sm:flex-row flex items-center justify-between gap-3 mb-2">
+        <div className="flex-row-reverse sm:flex-row flex items-center gap-3">
           <Button
             onPointerDown={() => void ensureAudioUnlocked()}
             onTouchStart={() => void ensureAudioUnlocked()}
@@ -1092,7 +1092,18 @@ export const AudioClip = ({ af }: AudioClipProps) => {
             disabled={!canPlay || stitchedIsBuilding}
           >
             {stitchedIsBuilding ? (
-              <Loader2 className="size-4 animate-spin" />
+              (() => {
+                // Show loading percentage of audio files loaded
+                const total = chunks.length;
+                const loaded = wavFilesQuery.data?.length || 0;
+                const percent =
+                  total > 0 ? Math.round((loaded / total) * 100) : 0;
+                return (
+                  <span className="text-xs tabular-nums min-w-[2.5em] inline-block">
+                    {percent}%
+                  </span>
+                );
+              })()
             ) : isPlaying ? (
               <PauseIcon className="size-4" />
             ) : (

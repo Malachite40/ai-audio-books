@@ -14,25 +14,20 @@ import { AudioClipProps } from "./audio-clip";
  * Usage: replace <AudioClip af={...} /> with <AudioClipSmart af={...} />
  */
 export default function AudioClipSmart({ af }: AudioClipProps) {
-  const [isIOSMobileSafari, setIsIOSMobileSafari] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const [showNotice, setShowNotice] = useState(true);
 
-  // Detect iOS Mobile Safari (all iOS browsers are WebKit; exclude Chrome/Edge/Firefox shells)
+  // Detect any mobile device via user agent
   useEffect(() => {
     if (typeof navigator === "undefined") return;
     const ua = navigator.userAgent || "";
-    const isIOS =
-      /iPad|iPhone|iPod/.test(ua) ||
-      (navigator.platform === "MacIntel" &&
-        (navigator as any).maxTouchPoints > 1); // iPadOS
-    const isWebKit = /AppleWebKit/.test(ua);
-    const isAltShell = /CriOS|EdgiOS|FxiOS|OPR|OPiOS/.test(ua); // Chrome/Edge/Firefox/Opera on iOS (still WebKit, but keep copy generic)
-    setIsIOSMobileSafari(isIOS && isWebKit && !isAltShell);
+    const isMobileDevice = /Mobi|Android/i.test(ua);
+    setIsMobile(isMobileDevice);
   }, []);
 
   return (
     <>
-      {isIOSMobileSafari && showNotice && (
+      {isMobile && showNotice && (
         <div className="space-y-3">
           <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-900 mb-6">
             <div className="font-semibold mb-1">
