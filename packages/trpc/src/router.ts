@@ -5,6 +5,8 @@ import { stripeRouter } from "./routers/stripe";
 import { subscriptionsRouter } from "./routers/subscriptions";
 import { usersRouter } from "./routers/users";
 import { workersRouter } from "./routers/workers";
+
+import { supportRouter } from "./routers/support";
 import { createCallerFactory, createTRPCRouter } from "./trpc";
 
 export const appRouter = createTRPCRouter({
@@ -15,6 +17,7 @@ export const appRouter = createTRPCRouter({
   credits: creditsRouter,
   stripe: stripeRouter,
   subscriptions: subscriptionsRouter,
+  support: supportRouter,
 });
 
 // export type definition of API

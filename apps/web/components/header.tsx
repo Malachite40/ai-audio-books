@@ -16,7 +16,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
-import { DollarSign, LogOut } from "lucide-react";
+import { DollarSign, HelpCircleIcon, LogOut } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useState } from "react";
@@ -99,6 +99,10 @@ export function Header(props: HeaderProps) {
                         </DropdownMenuItem>
                       </Link>
                     )}
+                    <DropdownMenuItem onSelect={() => router.push("/support")}>
+                      <HelpCircleIcon className="size-4" />
+                      <span>Support</span>
+                    </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={async () => {
                         await authClient.signOut();
