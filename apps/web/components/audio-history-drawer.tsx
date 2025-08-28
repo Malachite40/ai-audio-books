@@ -1,6 +1,6 @@
 "use client";
 
-import { useAudioHistoryStore } from "@/store/audio-history-store";
+import { useAudioHistoryStore } from "@/store/use-audio-history-store";
 import { Button } from "@workspace/ui/components/button";
 import {
   Drawer,

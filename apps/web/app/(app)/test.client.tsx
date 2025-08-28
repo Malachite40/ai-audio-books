@@ -3,7 +3,7 @@ import AudioClip from "@/components/audio/audio-clip";
 import { ConfirmAudioVisibility } from "@/components/confirm-audio-visibility";
 import ExampleAudioToggle from "@/components/example-audio-toggle";
 import Logo from "@/components/svgs/logo";
-import { useAudioHistoryStore } from "@/store/audio-history-store";
+import { useAudioHistoryStore } from "@/store/use-audio-history-store";
 import { api } from "@/trpc/react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button, buttonVariants } from "@workspace/ui/components/button";

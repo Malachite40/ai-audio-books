@@ -27,6 +27,7 @@ import { DownloadIcon, PauseIcon, PlayIcon } from "lucide-react/icons";
 import { useForm } from "react-hook-form";
 
 import { authClient } from "@/lib/auth-client";
+import { useAudioPlaybackStore } from "@/store/use-audio-playback-store";
 import { AudioFile } from "@workspace/database";
 import {
   Tooltip,
@@ -34,6 +35,7 @@ import {
   TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
 import CopyButton from "../copy-button";
+import { AudioSettingsButton } from "./audio-settings";
 import AudioClipSmart from "./audio-smart-clip";
 
 export interface AudioClipProps {
@@ -101,16 +103,16 @@ export const AudioClip = ({ af }: AudioClipProps) => {
   const nextStartRef = useRef<number>(0);
 
   // Scheduler (JIT) refs
-  const LOOKAHEAD_S = 3; // seconds to keep scheduled ahead
+  const LOOKAHEAD_S = 3; // seconds to keep scheduled ahead (wall-clock)
   const SCHED_INTERVAL_MS = 50; // scheduler tick cadence
   const schedulerTimerRef = useRef<number | null>(null);
   const scheduleIdxRef = useRef(0); // index into timeline
-  const scheduleLocalRef = useRef(0); // seconds into current segment
+  const scheduleLocalRef = useRef(0); // seconds into current segment (logical)
 
   // Bookkeeping
   const isPlayingRef = useRef(false);
-  const startRef = useRef<number>(0); // ctx.currentTime when we hit Play
-  const pausedOffset = useRef<number>(0); // where in the timeline we are when paused
+  const startRef = useRef<number>(0); // ctx.currentTime when we hit Play (wall-clock base)
+  const pausedOffset = useRef<number>(0); // where in the timeline we are when paused (logical seconds)
 
   // Decoded buffers by sequence (shared by both modes)
   const buffersRef = useRef<Map<number, AudioBuffer>>(new Map());
@@ -120,16 +122,16 @@ export const AudioClip = ({ af }: AudioClipProps) => {
     {
       sequence: number;
       buffer: AudioBuffer;
-      start: number; // inclusive
-      end: number; // exclusive
+      start: number; // inclusive (logical)
+      end: number; // exclusive (logical)
       padStartSec: number;
       padEndSec: number;
     }[]
   >([]);
 
   // UI state (unified)
-  const [bufferedDuration, setBufferedDuration] = useState(0); // scheduler timeline duration
-  const [currentTime, setCurrentTime] = useState(0); // unified current time (stitched or scheduler)
+  const [bufferedDuration, setBufferedDuration] = useState(0); // scheduler timeline duration (logical)
+  const [currentTime, setCurrentTime] = useState(0); // unified current time (logical)
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioFileVersion, setAudioFileVersion] = useState(0);
 
@@ -537,30 +539,32 @@ export const AudioClip = ({ af }: AudioClipProps) => {
     const ctx = audioRef.current!;
     const tl = timelineRef.current;
     if (!tl.length) return;
+    const rate = Math.max(0.01, playbackRateRef.current || 1);
     let i = scheduleIdxRef.current;
-    let local = scheduleLocalRef.current;
-    let when = nextStartRef.current || ctx.currentTime;
+    let local = scheduleLocalRef.current; // logical seconds within current segment
+    let when = nextStartRef.current || ctx.currentTime; // wall-clock
     const horizon = ctx.currentTime + LOOKAHEAD_S;
     while (when < horizon && i < tl.length) {
       const seg = tl[i]!;
-      const total = seg.padStartSec + seg.buffer.duration + seg.padEndSec;
+      const total = seg.padStartSec + seg.buffer.duration + seg.padEndSec; // logical
       if (local < seg.padStartSec) {
-        const wait = seg.padStartSec - local;
-        when += wait;
+        const wait = seg.padStartSec - local; // logical
+        when += wait / rate; // wall-clock stretch/compress
         local += wait;
       } else if (local < seg.padStartSec + seg.buffer.duration) {
         const offsetInBuf = local - seg.padStartSec;
         const src = mkNode(ctx, seg.buffer);
         when = Math.max(when, ctx.currentTime + 0.02);
         try {
+          src.playbackRate.value = rate;
           src.start(when, offsetInBuf);
         } catch {}
-        const playDur = seg.buffer.duration - offsetInBuf;
-        when += playDur;
+        const playDur = seg.buffer.duration - offsetInBuf; // logical
+        when += playDur / rate; // wall-clock
         local += playDur;
       } else if (local < total) {
-        const wait = total - local;
-        when += wait;
+        const wait = total - local; // logical
+        when += wait / rate; // wall-clock
         local += wait;
       }
       if (local >= total - 1e-6) {
@@ -602,8 +606,10 @@ export const AudioClip = ({ af }: AudioClipProps) => {
 
   const handlePauseScheduler = () => {
     if (!audioRef.current) return;
+    const rate = Math.max(0.01, playbackRateRef.current || 1);
     const elapsed =
-      audioRef.current.currentTime - startRef.current + pausedOffset.current;
+      (audioRef.current.currentTime - startRef.current) * rate +
+      pausedOffset.current;
     pausedOffset.current = Math.min(elapsed, bufferedDuration);
     setCurrentTime(pausedOffset.current);
     setIsPlaying(false);
@@ -633,9 +639,9 @@ export const AudioClip = ({ af }: AudioClipProps) => {
         audioRef.current &&
         playbackModeRef.current === "scheduler"
       ) {
+        const rate = Math.max(0.01, playbackRateRef.current || 1);
         const elapsed =
-          audioRef.current.currentTime -
-          startRef.current +
+          (audioRef.current.currentTime - startRef.current) * rate +
           pausedOffset.current;
         if (t - last >= TICK_MS) {
           if (elapsed < bufferedDuration) setCurrentTime(elapsed);
@@ -791,8 +797,45 @@ export const AudioClip = ({ af }: AudioClipProps) => {
     stitchedDuration || expectedDuration || 0;
 
   // ────────────────────────────────────────────────────────────────────────────
-  //  UNIFIED PLAY/PAUSE
+  //  PLAYBACK RATE (Zustand persisted) + UNIFIED PLAY/PAUSE
   // ────────────────────────────────────────────────────────────────────────────
+
+  const playbackRate = useAudioPlaybackStore((s) => s.playbackRate);
+  const setPlaybackRate = useAudioPlaybackStore((s) => s.setPlaybackRate);
+  const playbackRateRef = useRef(playbackRate);
+  const prevPlaybackRateRef = useRef(playbackRate);
+
+  useEffect(() => {
+    playbackRateRef.current = playbackRate;
+
+    // apply to stitched element immediately
+    if (audioElRef.current) {
+      try {
+        audioElRef.current.playbackRate = playbackRate;
+      } catch {}
+    }
+
+    // if scheduler is playing, re-schedule at same logical position
+    if (
+      isPlayingRef.current &&
+      playbackModeRef.current === "scheduler" &&
+      audioRef.current
+    ) {
+      const ctx = audioRef.current;
+      const oldRate = prevPlaybackRateRef.current || 1;
+      const wall = ctx.currentTime - startRef.current;
+      const elapsed = pausedOffset.current + wall * oldRate; // logical timeline seconds
+      stopActiveNodes();
+      stopScheduler();
+      pausedOffset.current = clampPlayable(elapsed, bufferedDuration);
+      setCurrentTime(pausedOffset.current);
+      startRef.current = ctx.currentTime;
+      scheduleFromScheduler(pausedOffset.current);
+    }
+
+    prevPlaybackRateRef.current = playbackRate;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playbackRate]);
 
   const shouldUseStitched = () =>
     isSmallScreen && allChunksProcessed && buffersRef.current.size > 0;
@@ -823,6 +866,10 @@ export const AudioClip = ({ af }: AudioClipProps) => {
     const startAt = clampPlayable(fromSec, stitchedDisplayDuration());
     try {
       el.currentTime = startAt;
+    } catch {}
+    // apply speed to element
+    try {
+      el.playbackRate = Math.max(0.01, playbackRateRef.current || 1);
     } catch {}
     pausedOffset.current = el.currentTime || startAt;
     setCurrentTime(pausedOffset.current);
@@ -1110,6 +1157,12 @@ export const AudioClip = ({ af }: AudioClipProps) => {
               <PlayIcon className="size-4" />
             )}
           </Button>
+
+          {/* Playback speed */}
+          <div className="flex items-center gap-2">
+            <AudioSettingsButton />
+          </div>
+
           <span className="tabular-nums">
             {formatTime(currentTime)} / {formatTime(displayDuration)}
           </span>
@@ -1124,7 +1177,7 @@ export const AudioClip = ({ af }: AudioClipProps) => {
                   0
                 );
                 const cost = ((totalChars * 10) / 1000000).toFixed(4);
-                return `${totalChars} characters - $${cost}`;
+                return `${totalChars} chars - $${cost}`;
               })()}
             </span>
           )}

@@ -1,6 +1,6 @@
 import { useAreYouSure } from "@/hooks/use-are-you-sure";
 import { usePagination } from "@/hooks/use-pagination";
-import { useAudioHistoryStore } from "@/store/audio-history-store";
+import { useAudioHistoryStore } from "@/store/use-audio-history-store";
 import { api } from "@/trpc/react";
 import { Button } from "@workspace/ui/components/button";
 import {
