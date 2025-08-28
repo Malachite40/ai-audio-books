@@ -1,11 +1,13 @@
 import z from "zod";
 import { createTRPCRouter, publicProcedure } from "../trpc";
 import { audioChunkRouter } from "./audioChunk";
+import { audioFileSettingsRouter } from "./audioFileSettings";
 import { inworldRouter } from "./inworld";
 
 export const audioRouter = createTRPCRouter({
   inworld: inworldRouter,
   chunks: audioChunkRouter,
+  settings: audioFileSettingsRouter,
   fetchAll: publicProcedure
     .input(
       z.object({
@@ -81,6 +83,9 @@ export const audioRouter = createTRPCRouter({
         where: {
           id: input.id,
           ownerId: ctx.user?.id ?? "",
+        },
+        include: {
+          AudioFileSettings: true,
         },
       });
       return { audioFile };

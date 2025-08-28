@@ -27,13 +27,14 @@ model User {
     sessions         Session[]
     accounts         Account[]
 
-    role         String?
-    banned       Boolean?
-    banReason    String?
-    banExpires   DateTime?
-    Credits      Credits?
-    AudioFile    AudioFile[]
-    Subscription Subscriptions?
+    role              String?
+    banned            Boolean?
+    banReason         String?
+    banExpires        DateTime?
+    Credits           Credits?
+    AudioFile         AudioFile[]
+    Subscription      Subscriptions?
+    AudioFileSettings AudioFileSettings[]
 
     @@unique([email])
     @@index([stripeCustomerId])
@@ -108,19 +109,20 @@ enum AudioFileStatus {
 }
 
 model AudioFile {
-    id          String          @id @default(uuid())
-    ownerId     String?
-    name        String          @default("")
-    owner       User?           @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-    status      AudioFileStatus @default(PENDING)
-    speakerId   String
-    speaker     Speaker         @relation(fields: [speakerId], references: [id], onDelete: Cascade)
-    public      Boolean         @default(false)
-    lang        String          @default("en")
-    createdAt   DateTime        @default(now()) @db.Timestamptz()
-    updatedAt   DateTime        @default(now()) @updatedAt @db.Timestamptz()
-    deletedAt   DateTime?       @db.Timestamptz()
-    AudioChunks AudioChunk[]
+    id                String              @id @default(uuid())
+    ownerId           String?
+    name              String              @default("")
+    owner             User?               @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+    status            AudioFileStatus     @default(PENDING)
+    speakerId         String
+    speaker           Speaker             @relation(fields: [speakerId], references: [id], onDelete: Cascade)
+    public            Boolean             @default(false)
+    lang              String              @default("en")
+    createdAt         DateTime            @default(now()) @db.Timestamptz()
+    updatedAt         DateTime            @default(now()) @updatedAt @db.Timestamptz()
+    deletedAt         DateTime?           @db.Timestamptz()
+    AudioChunks       AudioChunk[]
+    AudioFileSettings AudioFileSettings[]
 }
 
 enum AudioChunkStatus {
@@ -169,4 +171,16 @@ model Credits {
     amount    Int
     createdAt DateTime @default(now()) @db.Timestamptz()
     updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz()
+}
+
+model AudioFileSettings {
+    audioFileId String
+    audioFile   AudioFile @relation(fields: [audioFileId], references: [id], onDelete: Cascade)
+    currentTime Float     @default(1.0)
+    userId      String
+    user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+    createdAt   DateTime  @default(now()) @db.Timestamptz()
+    updatedAt   DateTime  @default(now()) @updatedAt @db.Timestamptz()
+
+    @@id([audioFileId, userId])
 }
