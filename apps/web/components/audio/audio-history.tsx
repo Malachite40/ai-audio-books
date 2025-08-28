@@ -132,9 +132,7 @@ export const AudioHistory = ({}: AudioHistoryProps) => {
                       aria-label="Delete audio file"
                       disabled={isDeleting}
                       variant={
-                        selectedAudioFileId === af.id
-                          ? "secondary"
-                          : "destructive"
+                        selectedAudioFileId === af.id ? "secondary" : "ghost"
                       }
                       onClick={(e) => {
                         e.preventDefault();

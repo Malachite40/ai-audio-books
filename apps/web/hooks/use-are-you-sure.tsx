@@ -1,16 +1,23 @@
+"use client";
+
+import { useMediaQuery } from "@/hooks/use-media-query";
+import { Button } from "@workspace/ui/components/button";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@workspace/ui/components/alert-dialog";
-import { buttonVariants } from "@workspace/ui/components/button";
-import { cn } from "@workspace/ui/lib/utils";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@workspace/ui/components/dialog";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerTrigger,
+} from "@workspace/ui/components/drawer";
 import { useState } from "react";
 
 export type useAreYouSureProps<T> = {
@@ -28,7 +35,7 @@ export type AreYouSureProps = {
 export function useAreYouSure<T>({
   initialObject,
 }: useAreYouSureProps<T> = {}) {
-  const [showAreYouSure, setShowAreYouSure] = useState(false);
+  const [open, setOpen] = useState(false);
   const [object, setObject] = useState<T | undefined>(initialObject);
 
   function AreYouSure({
@@ -36,49 +43,93 @@ export function useAreYouSure<T>({
     description = "This action cannot be undone.",
     onConfirm,
     onCancel,
+    isPending,
   }: AreYouSureProps) {
+    const isDesktop = useMediaQuery("(min-width: 768px)");
+    const handleConfirm = async () => {
+      if (onConfirm) await onConfirm();
+      setOpen(false);
+    };
+    const handleCancel = async () => {
+      if (onCancel) await onCancel();
+      setOpen(false);
+    };
+    if (isDesktop) {
+      return (
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogTrigger asChild>
+            <div className="hidden" />
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>{title}</DialogTitle>
+              <DialogDescription>{description}</DialogDescription>
+            </DialogHeader>
+            <div className="flex justify-end gap-2 mt-4">
+              {onCancel && (
+                <Button
+                  className="flex-1"
+                  variant="outline"
+                  onClick={handleCancel}
+                >
+                  Cancel
+                </Button>
+              )}
+              {onConfirm && (
+                <Button
+                  className="flex-1"
+                  variant="destructive"
+                  onClick={handleConfirm}
+                  disabled={isPending}
+                >
+                  Confirm
+                </Button>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+      );
+    }
     return (
-      <AlertDialog open={showAreYouSure} onOpenChange={setShowAreYouSure}>
-        <AlertDialogTrigger asChild>
-          <div className="hidden"></div>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{title}</AlertDialogTitle>
-            <AlertDialogDescription>{description}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
+      <Drawer open={open} onOpenChange={setOpen}>
+        <DrawerTrigger asChild>
+          <div className="hidden" />
+        </DrawerTrigger>
+        <DrawerContent>
+          <DrawerHeader>
+            <DrawerTitle>{title}</DrawerTitle>
+            <DrawerDescription>{description}</DrawerDescription>
+          </DrawerHeader>
+          <div className="flex justify-end gap-2 mt-4 p-4">
             {onCancel && (
-              <AlertDialogCancel
-                onClick={async () => {
-                  onCancel();
-                  setShowAreYouSure(false);
-                }}
+              <Button
+                className="flex-1"
+                variant="outline"
+                onClick={handleCancel}
               >
                 Cancel
-              </AlertDialogCancel>
+              </Button>
             )}
             {onConfirm && (
-              <AlertDialogAction
-                className={cn(buttonVariants({ variant: "destructive" }))}
-                onClick={async () => {
-                  onConfirm();
-                  setShowAreYouSure(false);
-                }}
+              <Button
+                className="flex-1"
+                variant="destructive"
+                onClick={handleConfirm}
+                disabled={isPending}
               >
-                Continue
-              </AlertDialogAction>
+                Confirm
+              </Button>
             )}
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+          </div>
+        </DrawerContent>
+      </Drawer>
     );
   }
 
   return {
     AreYouSure,
-    setShowAreYouSure,
-    showAreYouSure,
+    setShowAreYouSure: setOpen,
+    showAreYouSure: open,
     setObject,
     object,
   };
