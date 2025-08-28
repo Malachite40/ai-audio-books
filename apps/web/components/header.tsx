@@ -16,12 +16,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
-import {
-  AudioLinesIcon,
-  CircleArrowUp,
-  DollarSign,
-  LogOut,
-} from "lucide-react";
+import { DollarSign, LogOut } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useState } from "react";
@@ -44,7 +39,7 @@ export function Header(props: HeaderProps) {
       )}
       <div className="h-12 z-1 flex w-full justify-center items-center border-b border-border top-0 sticky bg-background ">
         <div className="flex w-full justify-between items-center px-2 md:px-4 ">
-          <Link href={"/"} className="flex gap-2 justify-center items-center">
+          <Link href={"/"} className="flex gap-px justify-center items-center">
             <Logo className="size-10" />
             {userData && (
               <span className="font-semibold hidden md:flex">
@@ -53,37 +48,39 @@ export function Header(props: HeaderProps) {
             )}
           </Link>
           <div className=""></div>
-          <div className="flex gap-2 justify-center items-center">
+          <div className="flex gap-1 justify-center items-center">
             {/* credits */}
 
             {(!subscriptionData?.subscription ||
               subscriptionData?.subscription?.plan === "FREE") && (
-              <Button
-                onClick={() => {
-                  setShowPricing(true);
-                }}
-                variant={"outline"}
-                className="flex gap-2"
-              >
-                {!subscriptionData?.subscription ? (
-                  <>Pricing</>
-                ) : (
-                  <>
-                    <CircleArrowUp className="h-4 w-4" />
-                    Upgrade
-                  </>
-                )}
-              </Button>
+              <Fragment>
+                <Button
+                  onClick={() => {
+                    setShowPricing(true);
+                  }}
+                  variant={"ghost"}
+                  className="flex gap-2"
+                >
+                  {!subscriptionData?.subscription ? (
+                    <>Pricing</>
+                  ) : (
+                    <span className="px-3 py-1 rounded-md drop-shadow-[0_0_10px_rgba(110,85,207,1)] text-primary">
+                      Upgrade
+                    </span>
+                  )}
+                </Button>
+                <Divider />
+              </Fragment>
             )}
 
             {userData?.user ? (
               <Fragment>
                 <AudioHistoryDrawer />
+                <Divider />
                 <Link
                   href={"/"}
-                  className={buttonVariants({ variant: "outline" })}
+                  className={buttonVariants({ variant: "ghost" })}
                 >
-                  <AudioLinesIcon className="h-4 w-4" />
                   Create
                 </Link>
                 <DropdownMenu>
@@ -124,7 +121,7 @@ export function Header(props: HeaderProps) {
                     callbackURL: window.location.href,
                   });
                 }}
-                variant={"outline"}
+                variant={"ghost"}
                 className="flex items-center gap-2"
               >
                 <RiGoogleFill className="opacity-60" size={16} />
@@ -136,4 +133,8 @@ export function Header(props: HeaderProps) {
       </div>
     </>
   );
+}
+
+function Divider() {
+  return <div className="h-6 w-px bg-border self-center" />;
 }

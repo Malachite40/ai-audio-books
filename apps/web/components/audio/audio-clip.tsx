@@ -241,7 +241,7 @@ export const AudioClip = ({ af }: AudioClipProps) => {
         const allDone =
           chunks.length > 0 &&
           chunks.every((c: any) => c.status === "PROCESSED");
-        return allDone ? false : 2000;
+        return allDone ? false : 500;
       },
     }
   );

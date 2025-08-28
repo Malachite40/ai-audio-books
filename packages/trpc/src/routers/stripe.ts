@@ -9,6 +9,7 @@ export const stripeRouter = createTRPCRouter({
     .input(
       z.object({
         product: z.enum(["basic", "pro"]),
+        cancel_url: z.string().url(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -33,7 +34,7 @@ export const stripeRouter = createTRPCRouter({
           },
         ],
         success_url: `${env.NEXT_PUBLIC_BASE_URL}/subscribe/success`,
-        cancel_url: `${env.NEXT_PUBLIC_BASE_URL}/pricing`,
+        cancel_url: input.cancel_url,
       });
 
       if (!session.url) {

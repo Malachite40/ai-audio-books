@@ -17,7 +17,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
-import { HistoryIcon } from "lucide-react";
 import { AudioHistory } from "./audio/audio-history";
 
 export type AudioHistoryDrawerProps = {};
@@ -29,8 +28,8 @@ export function AudioHistoryDrawer() {
       <Tooltip>
         <DrawerTrigger asChild>
           <TooltipTrigger asChild>
-            <Button type="button" variant="outline" size="icon">
-              <HistoryIcon className="h-4 w-4" />
+            <Button type="button" variant="ghost">
+              History
             </Button>
           </TooltipTrigger>
         </DrawerTrigger>

@@ -1,7 +1,12 @@
 "use client";
+import AudioClip from "@/components/audio/audio-clip";
+import { ConfirmAudioVisibility } from "@/components/confirm-audio-visibility";
+import ExampleAudioToggle from "@/components/example-audio-toggle";
+import Logo from "@/components/svgs/logo";
+import { useAudioHistoryStore } from "@/store/audio-history-store";
 import { api } from "@/trpc/react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button } from "@workspace/ui/components/button";
+import { Button, buttonVariants } from "@workspace/ui/components/button";
 import {
   Form,
   FormControl,
@@ -10,13 +15,6 @@ import {
   FormLabel,
   FormMessage,
 } from "@workspace/ui/components/form";
-import { Textarea } from "@workspace/ui/components/textarea";
-
-import AudioClip from "@/components/audio/audio-clip";
-import { ConfirmAudioVisibility } from "@/components/confirm-audio-visibility";
-import ExampleAudioToggle from "@/components/example-audio-toggle";
-import Logo from "@/components/svgs/logo";
-import { useAudioHistoryStore } from "@/store/audio-history-store";
 import { Input } from "@workspace/ui/components/input";
 import {
   Select,
@@ -25,13 +23,33 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@workspace/ui/components/select";
+import { Textarea } from "@workspace/ui/components/textarea";
 import { cn } from "@workspace/ui/lib/utils";
 import { AudioLinesIcon } from "lucide-react";
+import Link from "next/link";
 import { parseAsString, useQueryState } from "nuqs";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
+import { authClient } from "@/lib/auth-client";
+import { RiGoogleFill } from "@remixicon/react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@workspace/ui/components/dialog";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerHeader,
+  DrawerTitle,
+} from "@workspace/ui/components/drawer";
+
+// --- Schema ---
 const FormSchema = z.object({
   name: z.string().min(2, "Please enter a name.").max(100),
   speakerId: z.string().uuid().min(1, "Please select a speaker."),
@@ -39,8 +57,150 @@ const FormSchema = z.object({
   public: z.boolean(),
 });
 
+function useIsDesktop() {
+  const [isDesktop, setIsDesktop] = useState(false);
+  useEffect(() => {
+    const mql = window.matchMedia("(min-width: 768px)");
+    const onChange = (e: MediaQueryListEvent) => setIsDesktop(e.matches);
+    setIsDesktop(mql.matches);
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
+  return isDesktop;
+}
+
+function ResponsiveModal({
+  open,
+  onOpenChange,
+  title,
+  description,
+  children,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  title: string;
+  description?: string;
+  children?: React.ReactNode;
+}) {
+  const isDesktop = useIsDesktop();
+  if (isDesktop) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>{title}</DialogTitle>
+            {description ? (
+              <DialogDescription>{description}</DialogDescription>
+            ) : null}
+          </DialogHeader>
+          <div className="mt-2">{children}</div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+  return (
+    <Drawer open={open} onOpenChange={onOpenChange}>
+      <DrawerContent>
+        <DrawerHeader className="text-left">
+          <DrawerTitle>{title}</DrawerTitle>
+          {description ? (
+            <DrawerDescription>{description}</DrawerDescription>
+          ) : null}
+        </DrawerHeader>
+        <div className="px-4 pb-4">{children}</div>
+      </DrawerContent>
+    </Drawer>
+  );
+}
+
+function LoginRequiredDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
+  return (
+    <ResponsiveModal open={open} onOpenChange={onOpenChange} title="Login">
+      <div className="flex gap-2 mt-2">
+        <Button
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            authClient.signIn.social({
+              provider: "google",
+              callbackURL: window.location.href,
+            });
+          }}
+          variant={"outline"}
+          className="flex-1 items-center gap-2"
+        >
+          <RiGoogleFill className="opacity-60" size={16} />
+          Login with Google
+        </Button>
+      </div>
+    </ResponsiveModal>
+  );
+}
+
+function NotEnoughCreditsDialog({
+  open,
+  onOpenChange,
+  needed,
+  available,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  needed: number;
+  available: number;
+}) {
+  const deficit = Math.max(0, needed - available);
+  return (
+    <ResponsiveModal
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Not enough credits"
+      description="Your text exceeds your current credit balance."
+    >
+      <div className="space-y-3 text-sm">
+        <div className="flex items-center justify-between border-b border-border pb-2">
+          <span>Required (chars)</span>
+          <span className="font-medium">{needed.toLocaleString()}</span>
+        </div>
+        <div className="flex items-center justify-between border-b border-border pb-2">
+          <span>Available</span>
+          <span className="font-medium">{available.toLocaleString()}</span>
+        </div>
+        <div className="flex items-center justify-between ">
+          <span>Short by</span>
+          <span className="font-semibold">{deficit.toLocaleString()}</span>
+        </div>
+        <div className="pt-2 flex gap-2">
+          <Button
+            variant="outline"
+            className="flex-1"
+            onClick={() => onOpenChange(false)}
+          >
+            Close
+          </Button>
+          <Link
+            href="/billing"
+            className={buttonVariants({ className: "flex-1" })}
+          >
+            Go to billing
+          </Link>
+        </div>
+      </div>
+    </ResponsiveModal>
+  );
+}
+
+// --- Main component ---
 const TestClient = () => {
   const [showConfirm, setShowConfirm] = useState(false);
+  const [showLogin, setShowLogin] = useState(false);
+  const [showCredits, setShowCredits] = useState(false);
+
   const [selectedAudioFileId, setSelectedAudioFileId] = useQueryState(
     "id",
     parseAsString.withDefault("").withOptions({})
@@ -48,21 +208,28 @@ const TestClient = () => {
 
   const { setOpen: setAudioHistoryOpen } = useAudioHistoryStore();
 
+  // Auth state (assumes next-auth). If you don't use next-auth, swap this for your auth query.
+  const { data: userData } = authClient.useSession();
+  const isLoggedIn = !!userData?.session;
+
+  // Queries
   const audioFile = api.audio.fetch.useQuery({ id: selectedAudioFileId });
-
   const creditsQuery = api.credits.fetch.useQuery();
-
-  // Fetch speakers from the speakersRouter
   const { data: speakersData, isLoading: speakersLoading } =
     api.speakers.getAll.useQuery();
 
+  const [initialSpeakerId, setInitialSpeakerId] = useState<string | undefined>(
+    undefined
+  );
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
     defaultValues: {
       name: "",
       text: "",
       public: false,
+      speakerId: initialSpeakerId,
     },
+    mode: "onChange",
   });
 
   const createAudioFile = api.audio.inworld.create.useMutation({
@@ -75,19 +242,16 @@ const TestClient = () => {
     },
   });
 
-  const onSubmitOneShot = async (values: z.infer<typeof FormSchema>) => {
-    setShowConfirm(true);
-  };
-
-  // select speaker if none is selected after query loads
+  // Auto-select a speaker when loaded
   useEffect(() => {
-    if (!speakersData) return;
-    if (!speakersData.speakers.length) return;
-    if (form.getValues("speakerId")) return;
-    form.setValue("speakerId", speakersData.speakers[0]!.id);
-  }, [speakersData, form]);
+    if (!speakersData?.speakers?.length) return;
+    if (!initialSpeakerId) {
+      setInitialSpeakerId(speakersData.speakers[0]!.id);
+      form.setValue("speakerId", speakersData.speakers[0]!.id);
+    }
+  }, [speakersData, initialSpeakerId, form]);
 
-  // Watch selected speaker and derive example URL
+  // Derived values
   const selectedSpeakerId = form.watch("speakerId");
   const currentSpeaker = speakersData?.speakers.find(
     (s) => s.id === selectedSpeakerId
@@ -98,8 +262,45 @@ const TestClient = () => {
       ? currentSpeaker.exampleAudio
       : undefined;
 
+  const textValue = form.watch("text") ?? "";
+  const requiredCredits = textValue.length; // adjust if 1 char != 1 credit
+  const availableCredits = userData
+    ? (creditsQuery.data?.credits?.amount ?? 0)
+    : 9999999999;
+  const overCharacterLimit = requiredCredits > availableCredits;
+
+  // Clicking Create Audio:
+  const handleCreateClick = async () => {
+    // always validate the form first
+    const valid = await form.trigger();
+    if (!valid) return;
+
+    // (1) Not logged in → show login dialog
+    if (!isLoggedIn) {
+      setShowLogin(true);
+      return;
+    }
+    // (2) Over credit/character limit → show credits dialog
+    if (overCharacterLimit) {
+      setShowCredits(true);
+      return;
+    }
+    // (3) Otherwise continue to your existing confirmation flow
+    setShowConfirm(true);
+  };
+
   return (
     <>
+      {/* Popups */}
+      <LoginRequiredDialog open={showLogin} onOpenChange={setShowLogin} />
+      <NotEnoughCreditsDialog
+        open={showCredits}
+        onOpenChange={setShowCredits}
+        needed={requiredCredits}
+        available={availableCredits}
+      />
+
+      {/* Visibility confirmation stays as-is */}
       <ConfirmAudioVisibility
         open={showConfirm}
         onOpenChange={setShowConfirm}
@@ -107,10 +308,11 @@ const TestClient = () => {
         onConfirm={async ({ isPublic }) => {
           createAudioFile.mutate({
             ...form.getValues(),
-            public: isPublic,
+            public: !!isPublic,
           });
         }}
       />
+
       <div className="container mx-auto p-4 flex flex-col justify-center max-w-5xl">
         {/* Loading State */}
         {audioFile.isLoading && selectedAudioFileId.length > 0 && (
@@ -125,8 +327,6 @@ const TestClient = () => {
             <div className="mb-4 w-full justify-center flex items-center flex-col">
               <Logo className="size-30" />
               <p className="mb-4">No audio file found.</p>
-
-              {/* Create new audio file */}
               <Button
                 className="flex gap-2"
                 onClick={(e) => {
@@ -164,7 +364,7 @@ const TestClient = () => {
               <FormField
                 control={form.control}
                 name="speakerId"
-                render={({ field }) => (
+                render={({ field, fieldState }) => (
                   <FormItem>
                     <FormLabel>Speaker</FormLabel>
                     <FormControl>
@@ -202,7 +402,8 @@ const TestClient = () => {
                         </SelectContent>
                       </Select>
                     </FormControl>
-                    <FormMessage />
+                    {/* Only show error if field has been touched */}
+                    {fieldState.isTouched && <FormMessage />}
                   </FormItem>
                 )}
               />
@@ -215,23 +416,31 @@ const TestClient = () => {
               />
             </div>
 
-            {/* Text to synthesize */}
+            {/* Text */}
             <FormField
               control={form.control}
               name="text"
               render={({ field }) => (
                 <FormItem className="mb-4">
                   <FormLabel className="flex justify-between">
-                    <span>Text to Synthesize</span>
+                    <span>Text</span>
                     <span className="flex gap-2">
                       {(field.value.length > 0 ||
                         creditsQuery.data?.credits) && (
-                        <span className="text-xs text-muted-foreground">
+                        <span
+                          className={cn(
+                            "text-xs",
+                            overCharacterLimit
+                              ? "text-amber-600"
+                              : "text-muted-foreground"
+                          )}
+                        >
                           {field.value.length > 0
-                            ? `${field.value.length} Credits - $${((field.value.length * 10) / 1000000).toFixed(4)}`
+                            ? `${field.value.length} Credits - $${((field.value.length * 10) / 1_000_000).toFixed(4)}`
                             : "0"}
-                          {creditsQuery.data?.credits &&
-                            ` |  Remaining Credits: ${creditsQuery.data.credits.amount}`}
+                          {typeof availableCredits === "number" &&
+                            userData &&
+                            ` |  Remaining Credits: ${availableCredits}`}
                         </span>
                       )}
                     </span>
@@ -249,21 +458,21 @@ const TestClient = () => {
               )}
             />
 
-            <div className="flex space-x-4">
+            <div className="flex items-center gap-3">
               <Button
                 type="button"
-                onClick={form.handleSubmit(onSubmitOneShot)}
+                onClick={handleCreateClick}
+                // IMPORTANT: do NOT disable based on credit/character limit.
                 disabled={createAudioFile.isPending || !form.formState.isValid}
               >
-                {createAudioFile.isPending
-                  ? "Synthesizing..."
-                  : "Synthesize One-Shot"}
+                <AudioLinesIcon className="h-4 w-4" />
+                {createAudioFile.isPending ? "Synthesizing..." : "Create Audio"}
               </Button>
             </div>
           </form>
         </Form>
 
-        {audioFile.data && audioFile.data.audioFile && (
+        {audioFile.data?.audioFile && (
           <div className="flex flex-col gap-4">
             <AudioClip af={audioFile.data.audioFile} />
           </div>

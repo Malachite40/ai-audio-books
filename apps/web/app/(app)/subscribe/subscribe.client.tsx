@@ -227,6 +227,7 @@ export default function SubscribeClientPage({
                   }
                   stripeCreateCheckoutSessionMutation.mutate({
                     product: "basic",
+                    cancel_url: window.location.href,
                   });
                 }}
               >
@@ -310,6 +311,7 @@ export default function SubscribeClientPage({
                   }
                   stripeCreateCheckoutSessionMutation.mutate({
                     product: "pro",
+                    cancel_url: window.location.href,
                   });
                 }}
               >
