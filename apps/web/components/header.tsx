@@ -81,7 +81,7 @@ export function Header(props: HeaderProps) {
                   href={"/"}
                   className={buttonVariants({ variant: "ghost" })}
                 >
-                  Create
+                  New Audio
                 </Link>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
