@@ -253,6 +253,8 @@ export const AudioClip = ({ af }: AudioClipProps) => {
     }
   );
 
+  console.log(audioFileQuery.data);
+
   const chunks = useMemo(
     () =>
       (audioFileQuery.data?.audioFile.AudioChunks ?? [])
@@ -993,7 +995,6 @@ export const AudioClip = ({ af }: AudioClipProps) => {
   // ────────────────────────────────────────────────────────────────────────────
 
   const playbackRate = useAudioPlaybackStore((s) => s.playbackRate);
-  const setPlaybackRate = useAudioPlaybackStore((s) => s.setPlaybackRate);
   const playbackRateRef = useRef(playbackRate);
   const prevPlaybackRateRef = useRef(playbackRate);
 
