@@ -7,7 +7,6 @@ import { api } from "./src/trpc";
 
 const worker = createWorker(process.env.BROKER, process.env.REDIS_URL);
 
-worker.register(TASK_NAMES.processAudioChunk, api.workers.processAudioChunk);
 worker.register(
   TASK_NAMES.processAudioChunkWithInworld,
   api.workers.processAudioChunkWithInworld

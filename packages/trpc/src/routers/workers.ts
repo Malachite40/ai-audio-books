@@ -6,7 +6,6 @@ import { client } from "../queue/client";
 import { s3Client } from "../s3";
 import { TASK_NAMES } from "../server";
 import { createTRPCRouter, publicProcedure } from "../trpc";
-
 export const audioChunkInput = z.object({
   id: z.string().uuid(),
 });
@@ -16,172 +15,6 @@ export const processAudioFileInput = z.object({
 });
 
 export const workersRouter = createTRPCRouter({
-  processAudioChunk: publicProcedure
-    .input(audioChunkInput)
-    .mutation(async ({ ctx, input }) => {
-      console.log("Starting processing of audio chunk", input.id);
-      const audioChunk = await ctx.db.audioChunk.findUnique({
-        where: { id: input.id },
-        include: {
-          audioFile: {
-            include: {
-              _count: {
-                select: {
-                  AudioChunks: true,
-                },
-              },
-              speaker: true,
-            },
-          },
-        },
-      });
-      console.log("Retrieved audio chunk:", audioChunk);
-
-      if (!audioChunk) {
-        console.error("Audio chunk not found:", input.id);
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: `Audio chunk not found`,
-        });
-      }
-      const speaker = audioChunk.audioFile.speaker;
-      console.log("Speaker info:", speaker);
-      //@ts-ignore
-      console.log("speaker.speakerEmbedding:", speaker.speakerEmbedding.length);
-      //@ts-ignore
-      console.log("speaker.gptCondLatent:", speaker.gptCondLatent.length);
-
-      const chunkId = audioChunk.id;
-
-      console.log(`Updating audio chunk ${chunkId} status to PROCESSING`);
-      await ctx.db.audioChunk.update({
-        where: { id: audioChunk.id },
-        data: { status: "PROCESSING" },
-      });
-      console.log("Audio chunk status updated to PROCESSING.");
-
-      let resp: Response;
-      try {
-        console.log("Sending request to TTS server...");
-        resp = await fetch(`${env.XTTS_API_URL}/tts`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text: audioChunk.text,
-            speaker_embedding: speaker!.speakerEmbedding,
-            gpt_cond_latent: speaker!.gptCondLatent,
-            language: audioChunk.audioFile.lang,
-          }),
-        });
-        console.log(
-          "Received response from TTS server with status:",
-          resp.status
-        );
-      } catch (err: unknown) {
-        console.error("Error calling TTS server:", err);
-        await ctx.db.audioChunk.update({
-          where: { id: chunkId },
-          data: { status: "ERROR" },
-        });
-        throw new TRPCError({
-          code: "BAD_GATEWAY",
-          message: `Could not reach TTS server: ${
-            err instanceof Error ? err.message : String(err)
-          }`,
-        });
-      }
-
-      if (!resp.ok) {
-        console.error("TTS server returned error status:", resp.status);
-        await ctx.db.audioChunk.update({
-          where: { id: chunkId },
-          data: { status: "ERROR" },
-        });
-        const txt = await resp.text();
-        console.error("TTS server error response:", txt);
-        throw new TRPCError({
-          code: "BAD_GATEWAY",
-          message: `TTS service error ${resp.status}: ${txt}`,
-        });
-      }
-
-      const contentType = resp.headers.get("Content-Type") || "";
-      console.log("Response Content-Type:", contentType);
-      let wavBuffer: Buffer;
-
-      if (contentType.includes("application/json")) {
-        console.log("Parsing JSON response for audio...");
-        const maybeB64 = await resp.json();
-        if (typeof maybeB64 !== "string") {
-          console.error("Unexpected JSON payload:", maybeB64);
-          throw new TRPCError({
-            code: "BAD_GATEWAY",
-            message: `Unexpected JSON payload: ${JSON.stringify(maybeB64)}`,
-          });
-        }
-        wavBuffer = Buffer.from(maybeB64, "base64");
-      } else {
-        console.log("Processing raw byte response...");
-        const array = await resp.arrayBuffer();
-        wavBuffer = Buffer.from(array);
-      }
-
-      console.log("WAV buffer length:", wavBuffer.length);
-      if (wavBuffer.length <= 44) {
-        console.error("Received buffer too small to be WAV:", wavBuffer.length);
-        await ctx.db.audioChunk.update({
-          where: { id: chunkId },
-          data: { status: "ERROR" },
-        });
-        throw new TRPCError({
-          code: "BAD_GATEWAY",
-          message: `Received buffer too small to be WAV (${wavBuffer.length} bytes)`,
-        });
-      }
-
-      //upload to S3
-      const audioId = `${audioChunk.id}.wav`;
-      console.log("Uploading audio to S3 with key:", audioId);
-      try {
-        const put = new PutObjectCommand({
-          Bucket: env.NEXT_PUBLIC_CLOUD_FLARE_AUDIO_BUCKET_NAME,
-          Key: audioId,
-          Body: wavBuffer,
-          ContentType: "audio/wav",
-        });
-        console.log(
-          "S3 upload URL:",
-          env.NEXT_PUBLIC_AUDIO_BUCKET_URL + "/" + audioId
-        );
-        await s3Client.send(put);
-        console.log("S3 upload completed successfully.");
-      } catch (err) {
-        console.error("S3 upload error:", err);
-        await ctx.db.audioChunk.update({
-          where: { id: chunkId },
-          data: { status: "ERROR" },
-        });
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: `ERROR to upload audio to storage: ${
-            err instanceof Error ? err.message : String(err)
-          }`,
-        });
-      }
-
-      console.log("Updating audio chunk status to PROCESSED.");
-      await ctx.db.audioChunk.update({
-        where: {
-          id: chunkId,
-        },
-        data: {
-          status: "PROCESSED",
-          url: env.NEXT_PUBLIC_AUDIO_BUCKET_URL + "/" + audioId,
-        },
-      });
-      console.log("Audio chunk processing completed successfully.");
-      return {};
-    }),
   processAudioChunkWithInworld: publicProcedure
     .input(audioChunkInput)
     .mutation(async ({ ctx, input }) => {
@@ -208,8 +41,6 @@ export const workersRouter = createTRPCRouter({
           message: `Audio chunk not found`,
         });
       }
-
-      const chunkId = audioChunk.id;
 
       await ctx.db.audioChunk.update({
         where: { id: audioChunk.id },
@@ -238,7 +69,7 @@ export const workersRouter = createTRPCRouter({
       } catch (err: unknown) {
         console.error("Error calling Inworld TTS API:", err);
         await ctx.db.audioChunk.update({
-          where: { id: chunkId },
+          where: { id: audioChunk.id },
           data: { status: "ERROR" },
         });
         throw new TRPCError({
@@ -251,7 +82,7 @@ export const workersRouter = createTRPCRouter({
 
       if (!resp.ok) {
         await ctx.db.audioChunk.update({
-          where: { id: chunkId },
+          where: { id: audioChunk.id },
           data: { status: "ERROR" },
         });
         const txt = await resp.text();
@@ -281,7 +112,7 @@ export const workersRouter = createTRPCRouter({
       } catch (err) {
         console.error("Failed to parse Inworld TTS API response:", err);
         await ctx.db.audioChunk.update({
-          where: { id: chunkId },
+          where: { id: audioChunk.id },
           data: { status: "ERROR" },
         });
         throw new TRPCError({
@@ -299,7 +130,7 @@ export const workersRouter = createTRPCRouter({
           wavBuffer.length
         );
         await ctx.db.audioChunk.update({
-          where: { id: chunkId },
+          where: { id: audioChunk.id },
           data: { status: "ERROR" },
         });
         throw new TRPCError({
@@ -325,7 +156,7 @@ export const workersRouter = createTRPCRouter({
       } catch (err) {
         console.error("S3 upload error:", err);
         await ctx.db.audioChunk.update({
-          where: { id: chunkId },
+          where: { id: audioChunk.id },
           data: { status: "ERROR" },
         });
         throw new TRPCError({
@@ -336,18 +167,50 @@ export const workersRouter = createTRPCRouter({
         });
       }
 
+      const mime = detectMime(wavBuffer);
+      const durationMs = await getAudioDurationMs(wavBuffer, mime);
+
       await ctx.db.audioChunk.update({
         where: {
-          id: chunkId,
+          id: audioChunk.id,
         },
         data: {
           status: "PROCESSED",
           url: env.NEXT_PUBLIC_AUDIO_BUCKET_URL + "/" + audioId,
+          //calculate duration in ms of wavBuffer
+          durationMs: durationMs,
         },
       });
       console.log(
         "Audio chunk processing with Inworld completed successfully."
       );
+
+      const blockingChunks = await ctx.db.audioChunk.count({
+        where: {
+          audioFileId: audioChunk.audioFileId,
+          status: {
+            in: ["PENDING", "PROCESSING"],
+          },
+        },
+      });
+
+      // if last chunk that is processing, mark audio file as processed
+      if (blockingChunks > 0) {
+        // fetch all and calculate duration
+        const allChunks = await ctx.db.audioChunk.findMany({
+          where: { audioFileId: audioChunk.audioFileId },
+        });
+        const totalDuration = allChunks.reduce((sum, chunk) => {
+          return (
+            sum + chunk.durationMs + chunk.paddingStartMs + chunk.paddingEndMs
+          );
+        }, 0);
+        await ctx.db.audioFile.update({
+          where: { id: audioChunk.audioFileId },
+          data: { status: "PROCESSED", durationMs: totalDuration },
+        });
+      }
+
       return {};
     }),
   processAudioFile: publicProcedure
@@ -378,3 +241,94 @@ export const workersRouter = createTRPCRouter({
       return {};
     }),
 });
+
+function wavDurationMs(wav: Buffer) {
+  // Very basic: assumes PCM WAV with a standard fmt/data layout.
+  const numChannels = wav.readUInt16LE(22);
+  const sampleRate = wav.readUInt32LE(24);
+  const bitsPerSample = wav.readUInt16LE(34);
+  const byteRate = (sampleRate * numChannels * bitsPerSample) / 8;
+  // Find the "data" chunk
+  let offset = 12;
+  while (offset + 8 <= wav.length) {
+    const id = wav.toString("ascii", offset, offset + 4);
+    const size = wav.readUInt32LE(offset + 4);
+    if (id === "data") {
+      const seconds = size / byteRate;
+      return Math.round(seconds * 1000);
+    }
+    offset += 8 + size + (size % 2); // chunks are word-aligned
+  }
+  throw new Error("No data chunk in WAV");
+}
+
+function mp3DurationMs(buf: Buffer): number {
+  // Skip ID3v2 tag if present
+  let i = 0;
+  if (buf.slice(0, 3).toString("ascii") === "ID3") {
+    const size =
+      ((buf[6]! & 0x7f) << 21) |
+      ((buf[7]! & 0x7f) << 14) |
+      ((buf[8]! & 0x7f) << 7) |
+      (buf[9]! & 0x7f);
+    i = 10 + size;
+  }
+  // Find MPEG frame sync
+  while (
+    i + 4 < buf.length &&
+    !(buf[i] === 0xff && (buf[i + 1]! & 0xe0) === 0xe0)
+  )
+    i++;
+  if (i + 4 >= buf.length) throw new Error("No MPEG frame found");
+
+  const verBits = (buf[i + 1]! >> 3) & 0x03;
+  const layerBits = (buf[i + 1]! >> 1) & 0x03;
+  const bpsIdx = (buf[i + 2]! >> 4) & 0x0f;
+
+  // MPEG version
+  const v = verBits === 3 ? "V1" : verBits === 2 ? "V2" : "V2.5";
+  // Layer
+  const l = layerBits === 1 ? "L3" : layerBits === 2 ? "L2" : "L1";
+
+  const brTables: Record<string, number[]> = {
+    V1L3: [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0],
+    V2L3: [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0],
+    V1L2: [
+      0, 32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384, 0,
+    ],
+    V1L1: [
+      0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448, 0,
+    ],
+    V2L2: [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0],
+    V2L1: [
+      0, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256, 0,
+    ],
+  };
+  const key = `${v}${l}`;
+  const kbps = (brTables[key]! ?? brTables["V1L3"])[bpsIdx];
+  if (!kbps) throw new Error("Unsupported/variable bitrate");
+
+  const audioBytes = buf.length - i; // ignore leading tags
+  const seconds = (audioBytes * 8) / (kbps * 1000);
+  return Math.round(seconds * 1000);
+}
+
+async function getAudioDurationMs(buf: Buffer, mime?: string) {
+  if (mime === "audio/mpeg") return mp3DurationMs(buf);
+  return wavDurationMs(buf); // your existing WAV parser
+}
+
+function detectMime(buf: Buffer): "audio/mpeg" | "audio/wav" {
+  if (
+    buf.slice(0, 4).toString("ascii") === "RIFF" &&
+    buf.slice(8, 12).toString("ascii") === "WAVE"
+  )
+    return "audio/wav";
+  if (
+    buf.slice(0, 3).toString("ascii") === "ID3" ||
+    (buf[0] === 0xff && (buf[1]! & 0xe0) === 0xe0)
+  )
+    return "audio/mpeg";
+  // default to mp3 for TTS
+  return "audio/mpeg";
+}

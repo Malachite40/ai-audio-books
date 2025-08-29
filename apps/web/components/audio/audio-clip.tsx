@@ -680,13 +680,96 @@ export const AudioClip = ({ af }: AudioClipProps) => {
 
   // expected total secs (sum of buffers) so we can show a duration early
   const expectedDuration = useMemo(() => {
-    const ordered = (chunks ?? [])
+    const sorted = (chunks ?? [])
       .slice()
-      .sort((a: any, b: any) => a.sequence - b.sequence)
-      .map((c: any) => buffersRef.current.get(c.sequence))
-      .filter((b): b is AudioBuffer => !!b);
-    return ordered.reduce((s, b) => s + b.duration, 0);
+      .sort((a: any, b: any) => a.sequence - b.sequence);
+    let total = 0;
+    for (const c of sorted) {
+      const buf = buffersRef.current.get(c.sequence);
+      if (!buf) continue;
+      total +=
+        buf.duration +
+        (c.paddingStartMs ?? 0) / 1000 +
+        (c.paddingEndMs ?? 0) / 1000;
+    }
+    return total;
   }, [chunks]);
+
+  // NEW: helper that encodes segments with pads into a WAV
+  function encodeWAVWithPads(
+    segments: { buffer: AudioBuffer; padStartSec: number; padEndSec: number }[]
+  ): Blob {
+    if (!segments.length) throw new Error("No segments");
+
+    const first = segments[0]!.buffer;
+    const numChannels = first.numberOfChannels;
+    const sampleRate = first.sampleRate;
+
+    // (Assumes all chunks share sampleRate/numChannels; otherwise resample/fallback)
+    const toSamples = (sec: number) =>
+      Math.max(0, Math.round(sec * sampleRate));
+
+    let totalSamples = 0;
+    for (const seg of segments) {
+      if (
+        seg.buffer.sampleRate !== sampleRate ||
+        seg.buffer.numberOfChannels !== numChannels
+      ) {
+        throw new Error("Mismatched buffer format"); // or resample/fallback to scheduler
+      }
+      totalSamples +=
+        toSamples(seg.padStartSec) +
+        seg.buffer.length +
+        toSamples(seg.padEndSec);
+    }
+
+    const interleaved = new Float32Array(totalSamples * numChannels);
+    let writeHead = 0; // in samples (per channel frame)
+
+    const writeSilence = (samples: number) => {
+      writeHead += samples; // Float32Array is zero-initialized; nothing to write
+    };
+
+    for (const seg of segments) {
+      writeSilence(toSamples(seg.padStartSec));
+      // copy PCM from each channel, interleaved
+      for (let i = 0; i < seg.buffer.length; i++) {
+        for (let ch = 0; ch < numChannels; ch++) {
+          interleaved[(writeHead + i) * numChannels + ch] =
+            seg.buffer.getChannelData(ch)[i] ?? 0;
+        }
+      }
+      writeHead += seg.buffer.length;
+      writeSilence(toSamples(seg.padEndSec));
+    }
+
+    // pack Float32 -> 16-bit WAV (same as your existing encodeWAV header logic)
+    const pcm = new DataView(new ArrayBuffer(44 + interleaved.length * 2));
+    const writeString = (off: number, str: string) => {
+      for (let i = 0; i < str.length; i++)
+        pcm.setUint8(off + i, str.charCodeAt(i));
+    };
+    writeString(0, "RIFF");
+    pcm.setUint32(4, 36 + interleaved.length * 2, true);
+    writeString(8, "WAVE");
+    writeString(12, "fmt ");
+    pcm.setUint32(16, 16, true);
+    pcm.setUint16(20, 1, true);
+    pcm.setUint16(22, numChannels, true);
+    pcm.setUint32(24, sampleRate, true);
+    pcm.setUint32(28, sampleRate * numChannels * 2, true);
+    pcm.setUint16(32, numChannels * 2, true);
+    pcm.setUint16(34, 16, true);
+    writeString(36, "data");
+    pcm.setUint32(40, interleaved.length * 2, true);
+
+    let idx = 44;
+    for (let i = 0; i < interleaved.length; i++, idx += 2) {
+      const s = Math.max(-1, Math.min(1, interleaved[i] ?? 0));
+      pcm.setInt16(idx, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+    }
+    return new Blob([pcm.buffer], { type: "audio/wav" });
+  }
 
   // Keep/restore desired playback position across stitched src rebuilds
   const desiredStartTimeRef = useRef(0);
@@ -781,14 +864,27 @@ export const AudioClip = ({ af }: AudioClipProps) => {
     const ordered = (chunks ?? [])
       .slice()
       .sort((a: any, b: any) => a.sequence - b.sequence)
-      .map((c: any) => buffersRef.current.get(c.sequence))
-      .filter((b): b is AudioBuffer => !!b);
+      .map((c: any) => {
+        const buf = buffersRef.current.get(c.sequence);
+        if (!buf) return null;
+        return {
+          buffer: buf,
+          padStartSec: (c.paddingStartMs ?? 0) / 1000,
+          padEndSec: (c.paddingEndMs ?? 0) / 1000,
+        };
+      })
+      .filter(Boolean) as {
+      buffer: AudioBuffer;
+      padStartSec: number;
+      padEndSec: number;
+    }[];
+
     if (ordered.length !== chunks.length) return null;
 
     setStitchedIsBuilding(true);
     try {
       const wavBlob = await new Promise<Blob>((resolve) =>
-        setTimeout(() => resolve(encodeWAV(ordered)), 0)
+        setTimeout(() => resolve(encodeWAVWithPads(ordered)), 0)
       );
       const url = URL.createObjectURL(wavBlob);
       stitchedUrlRef.current = url;

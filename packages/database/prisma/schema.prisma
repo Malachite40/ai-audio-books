@@ -115,6 +115,7 @@ model AudioFile {
     owner             User?               @relation(fields: [ownerId], references: [id], onDelete: Cascade)
     status            AudioFileStatus     @default(PENDING)
     speakerId         String
+    durationMs        Int                 @default(0)
     speaker           Speaker             @relation(fields: [speakerId], references: [id], onDelete: Cascade)
     public            Boolean             @default(false)
     lang              String              @default("en")
@@ -137,6 +138,7 @@ model AudioChunk {
     sequence       Int
     url            String?
     text           String
+    durationMs     Int              @default(0)
     paddingStartMs Int              @default(0)
     paddingEndMs   Int              @default(0)
     status         AudioChunkStatus @default(PENDING)
