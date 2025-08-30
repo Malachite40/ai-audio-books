@@ -597,6 +597,11 @@ export default function AudioClip({ af }: AudioClipProps) {
   /** Treat "preparing" as loading state */
   const isLoadingToStart = !resolvedUrl && !isPlaying;
 
+  // Show 'Stitching...' if all chunks are processed but no resolvedUrl
+  const allChunksProcessed =
+    chunks.length > 0 && chunks.every((c: any) => c.status === "PROCESSED");
+  const isStitching = allChunksProcessed && !resolvedUrl;
+
   const totalChars = useMemo(
     () =>
       chunks.reduce((sum: number, c: any) => sum + (c.text?.length || 0), 0),
@@ -703,90 +708,108 @@ export default function AudioClip({ af }: AudioClipProps) {
         </div>
       </div>
 
-      {/* Seek bar (kept) */}
-      <Slider
-        value={[uiCurrentTime]}
-        min={0}
-        max={Math.max(0.01, uiDuration)}
-        step={0.01}
-        onTouchStart={handleScrubStart}
-        onMouseDown={handleScrubStart}
-        onPointerDown={handleScrubStart}
-        onValueChange={([v]) => {
-          if (v == null) return;
-          if (!isScrubbingRef.current) handleScrubStart();
-          const clamped = clampPlayable(v, uiDuration || v);
-          desiredStartRef.current = clamped;
-          setCurrentTime(clamped);
-        }}
-        onValueCommit={([v]) => {
-          if (v == null) return;
-          handleScrubEnd(v);
-        }}
-        className="w-full h-10"
-        disabled={!resolvedUrl}
-      />
+      {/* Seek bar with optional Stitching overlay */}
+      <div className="relative w-full">
+        <Slider
+          value={[uiCurrentTime]}
+          min={0}
+          max={Math.max(0.01, uiDuration)}
+          step={0.01}
+          onTouchStart={handleScrubStart}
+          onMouseDown={handleScrubStart}
+          onPointerDown={handleScrubStart}
+          onValueChange={([v]) => {
+            if (v == null) return;
+            if (!isScrubbingRef.current) handleScrubStart();
+            const clamped = clampPlayable(v, uiDuration || v);
+            desiredStartRef.current = clamped;
+            setCurrentTime(clamped);
+          }}
+          onValueCommit={([v]) => {
+            if (v == null) return;
+            handleScrubEnd(v);
+          }}
+          className="w-full h-10"
+          disabled={!resolvedUrl}
+        />
+        {isStitching && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <span className="px-4 py-1 rounded bg-background/80 text-primary font-semibold text-sm animate-pulse shadow-lg border border-primary">
+              Stitching...
+            </span>
+          </div>
+        )}
+      </div>
 
       {/* Chunk status bar with accurate positioning */}
       <div className="py-4 flex w-full sm:gap-px">
-        {chunkTimeline.map((entry, i) => {
-          const chunk = entry.chunk;
-          const isActive =
-            activeSequence != null && chunk.sequence === activeSequence;
+        {(() => {
+          // If any chunk is not PROCESSED, use equal width for all
+          const allProcessed = chunks.every(
+            (c: any) => c.status === "PROCESSED"
+          );
+          return chunkTimeline.map((entry, i) => {
+            const chunk = entry.chunk;
+            const isActive =
+              activeSequence != null && chunk.sequence === activeSequence;
 
-          // Calculate progress within this specific chunk
-          let progress = 0;
-          if (isActive && entry.endSec > entry.startSec) {
-            // If in the padding before or after the chunk's main audio, show full progress
-            if (currentTime < entry.startSec || currentTime >= entry.endSec) {
-              progress = 100;
-            } else {
-              const chunkProgress = currentTime - entry.startSec;
-              const chunkDuration = entry.endSec - entry.startSec;
-              progress =
-                (Math.max(0, Math.min(chunkProgress, chunkDuration)) /
-                  chunkDuration) *
-                100;
+            // Calculate progress within this specific chunk
+            let progress = 0;
+            if (isActive && entry.endSec > entry.startSec) {
+              // If in the padding before or after the chunk's main audio, show full progress
+              if (currentTime < entry.startSec || currentTime >= entry.endSec) {
+                progress = 100;
+              } else {
+                const chunkProgress = currentTime - entry.startSec;
+                const chunkDuration = entry.endSec - entry.startSec;
+                progress =
+                  (Math.max(0, Math.min(chunkProgress, chunkDuration)) /
+                    chunkDuration) *
+                  100;
+              }
             }
-          }
 
-          // Calculate visual width based on actual duration proportion
-          const totalDurationMs =
-            chunkTimeline[chunkTimeline.length - 1]?.endMs ?? 1;
-          const chunkDurationMs = entry.endMs - entry.startMs;
-          const flexValue = Math.max(
-            0.1,
-            (chunkDurationMs / totalDurationMs) * chunks.length
-          );
+            // If not all processed, use equal width; else use proportional width
+            let flexValue = 1;
+            if (allProcessed) {
+              const totalDurationMs =
+                chunkTimeline[chunkTimeline.length - 1]?.endMs ?? 1;
+              const chunkDurationMs = entry.endMs - entry.startMs;
+              flexValue = Math.max(
+                0.1,
+                (chunkDurationMs / totalDurationMs) * chunks.length
+              );
+            }
 
-          return (
-            <div
-              key={chunk.id}
-              title={`seq ${chunk.sequence} – ${chunk.status} (${Math.round(entry.startSec)}s-${Math.round(entry.endSec)}s)`}
-              onClick={() => seekToSequence(chunk.sequence)}
-              aria-current={isActive ? "true" : undefined}
-              style={{ flex: flexValue }}
-              className={cn(
-                "relative first:rounded-l-md last:rounded-r-md h-4 cursor-pointer transition-shadow",
-                chunk.status === "PROCESSING" &&
-                  "bg-yellow-500 hover:bg-yellow-500/90",
-                chunk.status === "PROCESSED" &&
-                  "bg-green-500 hover:bg-green-500/90",
-                chunk.status === "ERROR" && "bg-red-500 hover:bg-red-500/90",
-                chunk.status === "PENDING" &&
-                  "bg-gray-500 hover:bg-gray-500/90",
-                isActive && "outline outline-blue-500 animate-pulse"
-              )}
-            >
-              {isActive && (
-                <div
-                  className="absolute inset-y-0 left-0 bg-white/30 pointer-events-none"
-                  style={{ width: `${progress}%` }}
-                />
-              )}
-            </div>
-          );
-        })}
+            return (
+              <div
+                key={chunk.id}
+                title={`seq ${chunk.sequence} – ${chunk.status} (${Math.round(entry.startSec)}s-${Math.round(entry.endSec)}s)`}
+                onClick={() => seekToSequence(chunk.sequence)}
+                aria-current={isActive ? "true" : undefined}
+                style={{ flex: flexValue }}
+                className={cn(
+                  "relative first:rounded-l-md last:rounded-r-md h-4 cursor-pointer transition-shadow",
+                  chunk.status === "PROCESSING" &&
+                    "bg-yellow-500 hover:bg-yellow-500/90",
+                  chunk.status === "PROCESSED" &&
+                    "bg-green-500 hover:bg-green-500/90",
+                  chunk.status === "ERROR" && "bg-red-500 hover:bg-red-500/90",
+                  chunk.status === "PENDING" &&
+                    "bg-gray-500 hover:bg-gray-500/90",
+                  isActive && "outline outline-blue-500 animate-pulse"
+                )}
+              >
+                {isActive && (
+                  <div
+                    className="absolute inset-y-0 left-0 bg-white/30 pointer-events-none"
+                    style={{ width: `${progress}%` }}
+                  />
+                )}
+              </div>
+            );
+          });
+        })()}
       </div>
 
       {/* Transcript snippet (kept) */}
