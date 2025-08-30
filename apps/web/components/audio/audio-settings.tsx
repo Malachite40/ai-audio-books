@@ -76,6 +76,7 @@ const PlaybackSettingsForm = React.memo(function PlaybackSettingsForm({
         {[0.75, 1, 1.25, 1.5, 1.75, 2].map((v) => (
           <Button
             key={v}
+            className="flex-1"
             type="button" // ← prevent implicit submit
             variant={
               Math.abs(playbackRate - v) < 0.0001 ? "default" : "outline"

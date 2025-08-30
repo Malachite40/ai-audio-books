@@ -38,9 +38,9 @@ export function Header(props: HeaderProps) {
         </div>
       )}
       <div className="h-12 z-1 flex w-full justify-center items-center border-b border-border top-0 sticky bg-background ">
-        <div className="flex w-full justify-between items-center px-2 md:px-4 ">
-          <Link href={"/"} className="flex gap-px justify-center items-center">
-            <Logo className="size-10" />
+        <div className="flex w-full justify-between items-center px-3 md:px-4 ">
+          <Link href={"/"} className="flex gap-3 justify-center items-center">
+            <Logo className="size-8 fill-foreground" />
             {userData && (
               <span className="font-semibold hidden md:flex">
                 Instant Audio Online

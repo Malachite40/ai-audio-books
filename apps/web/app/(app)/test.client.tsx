@@ -127,11 +127,17 @@ const TestClient = () => {
   // Auto-select a speaker when loaded
   useEffect(() => {
     if (!speakersData?.speakers?.length) return;
-    if (!initialSpeakerId) {
-      setInitialSpeakerId(speakersData.speakers[0]!.id);
-      form.setValue("speakerId", speakersData.speakers[0]!.id);
+    // If no speaker is selected in the form, set to the first speaker
+    const currentSpeakerId = form.getValues("speakerId");
+    if (!currentSpeakerId) {
+      const firstSpeakerId = speakersData.speakers[0]!.id;
+      setInitialSpeakerId(firstSpeakerId);
+      form.setValue("speakerId", firstSpeakerId, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
     }
-  }, [speakersData, initialSpeakerId, form]);
+  }, [speakersData, form]);
 
   // Derived values
   const selectedSpeakerId = form.watch("speakerId");
@@ -421,6 +427,7 @@ const TestClient = () => {
 
             <div className="flex items-center gap-3">
               <Button
+                className="md:w-fit w-full"
                 type="button"
                 onClick={handleCreateClick}
                 // IMPORTANT: do NOT disable based on credit/character limit.

@@ -1,5 +1,4 @@
 import { useAreYouSure } from "@/hooks/use-are-you-sure";
-import { usePagination } from "@/hooks/use-pagination";
 import { useAudioHistoryStore } from "@/store/use-audio-history-store";
 import { api } from "@/trpc/react";
 import { Button } from "@workspace/ui/components/button";
@@ -7,7 +6,6 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -17,40 +15,39 @@ import { Loader, Trash2 } from "lucide-react";
 import { Route } from "next";
 import { usePathname, useRouter } from "next/navigation";
 import { parseAsString, useQueryState } from "nuqs";
-import { useState } from "react";
-import { PaginationBar } from "../pagination-bar";
+import { useEffect, useRef } from "react";
+
 // Audio History component
 interface AudioHistoryProps {}
-const pageSize = 5;
+
+const PAGE_SIZE = 10;
+
 export const AudioHistory = ({}: AudioHistoryProps) => {
-  const [page, setPage] = useState(1);
   const pathname = usePathname();
   const router = useRouter();
-
   const { open, setOpen: setAudioHistoryOpen } = useAudioHistoryStore();
-
   const [selectedAudioFileId, setSelectedAudioFileId] = useQueryState(
     "id",
     parseAsString.withDefault("").withOptions({})
   );
 
-  const audioFileQuery = api.audio.fetchAll.useQuery({
-    take: pageSize,
-    page,
-  });
+  const {
+    data,
+    isLoading,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    refetch,
+  } = api.audio.fetchAll.useInfiniteQuery(
+    { limit: PAGE_SIZE },
+    { getNextPageParam: (lastPage) => lastPage.nextCursor }
+  );
 
-  const totalCount = audioFileQuery.data?.count ?? 0;
-  const totalPages = Math.ceil(totalCount / pageSize);
-
-  const { pages, showLeftEllipsis, showRightEllipsis } = usePagination({
-    currentPage: page ?? 1,
-    totalPages,
-    paginationItemsToDisplay: 5,
-  });
+  const allAudioFiles = data?.pages.flatMap((page) => page.audioFiles) ?? [];
 
   const deleteAudioFileMutation = api.audio.delete.useMutation({
     onSuccess: async () => {
-      audioFileQuery.refetch();
+      refetch();
     },
     onError: (error) => {
       // Handle error (e.g., show an error message)
@@ -59,6 +56,42 @@ export const AudioHistory = ({}: AudioHistoryProps) => {
 
   const { AreYouSure, showAreYouSure, setShowAreYouSure, setObject, object } =
     useAreYouSure<{ id: string; name: string }>();
+
+  // --- Infinite scroll sentinel ---
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!hasNextPage) return;
+
+    const el = loadMoreRef.current;
+    if (!el) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0]!;
+        // Trigger early, avoid duplicate calls while already fetching
+        if (
+          entry.isIntersecting &&
+          hasNextPage &&
+          !isFetchingNextPage &&
+          !isLoading
+        ) {
+          fetchNextPage();
+        }
+      },
+      {
+        root: null, // viewport; change to a scroll container element if needed
+        rootMargin: "1000px 0px", // start loading well before the bottom
+        threshold: 0,
+      }
+    );
+
+    observer.observe(el);
+    return () => {
+      observer.unobserve(el);
+      observer.disconnect();
+    };
+  }, [hasNextPage, isFetchingNextPage, isLoading, fetchNextPage]);
 
   return (
     <div className="">
@@ -69,9 +102,7 @@ export const AudioHistory = ({}: AudioHistoryProps) => {
         }}
         onConfirm={async () => {
           if (!object) return;
-          deleteAudioFileMutation.mutate({
-            id: object.id,
-          });
+          deleteAudioFileMutation.mutate({ id: object.id });
         }}
       />
       <Table>
@@ -86,89 +117,93 @@ export const AudioHistory = ({}: AudioHistoryProps) => {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {audioFileQuery.isLoading ? (
+          {isLoading && (
             <TableRow>
               <TableCell colSpan={4} className="text-center py-8">
                 <Loader className="animate-spin size-4 mx-auto" />
               </TableCell>
             </TableRow>
-          ) : (
-            audioFileQuery.data?.audioFiles.map((af) => {
-              const isDeleting =
-                deleteAudioFileMutation.variables?.id === af.id &&
-                deleteAudioFileMutation.isPending;
-              return (
-                <TableRow
-                  onClick={() => {
-                    // if not on root
-                    if (pathname !== "/") {
-                      router.push(`/?id=${af.id}` as Route);
-                    } else {
-                      setSelectedAudioFileId(af.id);
-                    }
-                    setAudioHistoryOpen(false);
-                  }}
-                  key={af.id}
-                  className={
-                    `cursor-pointer` +
-                    (selectedAudioFileId === af.id
-                      ? " bg-primary text-background hover:bg-primary/80 hover:text-background"
-                      : "")
-                  }
-                >
-                  <TableCell>
-                    <div className="sm:max-w-none max-w-[100px] overflow-ellipsis line-clamp-1 h-full">
-                      {af.name}
-                    </div>
-                  </TableCell>
+          )}
 
-                  <TableCell>{af.speaker.name}</TableCell>
-                  <TableCell>
-                    {format(new Date(af.createdAt), "MM-dd h a")}
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <Button
-                      size="sm"
-                      aria-label="Delete audio file"
-                      disabled={isDeleting}
-                      variant={
-                        selectedAudioFileId === af.id ? "secondary" : "ghost"
-                      }
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setObject({ id: af.id, name: af.name });
-                        setShowAreYouSure(true);
-                      }}
-                    >
-                      {isDeleting ? (
-                        <Loader className="w-5 h-5 animate-spin" />
-                      ) : (
-                        <Trash2 className="w-5 h-5" />
-                      )}
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              );
-            })
+          {!isLoading && allAudioFiles.length === 0 && (
+            <TableRow>
+              <TableCell colSpan={4} className="text-center py-8">
+                No audio files found.
+              </TableCell>
+            </TableRow>
+          )}
+
+          {allAudioFiles.map((af) => {
+            const isDeleting =
+              deleteAudioFileMutation.variables?.id === af.id &&
+              deleteAudioFileMutation.isPending;
+
+            return (
+              <TableRow
+                onClick={() => {
+                  if (pathname !== "/") {
+                    router.push(`/?id=${af.id}` as Route);
+                  } else {
+                    setSelectedAudioFileId(af.id);
+                  }
+                  setAudioHistoryOpen(false);
+                }}
+                key={af.id}
+                className={
+                  `cursor-pointer` +
+                  (selectedAudioFileId === af.id
+                    ? " bg-primary text-background hover:bg-primary/80 hover:text-background"
+                    : "")
+                }
+              >
+                <TableCell>
+                  <div className="sm:max-w-none max-w-[100px] overflow-ellipsis line-clamp-1 h-full">
+                    {af.name}
+                  </div>
+                </TableCell>
+                <TableCell>{af.speaker.name}</TableCell>
+                <TableCell>
+                  {format(new Date(af.createdAt), "MM-dd h a")}
+                </TableCell>
+                <TableCell className="text-center">
+                  <Button
+                    size="sm"
+                    aria-label="Delete audio file"
+                    disabled={isDeleting}
+                    variant={"ghost"}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setObject({ id: af.id, name: af.name });
+                      setShowAreYouSure(true);
+                    }}
+                  >
+                    {isDeleting ? (
+                      <Loader className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-5 h-5" />
+                    )}
+                  </Button>
+                </TableCell>
+              </TableRow>
+            );
+          })}
+
+          {/* Spinner row while fetching the next page */}
+          {isFetchingNextPage && !isLoading && (
+            <TableRow>
+              <TableCell colSpan={4} className="text-center py-4">
+                <Loader className="animate-spin size-4 mx-auto" />
+              </TableCell>
+            </TableRow>
           )}
         </TableBody>
-        <TableFooter>
-          <TableRow>
-            <TableCell colSpan={5}>Total: {totalCount}</TableCell>
-          </TableRow>
-        </TableFooter>
       </Table>
-      <div className="mt-2">
-        <PaginationBar
-          page={page ?? 1}
-          totalPages={totalPages}
-          pages={pages}
-          showLeftEllipsis={showLeftEllipsis}
-          showRightEllipsis={showRightEllipsis}
-          setPage={setPage}
-        />
-      </div>
+
+      {/* Sentinel for infinite scroll (replaces the Load More button) */}
+      {hasNextPage && (
+        <div ref={loadMoreRef} aria-hidden className="h-8 w-full" />
+      )}
     </div>
   );
 };

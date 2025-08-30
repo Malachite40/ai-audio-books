@@ -15,22 +15,27 @@ export const audioRouter = createTRPCRouter({
   fetchAll: publicProcedure
     .input(
       z.object({
-        page: z.number().optional().default(1),
-        take: z.number().max(50).optional().default(10),
+        limit: z.number().min(1).max(50).default(10),
+        cursor: z.string().nullish(),
       })
     )
-    .query(async ({ ctx, input }) => {
-      if (!ctx.user) {
-        return {
-          audioFiles: [],
-          count: 0,
-        };
-      }
+    .query(
+      async ({
+        ctx,
+        input,
+      }: {
+        ctx: import("../context").BaseContext;
+        input: { limit: number; cursor?: string | null };
+      }) => {
+        if (!ctx.user) {
+          return {
+            audioFiles: [],
+            nextCursor: undefined,
+          };
+        }
 
-      const [audioFiles, totalCount] = await Promise.all([
-        ctx.db.audioFile.findMany({
-          take: input.take,
-          skip: (input.page - 1) * input.take,
+        const audioFiles = await ctx.db.audioFile.findMany({
+          take: input.limit + 1,
           where: {
             deletedAt: null,
             ownerId: ctx.user.id,
@@ -38,6 +43,7 @@ export const audioRouter = createTRPCRouter({
           orderBy: {
             createdAt: "desc",
           },
+          cursor: input.cursor ? { id: input.cursor } : undefined,
           select: {
             id: true,
             name: true,
@@ -53,16 +59,17 @@ export const audioRouter = createTRPCRouter({
               },
             },
           },
-        }),
-        ctx.db.audioFile.count({
-          where: {
-            deletedAt: null,
-            ownerId: ctx.user.id,
-          },
-        }),
-      ]);
-      return { audioFiles, count: totalCount };
-    }),
+        });
+
+        let nextCursor: string | undefined = undefined;
+        if (audioFiles.length > input.limit) {
+          const nextItem = audioFiles.pop();
+          nextCursor = nextItem!.id;
+        }
+
+        return { audioFiles, nextCursor };
+      }
+    ),
   delete: authenticatedProcedure
     .input(
       z.object({

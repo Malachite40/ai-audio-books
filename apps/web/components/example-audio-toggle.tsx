@@ -91,7 +91,7 @@ export default function ExampleAudioToggle({
         tabIndex={-1}
         aria-label={isPlaying ? "Pause example audio" : "Play example audio"}
         className={cn(
-          "p-1 rounded hover:bg-gray-200 flex items-center gap-2",
+          "p-1 rounded hover:bg-gray-200 flex items-center gap-2 flex-1 md:flex-0",
           className
         )}
         disabled={isDisabled}

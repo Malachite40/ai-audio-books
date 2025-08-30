@@ -1,5 +1,7 @@
 "use client";
 
+import { useMediaQuery } from "@/hooks/use-media-query";
+import { MEDIA_QUERY } from "@/lib/constants";
 import { api } from "@/trpc/react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
@@ -14,6 +16,15 @@ import {
   AlertDialogTrigger,
 } from "@workspace/ui/components/alert-dialog";
 import { Button } from "@workspace/ui/components/button";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerTrigger,
+} from "@workspace/ui/components/drawer";
 import {
   Form,
   FormControl,
@@ -41,6 +52,7 @@ function formatNumber(n: number) {
 }
 
 export function BillingClient(props: BillingClientProps) {
+  const isDesktop = useMediaQuery(MEDIA_QUERY.MD);
   const router = useRouter();
 
   const [showPurchaseDialog, setShowPurchaseDialog] = useState(false);
@@ -128,82 +140,175 @@ export function BillingClient(props: BillingClientProps) {
 
         <div className="w-full flex flex-col space-y-6">
           {/* Purchase Credits Modal Trigger */}
-          <AlertDialog
-            open={showPurchaseDialog}
-            onOpenChange={setShowPurchaseDialog}
-          >
-            <AlertDialogTrigger asChild>
-              <Button
-                className="w-full mt-2"
-                variant="outline"
-                onClick={() => setShowPurchaseDialog(true)}
-              >
-                Purchase Credits
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Purchase Credits</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Select the amount of credits you want to purchase. Each
-                  increment is $10 for 1,000,000 characters.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <Form {...purchaseForm}>
-                <form
-                  onSubmit={purchaseForm.handleSubmit((values) => {
-                    purchaseMutation.mutate({
-                      quantity: values.quantity,
-                      success_url: window.location.href,
-                      cancel_url: window.location.href,
-                    });
-                  })}
-                  className="space-y-4"
+          {isDesktop ? (
+            <AlertDialog
+              open={showPurchaseDialog}
+              onOpenChange={setShowPurchaseDialog}
+            >
+              <AlertDialogTrigger asChild>
+                <Button
+                  className="w-full mt-2"
+                  variant="outline"
+                  onClick={() => setShowPurchaseDialog(true)}
                 >
-                  <FormField
-                    control={purchaseForm.control}
-                    name="quantity"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Credits to Purchase</FormLabel>
-                        <FormControl>
-                          <Slider
-                            min={1}
-                            max={10}
-                            step={1}
-                            value={[field.value]}
-                            onValueChange={([val]) => field.onChange(val)}
-                            className="w-full"
-                          />
-                        </FormControl>
-                        <div className="flex justify-between text-xs mt-1">
-                          <span>$10 / 1M</span>
-                          <span>$100 / 10M</span>
-                        </div>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <div className="text-sm font-medium text-center">
-                    <span>
-                      {`Total: $${totalPrice} for ${formatNumber(totalCredits)} characters`}
-                    </span>
-                  </div>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel type="button">Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                      type="submit"
-                      disabled={purchaseMutation.isPending}
+                  Purchase Credits
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Purchase Credits</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Select the amount of credits you want to purchase. Each
+                    increment is $10 for 1,000,000 characters.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <Form {...purchaseForm}>
+                  <form
+                    onSubmit={purchaseForm.handleSubmit((values) => {
+                      purchaseMutation.mutate({
+                        quantity: values.quantity,
+                        success_url: window.location.href,
+                        cancel_url: window.location.href,
+                      });
+                    })}
+                    className="space-y-4"
+                  >
+                    <FormField
+                      control={purchaseForm.control}
+                      name="quantity"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Credits to Purchase</FormLabel>
+                          <FormControl>
+                            <Slider
+                              min={1}
+                              max={10}
+                              step={1}
+                              value={[field.value]}
+                              onValueChange={([val]) => field.onChange(val)}
+                              className="w-full"
+                            />
+                          </FormControl>
+                          <div className="flex justify-between text-xs mt-1">
+                            <span>$10 / 1M</span>
+                            <span>$100 / 10M</span>
+                          </div>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <div className="text-sm font-medium text-center">
+                      <span>
+                        {`Total: $${totalPrice} for ${formatNumber(totalCredits)} characters`}
+                      </span>
+                    </div>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel type="button">
+                        Cancel
+                      </AlertDialogCancel>
+                      <AlertDialogAction
+                        type="submit"
+                        disabled={purchaseMutation.isPending}
+                      >
+                        {purchaseMutation.isPending
+                          ? "Processing..."
+                          : "Checkout"}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </form>
+                </Form>
+              </AlertDialogContent>
+            </AlertDialog>
+          ) : (
+            <Drawer
+              open={showPurchaseDialog}
+              onOpenChange={setShowPurchaseDialog}
+            >
+              <DrawerTrigger asChild>
+                <Button
+                  className="w-full mt-2"
+                  variant="outline"
+                  onClick={() => setShowPurchaseDialog(true)}
+                >
+                  Purchase Credits
+                </Button>
+              </DrawerTrigger>
+              <DrawerContent>
+                <DrawerHeader>
+                  <DrawerTitle>Purchase Credits</DrawerTitle>
+                  <DrawerDescription>
+                    Select the amount of credits you want to purchase. Each
+                    increment is $10 for 1,000,000 characters.
+                  </DrawerDescription>
+                </DrawerHeader>
+                <DrawerFooter>
+                  <Form {...purchaseForm}>
+                    <form
+                      onSubmit={purchaseForm.handleSubmit((values) => {
+                        purchaseMutation.mutate({
+                          quantity: values.quantity,
+                          success_url: window.location.href,
+                          cancel_url: window.location.href,
+                        });
+                      })}
+                      className="space-y-4"
                     >
-                      {purchaseMutation.isPending
-                        ? "Processing..."
-                        : "Checkout"}
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </form>
-              </Form>
-            </AlertDialogContent>
-          </AlertDialog>
+                      <FormField
+                        control={purchaseForm.control}
+                        name="quantity"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Credits to Purchase</FormLabel>
+                            <FormControl>
+                              <Slider
+                                min={1}
+                                max={10}
+                                step={1}
+                                value={[field.value]}
+                                onValueChange={([val]) => field.onChange(val)}
+                                className="w-full"
+                              />
+                            </FormControl>
+                            <div className="flex justify-between text-xs mt-1">
+                              <span>$10 / 1M</span>
+                              <span>$100 / 10M</span>
+                            </div>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <div className="text-sm font-medium text-center">
+                        <span>
+                          {`Total: $${totalPrice} for ${formatNumber(totalCredits)} characters`}
+                        </span>
+                      </div>
+                      <div className="flex gap-2 mt-4">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="flex-1"
+                          onClick={() => setShowPurchaseDialog(false)}
+                          disabled={purchaseMutation.isPending}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          type="submit"
+                          variant="default"
+                          className="flex-1"
+                          disabled={purchaseMutation.isPending}
+                        >
+                          {purchaseMutation.isPending
+                            ? "Processing..."
+                            : "Checkout"}
+                        </Button>
+                      </div>
+                    </form>
+                  </Form>
+                </DrawerFooter>
+              </DrawerContent>
+            </Drawer>
+          )}
 
           <div className="w-full flex h-px bg-border" />
 

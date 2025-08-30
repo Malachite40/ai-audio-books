@@ -14,19 +14,10 @@ import { cn } from "@workspace/ui/lib/utils";
 // Forms
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@workspace/ui/components/form";
-import { Input } from "@workspace/ui/components/input";
-import {
   DownloadIcon,
-  Loader2Icon,
   PauseIcon,
   PlayIcon,
+  RefreshCwIcon,
 } from "lucide-react/icons";
 import { useForm } from "react-hook-form";
 
@@ -102,11 +93,9 @@ export default function AudioClip({ af }: AudioClipProps) {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [loadingPercent, setLoadingPercent] = useState(0);
-  const [isLoading, setIsLoading] = useState(false);
 
   /** Resolved stitched URL (with cache-buster) & prep state */
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(null);
-  const [isPreparing, setIsPreparing] = useState(false);
   const [resolvedExt, setResolvedExt] = useState<"mp3" | "m4a">("mp3");
 
   /** Candidate final assets – try MP3, then M4A */
@@ -181,18 +170,15 @@ export default function AudioClip({ af }: AudioClipProps) {
       if (chosen) {
         setResolvedUrl(chosen.url);
         setResolvedExt(chosen.ext);
-        setIsPreparing(false);
         return;
       }
 
       // If chunks are still processing OR stitch job is likely still running, poll
-      setIsPreparing(true);
       pollTimer = window.setTimeout(attempt, 1500);
     };
 
     // Fire immediately when file id or status changes
     setResolvedUrl(null);
-    setIsPreparing(audioStatus !== "PROCESSED" ? true : false);
     attempt();
 
     return () => {
@@ -213,7 +199,6 @@ export default function AudioClip({ af }: AudioClipProps) {
 
     setDuration(nativeDuration);
     setLoadingPercent(100);
-    setIsLoading(false);
 
     // Apply saved position if available
     const saved =
@@ -269,7 +254,6 @@ export default function AudioClip({ af }: AudioClipProps) {
   };
 
   const handleLoadStart = () => {
-    setIsLoading(true);
     setLoadingPercent(0);
   };
 
@@ -286,7 +270,6 @@ export default function AudioClip({ af }: AudioClipProps) {
   };
 
   const handleError = () => {
-    setIsLoading(false);
     setIsPlaying(false);
     console.error("[AudioClip] Video loading error");
   };
@@ -327,7 +310,6 @@ export default function AudioClip({ af }: AudioClipProps) {
     setCurrentTime(0);
     setDuration(0);
     setLoadingPercent(0);
-    setIsLoading(true);
 
     // Set video source and properties
     video.src = resolvedUrl;
@@ -613,8 +595,7 @@ export default function AudioClip({ af }: AudioClipProps) {
   const uiCurrentTime = uiDuration > 0 ? currentTime : 0;
 
   /** Treat "preparing" as loading state */
-  const isLoadingToStart =
-    (!resolvedUrl || isPreparing || isLoading) && !isPlaying;
+  const isLoadingToStart = !resolvedUrl && !isPlaying;
 
   const totalChars = useMemo(
     () =>
@@ -635,24 +616,26 @@ export default function AudioClip({ af }: AudioClipProps) {
   return (
     <div className="sm:border rounded-lg sm:p-4">
       {/* Hidden Video Element for Audio Playback */}
-      <video
-        ref={videoRef}
-        onLoadedMetadata={handleLoadedMetadata}
-        onLoadedData={handleLoadedData}
-        onCanPlay={handleCanPlay}
-        onTimeUpdate={handleTimeUpdate}
-        onPlay={handlePlay}
-        onPause={handlePause}
-        onEnded={handleEnded}
-        onLoadStart={handleLoadStart}
-        onProgress={handleProgress}
-        onError={handleError}
-        preload="auto"
-        className="hidden"
-        muted={false}
-      >
-        {resolvedUrl && <source src={resolvedUrl} type="audio/mpeg" />}
-      </video>
+      {!isLoadingToStart && (
+        <video
+          ref={videoRef}
+          onLoadedMetadata={handleLoadedMetadata}
+          onLoadedData={handleLoadedData}
+          onCanPlay={handleCanPlay}
+          onTimeUpdate={handleTimeUpdate}
+          onPlay={handlePlay}
+          onPause={handlePause}
+          onEnded={handleEnded}
+          onLoadStart={handleLoadStart}
+          onProgress={handleProgress}
+          onError={handleError}
+          preload="auto"
+          className="hidden"
+          muted={false}
+        >
+          {resolvedUrl && <source src={resolvedUrl} type="audio/mpeg" />}
+        </video>
+      )}
 
       {/* Title */}
       <h3 className="text-lg font-semibold mb-4">{af.name}</h3>
@@ -661,21 +644,22 @@ export default function AudioClip({ af }: AudioClipProps) {
       <div className="flex-row-reverse sm:flex-row flex items-center justify-between gap-3 mb-2">
         <div className="flex-row-reverse sm:flex-row flex items-center gap-3">
           <Button
+            className="rounded-full"
             onClick={togglePlay}
             aria-busy={isLoadingToStart ? true : undefined}
-            disabled={!resolvedUrl || isPreparing}
+            disabled={isLoadingToStart}
+            size={isLoadingToStart ? "sm" : "icon"}
           >
             {isPlaying ? (
-              <PauseIcon className="size-4" />
+              <PauseIcon className="size-4 text-background/70 fill-background/80" />
             ) : isLoadingToStart ? (
               <span className="inline-flex items-center gap-2">
-                <Loader2Icon className="size-4 animate-spin" />
-                <span className="text-xs tabular-nums min-w-[5em] inline-block">
-                  {isPreparing ? "Preparing…" : `${loadingPercent}%`}
+                <span className="text-xs tabular-nums min-w-[5em] inline-block animate-pulse">
+                  {`${loadingPercent}%`}
                 </span>
               </span>
             ) : (
-              <PlayIcon className="size-4" />
+              <PlayIcon className="size-4 text-background/70 fill-background/80" />
             )}
           </Button>
 
@@ -812,165 +796,17 @@ export default function AudioClip({ af }: AudioClipProps) {
         </span>
       </div>
 
-      {/* Padding controls (kept) */}
-      <div>
-        {setPaddingMutation.error && (
-          <p className="text-xs text-red-500 mt-2">
-            {(setPaddingMutation.error as any).message}
-          </p>
-        )}
-
-        <div className="mt-6">
-          <button
-            type="button"
-            className="text-xs underline text-blue-600 hover:text-blue-800 mb-2"
-            onClick={() => setShowAdvanced((v) => !v)}
-          >
-            {showAdvanced ? "Hide advanced options" : "Show advanced options"}
-          </button>
-          {showAdvanced && (
-            <div className="border rounded p-4 bg-gray-50 mt-2 space-y-4">
-              <h4 className="text-base font-semibold mb-2">
-                Update Padding (ms)
-              </h4>
-              <Form {...paddingForm}>
-                <form
-                  onSubmit={paddingForm.handleSubmit(onSubmitPadding)}
-                  className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end"
-                >
-                  <FormField
-                    control={paddingForm.control}
-                    name="paddingStartMs"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Start padding</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            min={0}
-                            step={10}
-                            placeholder="0"
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={paddingForm.control}
-                    name="paddingEndMs"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>End padding</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            min={0}
-                            step={10}
-                            placeholder="0"
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <Button
-                    type="submit"
-                    variant="outline"
-                    disabled={
-                      !selectedChunk ||
-                      setPaddingMutation.isPending ||
-                      !paddingForm.formState.isValid
-                    }
-                  >
-                    {setPaddingMutation.isPending
-                      ? "Updating…"
-                      : "Apply to Selected Chunk"}
-                  </Button>
-                </form>
-              </Form>
-
-              <h4 className="font-semibold mb-2 text-sm">
-                Set Padding for All Chunks
-              </h4>
-              <Form {...paddingAllForm}>
-                <form
-                  onSubmit={paddingAllForm.handleSubmit(onSubmitPaddingAll)}
-                  className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end"
-                >
-                  <FormField
-                    control={paddingAllForm.control}
-                    name="paddingStartMs"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Start padding</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            min={0}
-                            step={10}
-                            placeholder="0"
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={paddingAllForm.control}
-                    name="paddingEndMs"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>End padding</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            min={0}
-                            step={10}
-                            placeholder="0"
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <Button
-                    type="submit"
-                    variant="outline"
-                    disabled={
-                      setPaddingForAllMutation.isPending ||
-                      !paddingAllForm.formState.isValid
-                    }
-                  >
-                    {setPaddingForAllMutation.isPending
-                      ? "Updating all…"
-                      : "Apply to All Chunks"}
-                  </Button>
-                </form>
-              </Form>
-              {setPaddingForAllMutation.error && (
-                <p className="text-xs text-red-500 mt-2">
-                  {(setPaddingForAllMutation.error as any).message}
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
       {/* Retry failed chunks (kept) */}
       <div className="flex gap-4 items-center">
         {(chunks.some((c) => c.status === "ERROR") ||
           userData?.user.role === "admin") && (
           <Button
+            className="md:flex-0 flex-1 gap-2 flex"
             variant="outline"
             onClick={() => retryMutation.mutate({ audioFileId: af.id })}
           >
-            Retry Failed Chunks
+            <RefreshCwIcon className="h-4 w-4" />
+            <span>Retry Failed Chunks</span>
           </Button>
         )}
       </div>
