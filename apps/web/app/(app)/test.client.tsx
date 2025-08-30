@@ -126,7 +126,7 @@ const TestClient = () => {
 
   // Auto-select a speaker when loaded
   useEffect(() => {
-    if (!speakersData?.speakers?.length) return;
+    if (!speakersData?.speakers || speakersData.speakers.length <= 1) return;
     // If no speaker is selected in the form, set to the first speaker
     const currentSpeakerId = form.getValues("speakerId");
     if (!currentSpeakerId) {
