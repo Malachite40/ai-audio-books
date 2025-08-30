@@ -12,6 +12,7 @@ worker.register(
   api.workers.processAudioChunkWithInworld
 );
 worker.register(TASK_NAMES.processAudioFile, api.workers.processAudioFile);
+worker.register(TASK_NAMES.concatAudioFile, api.workers.concatAudioFile);
 
 // Configure the worker to run only 3 tasks concurrently
 worker.start();

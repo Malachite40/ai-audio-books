@@ -33,9 +33,7 @@ import { z } from "zod";
 
 import { LoginRequiredDialog } from "@/components/login-required-modal";
 import { NotEnoughCreditsDialog } from "@/components/not-enough-credits-modal";
-import { useMediaQuery } from "@/hooks/use-media-query";
 import { authClient } from "@/lib/auth-client";
-import { MEDIA_QUERY } from "@/lib/constants";
 
 // --- Schema ---
 const FormSchema = z.object({
@@ -45,11 +43,44 @@ const FormSchema = z.object({
   public: z.boolean(),
 });
 
+// --- RoyalRoad helpers (client-only import flow) ---
+
+// Matches chapter URLs like:
+// https://www.royalroad.com/fiction/21220/mother-of-learning/chapter/301778/1-good-morning-brother
+const ROYALROAD_CHAPTER_RE =
+  /^https?:\/\/(?:www\.)?royalroad\.com\/fiction\/(\d+)\/([^/]+)\/chapter\/(\d+)(?:\/([^/]+))?\/?$/i;
+
+const extractRoyalRoadUrl = (s: string) => s.match(ROYALROAD_CHAPTER_RE)?.[0];
+
+const toTitle = (s: string) =>
+  s
+    .replace(/[-_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+
+const buildNameFromUrl = (url: string) => {
+  const m = url.match(ROYALROAD_CHAPTER_RE);
+  if (!m) return "RoyalRoad Chapter";
+  const [, , fictionSlug, , chapterSlug] = m;
+  if (!fictionSlug) return "RoyalRoad Chapter";
+  const fiction = toTitle(fictionSlug);
+  const chap = chapterSlug ? toTitle(chapterSlug) : undefined;
+  return chap ? `${fiction} — ${chap}` : `${fiction} — Chapter`;
+};
+
+// NOTE: For a pure client-side approach (no server route), we use a
+// CORS-friendly readability proxy. For production, consider hosting
+// your own lightweight proxy to reduce external dependency.
+// The proxy expects http:// after its host; we pass target without scheme.
+const READABILITY_PROXY_PREFIX = "https://r.jina.ai/http://";
+const toProxyUrl = (targetUrl: string) =>
+  READABILITY_PROXY_PREFIX + targetUrl.replace(/^https?:\/\//i, "");
+
 const TestClient = () => {
   const [showConfirm, setShowConfirm] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
   const [showCredits, setShowCredits] = useState(false);
-  const isDesktop = useMediaQuery(MEDIA_QUERY.MD);
   const [selectedAudioFileId, setSelectedAudioFileId] = useQueryState(
     "id",
     parseAsString.withDefault("").withOptions({})
@@ -138,6 +169,74 @@ const TestClient = () => {
     }
     // (3) Otherwise continue to your existing confirmation flow
     setShowConfirm(true);
+  };
+
+  // --- RoyalRoad import state + logic (kept inside this component) ---
+  const [isImportingRR, setIsImportingRR] = useState(false);
+
+  const importRoyalRoadChapter = async (url: string) => {
+    if (isImportingRR) return;
+    setIsImportingRR(true);
+    toast("Fetching RoyalRoad chapter…");
+
+    try {
+      // Client-only readable proxy fetch
+      const proxied = toProxyUrl(url);
+      const res = await fetch(proxied, { credentials: "omit" });
+      if (!res.ok) throw new Error(`Fetch failed (${res.status})`);
+
+      // Proxy returns readable text / minimal HTML; normalize to plain text.
+      let body = await res.text();
+      const text = body
+        .replace(/<script[\s\S]*?<\/script>/gi, "")
+        .replace(/<style[\s\S]*?<\/style>/gi, "")
+        .replace(/<\/?(?:\w+)[^>]*>/g, "\n")
+        .replace(/\n{3,}/g, "\n\n")
+        .replace(/^Title:.*$/gm, "")
+        .replace(/^URL Source:.*$/gm, "")
+        .replace(/^Markdown Content:.*$/gm, "")
+        .trim();
+
+      if (!text) throw new Error("No content found");
+
+      // Fill in form values
+      form.setValue("name", buildNameFromUrl(url), {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+      form.setValue("text", text, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+
+      toast("Chapter imported", {
+        description: `${text.length.toLocaleString()} characters`,
+        duration: 4000,
+      });
+    } catch (err: any) {
+      console.error(err);
+      toast("Could not import chapter", {
+        description:
+          err?.message ??
+          "The site may be blocking client-side fetches. Consider a tiny server proxy for reliability.",
+        duration: 6000,
+      });
+    } finally {
+      setIsImportingRR(false);
+    }
+  };
+
+  const handleRoyalRoadPaste = async (
+    e: React.ClipboardEvent<HTMLTextAreaElement>
+  ) => {
+    const pasted = e.clipboardData.getData("text")?.trim();
+    const url = extractRoyalRoadUrl(pasted || "");
+    if (!url) return; // allow normal paste
+
+    // Let the URL paste happen for immediate feedback
+    requestAnimationFrame(async () => {
+      await importRoyalRoadChapter(url); // will replace the pasted URL with chapter text later
+    });
   };
 
   return (
@@ -277,7 +376,12 @@ const TestClient = () => {
                 <FormItem className="mb-4">
                   <FormLabel className="flex justify-between">
                     <span>Text</span>
-                    <span className="flex gap-2">
+                    <span className="flex gap-2 items-center">
+                      {isImportingRR && (
+                        <span className="text-xs text-muted-foreground animate-pulse">
+                          Importing from RoyalRoad…
+                        </span>
+                      )}
                       {(field.value.length > 0 ||
                         creditsQuery.data?.credits) && (
                         <span
@@ -289,7 +393,10 @@ const TestClient = () => {
                           )}
                         >
                           {field.value.length > 0
-                            ? `${field.value.length} Credits - $${((field.value.length * 10) / 1_000_000).toFixed(4)}`
+                            ? `${field.value.length} Credits - $${(
+                                (field.value.length * 10) /
+                                1_000_000
+                              ).toFixed(4)}`
                             : "0"}
                           {typeof availableCredits === "number" &&
                             userData &&
@@ -302,8 +409,9 @@ const TestClient = () => {
                     <Textarea
                       rows={4}
                       className="max-h-[400px]"
-                      placeholder="Enter text to synthesize"
+                      placeholder="Enter text — or paste a RoyalRoad chapter URL"
                       {...field}
+                      onPaste={handleRoyalRoadPaste}
                     />
                   </FormControl>
                   <FormMessage />

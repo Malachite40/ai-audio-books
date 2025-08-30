@@ -48,9 +48,8 @@ export function Header(props: HeaderProps) {
             )}
           </Link>
           <div className=""></div>
-          <div className="flex gap-1 justify-center items-center">
-            {/* credits */}
-
+          <div className="flex sm:gap-1 justify-center items-center">
+            {/* Upsell */}
             {(!subscriptionData?.subscription ||
               subscriptionData?.subscription?.plan === "FREE") && (
               <Fragment>
@@ -59,7 +58,7 @@ export function Header(props: HeaderProps) {
                     setShowPricing(true);
                   }}
                   variant={"ghost"}
-                  className="flex gap-2"
+                  className="flex"
                 >
                   {!subscriptionData?.subscription ? (
                     <>Pricing</>
@@ -73,6 +72,7 @@ export function Header(props: HeaderProps) {
               </Fragment>
             )}
 
+            {/* User Menu */}
             {userData?.user ? (
               <Fragment>
                 <AudioHistoryDrawer />

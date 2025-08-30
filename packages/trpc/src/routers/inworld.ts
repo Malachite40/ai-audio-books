@@ -38,7 +38,7 @@ export const inworldRouter = createTRPCRouter({
         },
       });
 
-      const CHUNK_SIZE = input.chunkSize ?? 500;
+      const CHUNK_SIZE = input.chunkSize ?? 250;
 
       const splitIntoSentences = (raw: string): string[] => {
         const text = raw.replace(/\s+/g, " ").trim();

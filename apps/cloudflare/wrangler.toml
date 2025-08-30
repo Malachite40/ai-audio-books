@@ -1,0 +1,16 @@
+name = "audio-cdn"
+main = "src/worker.ts"
+compatibility_date = "2025-08-29"
+
+# Route the Worker on your apex at /audio/*
+[[routes]]
+pattern = "instantaudio.online/audio/*"
+zone_name = "instantaudio.online"
+
+# Bind the R2 bucket
+[[r2_buckets]]
+binding = "AUDIO"
+bucket_name = "audio-bucket"
+
+[vars]
+ALLOW_ORIGIN = "http://localhost:3000,https://instantaudio.online"

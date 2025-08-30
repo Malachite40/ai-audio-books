@@ -3,6 +3,8 @@
 
 import * as React from "react";
 
+import { useMediaQuery } from "@/hooks/use-media-query";
+import { MEDIA_QUERY } from "@/lib/constants";
 import { useAudioVisibilityPrefStore } from "@/store/use-audio-visibility-pref";
 import {
   AlertDialog,
@@ -15,8 +17,16 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@workspace/ui/components/alert-dialog";
-import { buttonVariants } from "@workspace/ui/components/button";
+import { Button, buttonVariants } from "@workspace/ui/components/button";
 import { Checkbox } from "@workspace/ui/components/checkbox";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerTrigger,
+} from "@workspace/ui/components/drawer";
 import { Label } from "@workspace/ui/components/label";
 import { Switch } from "@workspace/ui/components/switch";
 import { cn } from "@workspace/ui/lib/utils";
@@ -63,24 +73,19 @@ export function ConfirmAudioVisibility({
   open,
   onOpenChange,
   trigger,
-
   title = "Share audio?",
   description = "By default we will not share your audio files.",
-
   isPending = false,
-
   defaultIsPublic = false,
   isPublic,
   onIsPublicChange,
-
   onConfirm,
   onCancel,
-
   confirmLabel = "Continue",
   cancelLabel = "Cancel",
-
   className,
 }: ConfirmAudioVisibilityProps) {
+  const isDesktop = useMediaQuery(MEDIA_QUERY.MD);
   // Persisted preference (null means not set yet)
   const preferredIsPublic = useAudioVisibilityPrefStore(
     (s) => s.preferredIsPublic
@@ -129,68 +134,132 @@ export function ConfirmAudioVisibility({
     }
   };
 
-  return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      {trigger ? (
-        <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger>
-      ) : null}
-
-      <AlertDialogContent className={className}>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{title}</AlertDialogTitle>
-          <AlertDialogDescription>{description}</AlertDialogDescription>
-        </AlertDialogHeader>
-
-        {/* Visibility toggle */}
-        <div className="flex items-center justify-between rounded-lg border p-3">
-          <div className="space-y-1">
-            <Label htmlFor="audio-public-toggle" className="text-base">
-              Make audio public
-            </Label>
-            <p className="text-sm text-muted-foreground">
-              When enabled, the audio will be accessible to others.
-            </p>
-          </div>
-          <Switch
-            id="audio-public-toggle"
-            checked={publicValue}
-            onCheckedChange={setPublicValue}
-            disabled={isPending}
-            aria-label="Toggle to make the audio public"
-          />
-        </div>
-
-        {/* Save my choice checkbox (layout-matched) */}
-        <Label className="hover:bg-accent/50 mt-2 flex items-start gap-3 rounded-lg border p-3 has-[[aria-checked=true]]:border-blue-600 has-[[aria-checked=true]]:bg-blue-50 dark:has-[[aria-checked=true]]:border-blue-900 dark:has-[[aria-checked=true]]:bg-blue-950">
-          <Checkbox
-            id="save-choice"
-            checked={saveChoice}
-            onCheckedChange={(v) => setSaveChoice(!!v)}
-            disabled={isPending}
-            className="data-[state=checked]:border-blue-600 data-[state=checked]:bg-blue-600 data-[state=checked]:text-white dark:data-[state=checked]:border-blue-700 dark:data-[state=checked]:bg-blue-700"
-          />
-          <div className="grid gap-1.5 font-normal">
-            <p className="text-sm leading-none font-medium">Save my choice</p>
-          </div>
-        </Label>
-
-        <AlertDialogFooter>
-          {onConfirm && (
-            <AlertDialogAction
-              className={cn(buttonVariants({ variant: "default" }))}
-              onClick={handleConfirm}
+  if (isDesktop) {
+    return (
+      <AlertDialog open={open} onOpenChange={onOpenChange}>
+        {trigger ? (
+          <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger>
+        ) : null}
+        <AlertDialogContent className={className}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{title}</AlertDialogTitle>
+            <AlertDialogDescription>{description}</AlertDialogDescription>
+          </AlertDialogHeader>
+          {/* Visibility toggle */}
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div className="space-y-1">
+              <Label htmlFor="audio-public-toggle" className="text-base">
+                Make audio public
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                When enabled, the audio will be accessible to others.
+              </p>
+            </div>
+            <Switch
+              id="audio-public-toggle"
+              checked={publicValue}
+              onCheckedChange={setPublicValue}
               disabled={isPending}
-            >
-              {confirmLabel}
-            </AlertDialogAction>
-          )}
-          {onCancel && (
-            <AlertDialogCancel onClick={handleCancel} disabled={isPending}>
-              {cancelLabel}
-            </AlertDialogCancel>
-          )}
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+              aria-label="Toggle to make the audio public"
+            />
+          </div>
+          {/* Save my choice checkbox (layout-matched) */}
+          <Label className="hover:bg-accent/50 flex items-start gap-3 rounded-lg border p-3">
+            <Checkbox
+              id="save-choice"
+              checked={saveChoice}
+              onCheckedChange={(v) => setSaveChoice(!!v)}
+              disabled={isPending}
+              className=""
+            />
+            <div className="grid gap-1.5 font-normal">
+              <p className="text-sm leading-none font-medium">Save my choice</p>
+            </div>
+          </Label>
+          <AlertDialogFooter>
+            {onCancel && (
+              <AlertDialogCancel onClick={handleCancel} disabled={isPending}>
+                {cancelLabel}
+              </AlertDialogCancel>
+            )}
+            {onConfirm && (
+              <AlertDialogAction
+                className={cn(buttonVariants({ variant: "default" }))}
+                onClick={handleConfirm}
+                disabled={isPending}
+              >
+                {confirmLabel}
+              </AlertDialogAction>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    );
+  }
+  // Mobile: Drawer
+  return (
+    <Drawer open={open} onOpenChange={onOpenChange}>
+      <DrawerTrigger asChild>
+        {trigger ?? <div className="hidden" />}
+      </DrawerTrigger>
+      <DrawerContent>
+        <DrawerHeader>
+          <DrawerTitle>{title}</DrawerTitle>
+          <DrawerDescription>{description}</DrawerDescription>
+        </DrawerHeader>
+        <div className="flex flex-col gap-4 p-4">
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div className="space-y-1">
+              <Label htmlFor="audio-public-toggle" className="text-base">
+                Make audio public
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                When enabled, the audio will be accessible to others.
+              </p>
+            </div>
+            <Switch
+              id="audio-public-toggle"
+              checked={publicValue}
+              onCheckedChange={setPublicValue}
+              disabled={isPending}
+              aria-label="Toggle to make the audio public"
+            />
+          </div>
+          <Label className="flex items-start gap-3 rounded-lg border p-3">
+            <Checkbox
+              id="save-choice"
+              checked={saveChoice}
+              onCheckedChange={(v) => setSaveChoice(!!v)}
+              disabled={isPending}
+              className=""
+            />
+            <div className="grid gap-1.5 font-normal">
+              <p className="text-sm leading-none font-medium">Save my choice</p>
+            </div>
+          </Label>
+          <div className="flex gap-2">
+            {onCancel && (
+              <Button
+                variant="outline"
+                className={cn("flex-1")}
+                onClick={handleCancel}
+                disabled={isPending}
+              >
+                {cancelLabel}
+              </Button>
+            )}
+            {onConfirm && (
+              <Button
+                className={cn("flex-1")}
+                onClick={handleConfirm}
+                disabled={isPending}
+              >
+                {confirmLabel}
+              </Button>
+            )}
+          </div>
+        </div>
+      </DrawerContent>
+    </Drawer>
   );
 }
