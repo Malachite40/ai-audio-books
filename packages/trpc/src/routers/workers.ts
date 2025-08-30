@@ -1,7 +1,10 @@
 import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { Upload } from "@aws-sdk/lib-storage";
 import { TRPCError } from "@trpc/server";
 import ffmpegStatic from "ffmpeg-static";
 import { spawn } from "node:child_process";
+import { PassThrough, Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import z from "zod";
 import { env } from "../env";
 import { client } from "../queue/client";
@@ -68,11 +71,10 @@ export const workersRouter = createTRPCRouter({
       const args: string[] = [
         "-hide_banner",
         "-loglevel",
-        "warning", // Changed to warning to reduce noise
+        "warning",
         "-nostdin",
       ];
-
-      chunks.forEach((c, idx) => {
+      chunks.forEach((c) => {
         if (!c.url) {
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",
@@ -82,11 +84,11 @@ export const workersRouter = createTRPCRouter({
         args.push("-i", c.url);
       });
 
-      // 5) Build filter graph - fixed padding logic and correct ordering
+      // 5) Build filter graph - normalization + padding/gaps
       const filters: string[] = [];
       const concatInputs: string[] = [];
 
-      // First, create all normalization filters
+      // Normalize all inputs to a consistent format
       for (let i = 0; i < chunks.length; i++) {
         const normalized = `norm${i}`;
         filters.push(
@@ -94,79 +96,73 @@ export const workersRouter = createTRPCRouter({
         );
       }
 
-      // Then build the concat sequence in the correct order
+      // Build the concat sequence with gaps and edge padding
       for (let i = 0; i < chunks.length; i++) {
         const c = chunks[i]!;
         const isFirst = i === 0;
         const isLast = i === chunks.length - 1;
 
-        // Calculate padding for this chunk
         const startMs = Math.max(0, c.paddingStartMs ?? 0);
         const endMs = Math.max(0, c.paddingEndMs ?? 0);
 
-        // Only apply start padding to the very first chunk
         const leadPadMs = isFirst ? startMs : 0;
-
-        // Only apply end padding to the very last chunk
         const tailMs = isLast ? endMs : 0;
 
-        // Add lead padding if needed (BEFORE the audio chunk, only for first chunk)
+        // Lead padding only for the first chunk
         if (leadPadMs > 0) {
-          const leadSilence = `lead${i}`;
-          const leadSeconds = (leadPadMs / 1000).toFixed(3);
-          // Generate silence using anullsrc and add tiny volume to ensure MP3 encoding
+          const lead = `lead${i}`;
+          const secs = (leadPadMs / 1000).toFixed(3);
           filters.push(
-            `anullsrc=r=${sampleRate}:cl=${channelLayout}:d=${leadSeconds}[${leadSilence}_raw]`
+            `anullsrc=r=${sampleRate}:cl=${channelLayout}:d=${secs}[${lead}_raw]`
           );
-          filters.push(`[${leadSilence}_raw]volume=0.001[${leadSilence}]`);
-          concatInputs.push(`[${leadSilence}]`);
+          filters.push(`[${lead}_raw]volume=0.001[${lead}]`);
+          concatInputs.push(`[${lead}]`);
         }
 
-        // Add the actual audio chunk
+        // Actual audio chunk
         concatInputs.push(`[norm${i}]`);
 
-        // Add inter-chunk gap if there's a next chunk
+        // Inter-chunk gap
         if (!isLast) {
-          const nextChunk = chunks[i + 1]!;
+          const next = chunks[i + 1]!;
           const gapMs = Math.max(
             0,
-            (c.paddingEndMs ?? 0) + (nextChunk.paddingStartMs ?? 0)
+            (c.paddingEndMs ?? 0) + (next.paddingStartMs ?? 0)
           );
-
           if (gapMs > 0) {
-            const gapSilence = `gap${i}`;
-            const gapSeconds = (gapMs / 1000).toFixed(3);
-            // Generate silence using anullsrc and add tiny volume to ensure MP3 encoding
+            const gap = `gap${i}`;
+            const secs = (gapMs / 1000).toFixed(3);
             filters.push(
-              `anullsrc=r=${sampleRate}:cl=${channelLayout}:d=${gapSeconds}[${gapSilence}_raw]`
+              `anullsrc=r=${sampleRate}:cl=${channelLayout}:d=${secs}[${gap}_raw]`
             );
-            filters.push(`[${gapSilence}_raw]volume=0.001[${gapSilence}]`);
-            concatInputs.push(`[${gapSilence}]`);
+            filters.push(`[${gap}_raw]volume=0.001[${gap}]`);
+            concatInputs.push(`[${gap}]`);
           }
         }
 
-        // Add tail padding if needed (only for last chunk, AFTER the audio)
+        // Tail padding only for the last chunk
         if (tailMs > 0) {
-          const tailSilence = `tail${i}`;
-          const tailSeconds = (tailMs / 1000).toFixed(3);
-          // Generate silence using anullsrc and add tiny volume to ensure MP3 encoding
+          const tail = `tail${i}`;
+          const secs = (tailMs / 1000).toFixed(3);
           filters.push(
-            `anullsrc=r=${sampleRate}:cl=${channelLayout}:d=${tailSeconds}[${tailSilence}_raw]`
+            `anullsrc=r=${sampleRate}:cl=${channelLayout}:d=${secs}[${tail}_raw]`
           );
-          filters.push(`[${tailSilence}_raw]volume=0.001[${tailSilence}]`);
-          concatInputs.push(`[${tailSilence}]`);
+          filters.push(`[${tail}_raw]volume=0.001[${tail}]`);
+          concatInputs.push(`[${tail}]`);
         }
       }
 
-      // Single concat of all segments in correct order
       const numInputs = concatInputs.length;
       filters.push(
         `${concatInputs.join("")}concat=n=${numInputs}:v=0:a=1[outa]`
       );
-
       const filterGraph = filters.join(";");
 
-      // 6) Output arguments - using constant bitrate for more consistent encoding of quiet sections
+      // Drop these arrays ASAP so GC can reclaim
+      filters.length = 0;
+      concatInputs.length = 0;
+
+      // 6) Output arguments - constant bitrate for predictable encoding
       const outputArgs = [
         "-filter_complex",
         filterGraph,
@@ -175,7 +171,7 @@ export const workersRouter = createTRPCRouter({
         "-c:a",
         "libmp3lame",
         "-b:a",
-        "128k", // Constant bitrate instead of variable quality for better silence handling
+        "128k",
         "-ar",
         String(sampleRate),
         "-ac",
@@ -185,84 +181,96 @@ export const workersRouter = createTRPCRouter({
         "pipe:1",
       ];
 
-      // 7) Run FFmpeg and collect output
+      // 7) Run FFmpeg and stream directly to S3 (low RAM)
       const ff = spawn(ffmpegBin, [...args, ...outputArgs], {
         stdio: ["ignore", "pipe", "pipe"],
       });
 
-      const ffmpegErrs: string[] = [];
+      // Keep only a small rolling window of stderr to avoid unbounded memory
+      let errBuf = "";
       ff.stderr?.on("data", (d) => {
-        const s = String(d);
-        ffmpegErrs.push(s);
-        // Log any warnings or errors
-        if (s.includes("Error") || s.includes("Warning")) {
-          console.error("[ffmpeg]", s.trim());
-        }
+        errBuf += String(d);
+        if (errBuf.length > 64_000) errBuf = errBuf.slice(-64_000);
       });
 
       ff.on("error", (err) => {
         console.error("[ffmpeg] process error:", err);
       });
 
-      let audioBuffer: Buffer;
-      try {
-        // Collect the output stream into a buffer
-        const [buf, exitCode] = await Promise.all([
-          streamToBuffer(ff.stdout!),
-          new Promise<number>((res) => ff.once("close", res)),
-        ]);
+      // Transform to count bytes BEFORE the Body stream; do NOT attach 'data' to Body.
+      let totalBytes = 0;
+      const counter = new Transform({
+        transform(chunk, _enc, cb) {
+          totalBytes += (chunk as Buffer).length;
+          cb(null, chunk);
+        },
+      });
 
-        if (exitCode !== 0) {
-          const msg = ffmpegErrs.join("");
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: `ffmpeg exited with ${exitCode}: ${msg}`,
-          });
-        }
+      // PassThrough stream that becomes the Upload Body
+      const pass = new PassThrough({ highWaterMark: 1024 * 1024 }); // ~1MB chunks
 
-        audioBuffer = buf;
-      } catch (err) {
-        ff.kill("SIGKILL");
-        const msg = ffmpegErrs.join("");
-        console.error("Concat/Encode error:", err, msg);
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: `Concat encode failed: ${(err as Error).message}\n${msg}`,
-        });
-      }
-
-      // 8) Verify the audio buffer is valid
-      if (audioBuffer.length < 1000) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: `Generated audio is too small: ${audioBuffer.length} bytes`,
-        });
-      }
-
-      // 9) Upload to S3
-      try {
-        const put = new PutObjectCommand({
+      // Managed multipart upload handles streaming + checksums safely
+      const upload = new Upload({
+        client: s3Client,
+        params: {
           Bucket: bucket,
           Key: finalKey,
-          Body: audioBuffer,
+          Body: pass, // S3 reads from this; we never attach 'data' listeners
           ContentType: "audio/mpeg",
           Metadata: {
             "x-concat-chunks": String(chunks.length),
             "x-concat-duration": String(audioFile.durationMs || 0),
           },
-        });
+        },
+      });
 
-        await s3Client.send(put);
+      try {
+        // Pipe ffmpeg -> counter (counts bytes) -> pass (Body for Upload)
+        const pipePromise = pipeline(ff.stdout!, counter, pass);
+
+        // Run ffmpeg, piping, and S3 upload concurrently
+        const [exitCode] = await Promise.all([
+          new Promise<number>((res) => ff.once("close", res)),
+          pipePromise,
+          upload.done(),
+        ]);
+
+        if (exitCode !== 0) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: `ffmpeg exited with ${exitCode}: ${errBuf}`,
+          });
+        }
+
+        if (totalBytes < 1000) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: `Generated audio is too small: ${totalBytes} bytes`,
+          });
+        }
+
         console.log(`Uploaded to S3: ${finalUrl}`);
       } catch (err) {
-        console.error("S3 upload error:", err);
+        try {
+          ff.kill("SIGKILL");
+        } catch {}
+        try {
+          (upload as any).abort?.();
+        } catch {}
+        console.error("Concat/Upload error:", err, errBuf);
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message: `Upload failed: ${(err as Error).message}`,
+          message: `Concat upload failed: ${(err as Error).message}\n${errBuf}`,
         });
+      } finally {
+        // Proactively drop references to help GC
+        errBuf = "";
+        ff.removeAllListeners();
+        ff.stdout?.removeAllListeners();
+        ff.stderr?.removeAllListeners();
       }
 
-      // 10) Update database status
+      // 8) Update database status
       await ctx.db.audioFile.update({
         where: { id: audioFile.id },
         data: {
@@ -349,7 +357,11 @@ export const workersRouter = createTRPCRouter({
         });
       }
 
-      let audioBuffer: Buffer;
+      // Parse and measure audio BEFORE uploading to minimize time retaining the buffer
+      let audioBuffer: Buffer | undefined;
+      let durationMs = 0;
+      let mime: "audio/mpeg" | "audio/wav" = "audio/mpeg";
+
       try {
         const result = await resp.json();
         if (!result.audioContent || typeof result.audioContent !== "string") {
@@ -362,8 +374,17 @@ export const workersRouter = createTRPCRouter({
           "Received audio buffer from Inworld, length:",
           audioBuffer.length
         );
+
+        if (audioBuffer.length < 100) {
+          throw new Error(
+            `Buffer too small to be audio (${audioBuffer.length} bytes)`
+          );
+        }
+
+        mime = detectMime(audioBuffer);
+        durationMs = await getAudioDurationMs(audioBuffer, mime);
       } catch (err) {
-        console.error("Failed to parse Inworld TTS API response:", err);
+        console.error("Failed to parse/measure Inworld TTS API response:", err);
         await ctx.db.audioChunk.update({
           where: { id: audioChunk.id },
           data: { status: "ERROR" },
@@ -376,21 +397,6 @@ export const workersRouter = createTRPCRouter({
         });
       }
 
-      if (audioBuffer.length < 100) {
-        console.error(
-          "Received buffer too small to be audio:",
-          audioBuffer.length
-        );
-        await ctx.db.audioChunk.update({
-          where: { id: audioChunk.id },
-          data: { status: "ERROR" },
-        });
-        throw new TRPCError({
-          code: "BAD_GATEWAY",
-          message: `Received buffer too small to be audio (${audioBuffer.length} bytes)`,
-        });
-      }
-
       // Upload to S3
       const key = `audio/${audioChunk.audioFileId}/chunks/${String(
         audioChunk.sequence
@@ -400,7 +406,7 @@ export const workersRouter = createTRPCRouter({
         const put = new PutObjectCommand({
           Bucket: env.NEXT_PUBLIC_CLOUD_FLARE_AUDIO_BUCKET_NAME,
           Key: key,
-          Body: audioBuffer,
+          Body: audioBuffer!, // already validated
           ContentType: "audio/mpeg",
         });
         console.log(
@@ -420,11 +426,10 @@ export const workersRouter = createTRPCRouter({
             err instanceof Error ? err.message : String(err)
           }`,
         });
+      } finally {
+        // Drop the large buffer reference ASAP
+        audioBuffer = undefined;
       }
-
-      // Detect mime + compute precise duration
-      const mime = detectMime(audioBuffer);
-      const durationMs = await getAudioDurationMs(audioBuffer, mime);
 
       // Save chunk with RAW audio duration (no padding)
       await ctx.db.audioChunk.update({
@@ -452,7 +457,6 @@ export const workersRouter = createTRPCRouter({
         orderBy: { sequence: "asc" },
       });
 
-      // Calculate total duration with fixed padding logic (matching concat function)
       let totalDuration = 0;
       for (let i = 0; i < allForFile.length; i++) {
         const c = allForFile[i]!;
@@ -463,15 +467,11 @@ export const workersRouter = createTRPCRouter({
         const startMs = Math.max(0, c.paddingStartMs ?? 0);
         const endMs = Math.max(0, c.paddingEndMs ?? 0);
 
-        // Only apply start padding to the very first chunk
         const leadPadMs = isFirst ? startMs : 0;
-
-        // Only apply end padding to the very last chunk
         const tailMs = isLast ? endMs : 0;
 
         totalDuration += leadPadMs + chunkDuration + tailMs;
 
-        // Add inter-chunk gap if there's a next chunk
         if (!isLast) {
           const nextChunk = allForFile[i + 1]!;
           const gapMs = Math.max(
@@ -722,7 +722,7 @@ function tryXingVBRI(buf: Buffer, start: number, h: MpegHeader): number | null {
   const xingOff = start + 4 + sideInfoLen;
   if (xingOff + 16 <= buf.length) {
     const tag = buf.slice(xingOff, xingOff + 4).toString("ascii");
-    if (tag === "Xing" || tag === "Info") {
+    if (tag === "Xing" || "Info") {
       const flags = readUInt32BE(buf, xingOff + 4);
       if (flags & 0x0001) {
         const frames = readUInt32BE(buf, xingOff + 8);
