@@ -27,6 +27,7 @@ export const env = createEnv({
     STRIPE_PRO_PLAN: z.string(),
     TAX_RATE_ID: z.string(),
     ONE_M_CREDIT_PRICE: z.string(),
+    OPENAI_API_KEY: z.string(),
   },
 
   /**
@@ -69,6 +70,7 @@ export const env = createEnv({
     STRIPE_PRO_PLAN: process.env.STRIPE_PRO_PLAN,
     TAX_RATE_ID: process.env.TAX_RATE_ID,
     ONE_M_CREDIT_PRICE: process.env.ONE_M_CREDIT_PRICE,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
   },
   /**
    * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially

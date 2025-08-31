@@ -27,7 +27,7 @@ export default async function Home(props: {
         <Logo className="size-30" />
         <p className="mb-4">No audio file found.</p>
         <Link
-          href={`/audio/new`}
+          href={`/audio-file/new`}
           className={cn(buttonVariants({ variant: "outline" }))}
         >
           <AudioLinesIcon className="h-4 w-4" />

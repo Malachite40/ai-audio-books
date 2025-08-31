@@ -84,7 +84,7 @@ export function HomeClient(props: HomeClientProps) {
 
           {/* Create Audio Book Button */}
           <Link
-            href="/audio/new"
+            href="/audio-file/new"
             className={buttonVariants({
               variant: "link",
               size: "lg",
@@ -113,7 +113,7 @@ export function HomeClient(props: HomeClientProps) {
             onClick={() => {
               authClient.signIn.social({
                 provider: "google",
-                callbackURL: env.NEXT_PUBLIC_BASE_URL + "/audio/new",
+                callbackURL: env.NEXT_PUBLIC_BASE_URL + "/audio-file/new",
               });
             }}
           >

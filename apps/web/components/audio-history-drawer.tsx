@@ -22,14 +22,14 @@ export function AudioHistoryDrawer() {
     <Drawer open={open} onOpenChange={setOpen}>
       <DrawerTrigger asChild>
         <Button type="button" variant="ghost">
-          History
+          Library
         </Button>
       </DrawerTrigger>
       <DrawerContent className="h-9/12">
         <DrawerHeader>
-          <DrawerTitle>Audio History</DrawerTitle>
+          <DrawerTitle>Library</DrawerTitle>
           <DrawerDescription>
-            Your listened audiobooks history.
+            Your listened audiobooks library.
           </DrawerDescription>
         </DrawerHeader>
         <div className="p-4 overflow-auto">

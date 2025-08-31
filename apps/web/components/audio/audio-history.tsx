@@ -141,7 +141,7 @@ export const AudioHistory = ({}: AudioHistoryProps) => {
               <TableRow
                 onClick={() => {
                   if (pathname !== "/") {
-                    router.push(`/audio/${af.id}`);
+                    router.push(`/audio-file/${af.id}`);
                   } else {
                     setSelectedAudioFileId(af.id);
                   }
