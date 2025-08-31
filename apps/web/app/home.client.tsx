@@ -196,9 +196,9 @@ export function HomeClient(props: HomeClientProps) {
 
               {/* Try it now */}
               <div className="md:col-span-3 ml-auto">
-                <Button>
+                <Link href="/audio-file/new">
                   <span>Try it now</span>
-                </Button>
+                </Link>
               </div>
             </div>
 
