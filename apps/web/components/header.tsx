@@ -63,7 +63,7 @@ export function Header(props: HeaderProps) {
                   {!subscriptionData?.subscription ? (
                     <>Pricing</>
                   ) : (
-                    <span className="px-3 py-1 rounded-md drop-shadow-[0_0_10px_rgba(110,85,207,1)] text-primary">
+                    <span className="px-3 py-1 rounded-md drop-shadow-[0_0_10px_rgba(207,164,85,1)] text-primary">
                       Upgrade
                     </span>
                   )}

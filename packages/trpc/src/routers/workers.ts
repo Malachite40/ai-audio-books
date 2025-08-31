@@ -693,7 +693,7 @@ export const workersRouter = createTRPCRouter({
       task.applyAsync([
         {
           audioFileId: input.audioFileId,
-          chunkSize: 300,
+          chunkSize: 500,
         } satisfies z.infer<typeof createAudioFileChunksInput>,
       ]);
 
