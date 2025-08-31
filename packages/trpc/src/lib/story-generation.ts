@@ -119,7 +119,7 @@ export async function generateStory({
     }
 
     // 0) Compute length bounds
-    const targetChars = Math.round(duration * 1200);
+    const targetChars = Math.round(duration * 1000);
     const minChars = Math.max(500, Math.round(targetChars * 0.9));
     const maxChars = Math.round(targetChars * 1.1);
     const headroomTokens = tokensForChars(maxChars);

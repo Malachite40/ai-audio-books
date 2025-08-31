@@ -434,8 +434,7 @@ const NewAudioClient = () => {
                 {
                   key: "copy",
                   label: "Copy & paste text",
-                  description:
-                    "Paste your text or a RoyalRoad chapter URL. Quick and simple.",
+                  description: "Paste your text. Quick and simple.",
                   Icon: ClipboardList,
                 },
                 {
