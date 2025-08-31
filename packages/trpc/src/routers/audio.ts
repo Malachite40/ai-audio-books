@@ -105,7 +105,18 @@ export const audioRouter = createTRPCRouter({
           ],
         },
         include: {
-          AudioFileSettings: true,
+          AudioChunks: {
+            orderBy: {
+              sequence: "asc",
+            },
+          },
+          AudioFileSettings: ctx.user
+            ? {
+                where: {
+                  userId: ctx.user.id,
+                },
+              }
+            : false,
         },
       });
       return { audioFile };

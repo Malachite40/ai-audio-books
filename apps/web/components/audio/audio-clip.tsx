@@ -55,34 +55,6 @@ const END_EPSILON = 1e-3;
 const clampPlayable = (offset: number, duration: number) =>
   Math.min(Math.max(0, offset), Math.max(0, duration - END_EPSILON));
 
-/** Try HEAD(+Range) to see if a URL is ready & rangeable; return ETag if present */
-async function probePlayable(url: string) {
-  try {
-    const resp = await fetch(url, {
-      method: "HEAD",
-      cache: "no-store",
-      // Many servers (yours included) support HEAD with Range → 206
-      headers: { Range: "bytes=0-0" },
-    });
-    if (![200, 206].includes(resp.status)) return null;
-    const accept = resp.headers.get("accept-ranges") || "";
-    if (!accept.toLowerCase().includes("bytes")) return null;
-    const etag = resp.headers.get("etag") || undefined;
-    const len = Number(resp.headers.get("content-length") || "0");
-    const ctype = resp.headers.get("content-type") || undefined;
-    return { etag, len, ctype, status: resp.status };
-  } catch {
-    return null;
-  }
-}
-
-/** Small helper to add cache-buster param from ETag (or timestamp) */
-function withBuster(url: string, etag?: string) {
-  const u = new URL(url);
-  u.searchParams.set(etag ? "e" : "t", etag ?? String(Date.now()));
-  return u.toString();
-}
-
 export default function AudioClip({ af }: AudioClipProps) {
   // ──────────────────────────
   // State
@@ -95,10 +67,6 @@ export default function AudioClip({ af }: AudioClipProps) {
   const [duration, setDuration] = useState(0);
   const [loadingPercent, setLoadingPercent] = useState(0);
 
-  /** Resolved stitched URL (with cache-buster) & prep state */
-  const [resolvedUrl, setResolvedUrl] = useState<string | null>(null);
-  const [resolvedExt, setResolvedExt] = useState<"mp3" | "m4a">("mp3");
-
   /** Candidate final assets – try MP3, then M4A */
   const baseMp3 = `https://instantaudio.online/audio/${af.id}.mp3`;
 
@@ -109,9 +77,24 @@ export default function AudioClip({ af }: AudioClipProps) {
   // Persist & restore position
   // ──────────────────────────
   const upsertSettings = api.audio.settings.upsert.useMutation();
-  const audioFetchQuery = api.audio.fetch.useQuery(
+  const audioFileQuery = api.audio.fetch.useQuery(
     { id: af.id },
-    { staleTime: 10_000 }
+    {
+      refetchOnWindowFocus: false,
+      refetchInterval(query) {
+        const a = query.state.data?.audioFile;
+        if (!a) return false;
+        switch (a.status) {
+          case "GENERATING_STORY":
+          case "PENDING":
+          case "PROCESSING":
+            return 1000;
+          case "ERROR":
+          case "PROCESSED":
+            return false;
+        }
+      },
+    }
   );
 
   const saveTimerRef = useRef<number | null>(null);
@@ -146,49 +129,6 @@ export default function AudioClip({ af }: AudioClipProps) {
   const appliedInitialRef = useRef(false);
 
   // ──────────────────────────
-  // Resolve the stitched asset URL (probe MP3→M4A, poll while preparing)
-  // ──────────────────────────
-  const audioStatus = audioFetchQuery.data?.audioFile?.status;
-
-  useEffect(() => {
-    let stop = false;
-    let pollTimer: number | null = null;
-
-    const attempt = async () => {
-      if (stop) return;
-
-      // Prefer MP3; if you output M4A, this falls through
-      const tryOne = async (url: string, ext: "mp3" | "m4a") => {
-        const res = await probePlayable(withBuster(url)); // temp buster to defeat 404 caching
-        if (!res) return null;
-        const final = withBuster(url, res.etag); // stable cache-buster from ETag if present
-        return { url: final, ext };
-      };
-
-      const mp3 = await tryOne(baseMp3, "mp3");
-      const chosen = mp3;
-      if (chosen) {
-        setResolvedUrl(chosen.url);
-        setResolvedExt(chosen.ext);
-        return;
-      }
-
-      // If chunks are still processing OR stitch job is likely still running, poll
-      pollTimer = window.setTimeout(attempt, 1500);
-    };
-
-    // Fire immediately when file id or status changes
-    setResolvedUrl(null);
-    attempt();
-
-    return () => {
-      stop = true;
-      if (pollTimer != null) clearTimeout(pollTimer);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [af.id, baseMp3, audioStatus]);
-
-  // ──────────────────────────
   // Video Event Handlers
   // ──────────────────────────
   const handleLoadedMetadata = () => {
@@ -202,7 +142,7 @@ export default function AudioClip({ af }: AudioClipProps) {
 
     // Apply saved position if available
     const saved =
-      audioFetchQuery.data?.audioFile?.AudioFileSettings?.[0]?.currentTime;
+      audioFileQuery.data?.audioFile?.AudioFileSettings?.[0]?.currentTime;
     if (
       !appliedInitialRef.current &&
       typeof saved === "number" &&
@@ -213,7 +153,7 @@ export default function AudioClip({ af }: AudioClipProps) {
       setCurrentTime(saved);
       video.currentTime = saved;
       appliedInitialRef.current = true;
-    } else if (audioFetchQuery.isSuccess) {
+    } else if (audioFileQuery.isSuccess) {
       appliedInitialRef.current = true;
     }
   };
@@ -298,6 +238,14 @@ export default function AudioClip({ af }: AudioClipProps) {
     }
   };
 
+  const resolvedUrl = useMemo(() => {
+    if (!audioFileQuery.data?.audioFile) return null;
+
+    const { id, status } = audioFileQuery.data.audioFile;
+    if (status === "PROCESSED")
+      return "https://instantaudio.online" + `/audio/${id}.mp3`;
+  }, [audioFileQuery.data]);
+
   // ──────────────────────────
   // Setup video element when URL changes
   // ──────────────────────────
@@ -344,7 +292,6 @@ export default function AudioClip({ af }: AudioClipProps) {
       window.removeEventListener("pagehide", onHide);
       window.removeEventListener("beforeunload", onHide);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [af.id]);
 
   // ──────────────────────────
@@ -392,25 +339,9 @@ export default function AudioClip({ af }: AudioClipProps) {
     }
   };
 
-  // ──────────────────────────
-  // Chunks & transcript (UI only, unchanged)
-  // ──────────────────────────
-  const audioFileQuery = api.audio.chunks.fetchAll.useQuery(
-    { audioFileId: af.id },
-    {
-      refetchInterval: (data) => {
-        const chunks = data.state.data?.audioFile?.AudioChunks ?? [];
-        const allDone =
-          chunks.length > 0 &&
-          chunks.every((c: any) => c.status === "PROCESSED");
-        return allDone ? false : 500;
-      },
-    }
-  );
-
   const chunks = useMemo(
     () =>
-      (audioFileQuery.data?.audioFile.AudioChunks ?? [])
+      (audioFileQuery.data?.audioFile?.AudioChunks ?? [])
         .slice()
         .sort((a: any, b: any) => a.sequence - b.sequence),
     [audioFileQuery.data]
@@ -433,7 +364,6 @@ export default function AudioClip({ af }: AudioClipProps) {
 
       // Inclusive start: include the chunk’s start padding
       const startMs = t;
-      const padStartMs = t;
 
       t += startPad;
 
@@ -495,17 +425,6 @@ export default function AudioClip({ af }: AudioClipProps) {
     desiredStartRef.current = target;
     playFrom(target);
   };
-
-  // Padding controls (kept)
-  const setPaddingMutation = api.audio.chunks.setPadding.useMutation();
-  const setPaddingForAllMutation =
-    api.audio.chunks.setPaddingForAll.useMutation();
-
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const paddingAllForm = useForm<z.infer<typeof PaddingAllSchema>>({
-    resolver: zodResolver(PaddingAllSchema),
-    defaultValues: { paddingStartMs: 0, paddingEndMs: 0 },
-  });
   const paddingForm = useForm<z.infer<typeof PaddingSchema>>({
     resolver: zodResolver(PaddingSchema),
     defaultValues: { paddingStartMs: 0, paddingEndMs: 0 },
@@ -602,7 +521,7 @@ export default function AudioClip({ af }: AudioClipProps) {
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = blobUrl;
-      a.download = `${af.name || af.id}.mp3`;
+      a.download = `${af.id}.mp3`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -612,6 +531,26 @@ export default function AudioClip({ af }: AudioClipProps) {
       toast("Failed to download audio");
     }
   };
+
+  if (!audioFileQuery.data || !audioFileQuery.data.audioFile) {
+    return (
+      <LoadingScreen
+        title="Loading Audio..."
+        subtitle="Please wait while your audio is being prepared."
+      />
+    );
+  }
+
+  const audioFile = audioFileQuery.data.audioFile;
+
+  if (audioFile.status === "GENERATING_STORY") {
+    return (
+      <LoadingScreen
+        title="Generating Story..."
+        subtitle="Please wait while your story is being generated."
+      />
+    );
+  }
 
   return (
     <div className="sm:border rounded-lg sm:p-4">
@@ -638,7 +577,7 @@ export default function AudioClip({ af }: AudioClipProps) {
       )}
 
       {/* Title */}
-      <h3 className="text-lg font-semibold mb-4">{af.name}</h3>
+      <h3 className="text-lg font-semibold mb-4">{audioFile.name}</h3>
 
       {/* Unified controls (kept) */}
       <div className="flex-row-reverse sm:flex-row flex items-center justify-between gap-3 mb-2">
@@ -696,7 +635,7 @@ export default function AudioClip({ af }: AudioClipProps) {
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                <p>Download {resolvedExt.toUpperCase()}</p>
+                <p>Download MP3</p>
               </TooltipContent>
             </Tooltip>
           </div>
@@ -827,6 +766,22 @@ export default function AudioClip({ af }: AudioClipProps) {
             <span>Retry Failed Chunks</span>
           </Button>
         )}
+      </div>
+    </div>
+  );
+}
+
+export interface LoadingScreenProps {
+  title: string;
+  subtitle: string;
+}
+
+export function LoadingScreen({ title, subtitle }: LoadingScreenProps) {
+  return (
+    <div className="container mx-auto p-4 flex flex-col justify-center items-center max-w-5xl text-primary">
+      <div className="md:border max-w-lg w-full rounded-lg sm:p-4 flex flex-col items-center justify-center min-h-[200px] animate-pulse">
+        <span className="text-lg font-semibold mb-2">{title}</span>
+        <span className="text-sm text-muted-foreground">{subtitle}</span>
       </div>
     </div>
   );

@@ -55,7 +55,7 @@ import { z } from "zod";
 // Helpers for duration UX
 // ------------------------------
 const MIN_DURATION = 5; // minutes
-const MAX_DURATION = 120; // minutes (2 hours)
+const MAX_DURATION = 60; // minutes (2 hours)
 const STEP_MINUTES = 5; // slider/input increments
 
 function clamp(n: number, lo: number, hi: number) {
@@ -144,18 +144,6 @@ const slugify = (s: string) =>
     .replace(/[^a-z0-9]+/gi, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 60);
-
-const deriveSuggestedTitle = (text: string) => {
-  if (!text?.trim()) return "";
-  // Prefer a first-level heading if present
-  const h1 = text.match(/^\s*(?:#\s+|<h1[^>]*>)([^<\n]+)(?:<\/h1>)?/im)?.[1];
-  const firstLine = (h1 ?? text.split(/\n+/)[0] ?? "").trim();
-  if (!firstLine) return "";
-  return firstLine
-    .replace(/\s+/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase())
-    .slice(0, 80);
-};
 
 const NewAudioClient = () => {
   const router = useRouter();
