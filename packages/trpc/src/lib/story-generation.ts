@@ -1,17 +1,10 @@
 import { openai } from "@ai-sdk/openai";
 import { generateText } from "ai";
-import { z } from "zod";
 
 type StoryResult = { title: string; story: string };
 
-const TitleSchema = z.object({
-  title: z.string().max(60, "Title must be ≤ 60 characters").min(3),
-});
-
-const StorySchema = z.object({
-  title: z.string().max(60),
-  story: z.string().min(1),
-});
+/** Shared model */
+const model = openai("gpt-4o-mini");
 
 /** Approx chars → token budget with slack */
 const tokensForChars = (chars: number) => Math.ceil((chars / 4) * 1.2);
@@ -35,17 +28,6 @@ async function withRetry<T>(
   throw new Error(`${label} failed after ${retries + 1} attempts: ${msg}`);
 }
 
-/** Try hard to parse JSON (handles stray text around JSON if model slips) */
-function robustJsonParse<T = unknown>(raw: string): T {
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    const match = raw.match(/\{[\s\S]*\}/);
-    if (match) return JSON.parse(match[0]) as T;
-    throw new Error("Could not find valid JSON in model output.");
-  }
-}
-
 /** Trim to nearest sentence/paragraph boundary ≤ maxChars */
 function smartTrim(text: string, maxChars: number): string {
   if (text.length <= maxChars) return text;
@@ -61,48 +43,100 @@ function smartTrim(text: string, maxChars: number): string {
     .trim();
 }
 
-/** Ensure title meets length; if not, rewrite to ≤ 60 chars using generateText */
-async function ensureTitleWithinLimit(title: string): Promise<string> {
-  if (title.length <= 60) return title;
-  const { text } = await generateText({
-    model: openai("gpt-4o-mini"),
-    maxOutputTokens: 64,
-    prompt: `
-Rewrite this story title to be ≤ 60 characters, evocative, spoiler-free.
-Return ONLY the rewritten title text (no quotes, no JSON).
-
-Original: ${title}
-    `.trim(),
-  });
-  const cleaned = text.trim().replace(/^["'“”]+|["'“”]+$/g, "");
-  return cleaned.slice(0, 60).trim();
+/** Escape for safe insertion into a RegExp */
+function escapeRegExp(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** First call: produce a title for the story (JSON) */
+/** Remove a leading title line if the model included it */
+function stripLeadingTitle(body: string, title: string): string {
+  let text = body.trimStart();
+  const t = escapeRegExp(title.trim());
+
+  // Place '-' first in character classes to avoid accidental ranges.
+  const sepClass = "[-—–:·•.]";
+
+  const patterns: RegExp[] = [
+    // **Title** …
+    new RegExp(`^\\*\\*\\s*${t}\\s*\\*\\*\\s*(?:${sepClass}\\s*)?`, "i"),
+    // *Title* …
+    new RegExp(`^\\*\\s*${t}\\s*\\*\\s*(?:${sepClass}\\s*)?`, "i"),
+    // "Title" … or “Title” …
+    new RegExp(`^[“"']\\s*${t}\\s*[”"']\\s*(?:${sepClass}\\s*)?`, "i"),
+    // # Title \n
+    new RegExp(`^#\\s*${t}\\s*\\n+`, "i"),
+    // Title: … / Title — … / Title - …
+    new RegExp(`^${t}\\s*(?:${sepClass}\\s*)+`, "i"),
+    // Title on its own line, then a blank line
+    new RegExp(`^${t}\\s*\\n\\s*\\n`, "i"),
+  ];
+
+  for (const rx of patterns) {
+    if (rx.test(text)) return text.replace(rx, "").trimStart();
+  }
+
+  // Conservative fallback: if the very first line is exactly the title (optionally quoted), drop it
+  const [firstLine, ...rest] = text.split(/\r?\n/);
+  if (firstLine) {
+    const fl = firstLine.replace(/^[“"']|[”"']$/g, "").trim();
+    if (
+      fl.localeCompare(title.trim(), undefined, { sensitivity: "accent" }) === 0
+    ) {
+      return rest.join("\n").trimStart();
+    }
+  }
+
+  return body;
+}
+
+/** Ensure title meets length; if not, rewrite to ≤ 60 chars using generateText */
+async function ensureTitleWithinLimit(title: string): Promise<string> {
+  const cleaned = title.trim().replace(/^["'“”]+|["'“”]+$/g, "");
+  if (cleaned.length <= 60 && cleaned.length >= 3) return cleaned;
+
+  const { text } = await generateText({
+    model,
+    maxOutputTokens: 64,
+    prompt: `
+Rewrite this story title to be ≤ 60 characters, evocative, and spoiler-free.
+Return ONLY the rewritten title text (no quotes, no JSON).
+
+Original: ${cleaned}
+    `.trim(),
+  });
+
+  const rewritten = text.trim().replace(/^["'“”]+|["'“”]+$/g, "");
+  return rewritten.slice(0, 60).trim() || cleaned.slice(0, 60).trim();
+}
+
+/** Produce a title for the story (plain text only) */
 async function createTitle(premise: string): Promise<string> {
-  const raw = await withRetry(async () => {
+  const rawTitle = await withRetry(async () => {
     const { text } = await generateText({
-      model: openai("gpt-4o-mini"),
+      model,
       maxOutputTokens: 120,
       prompt: `
-Return ONLY JSON: {"title": string ≤ 60 chars}
-
-TASK
-Create an evocative, spoiler-free title for a short story based on the user's premise. 
+Create an evocative, spoiler-free title for a short story based on the user's premise.
 Avoid copyrighted names unless supplied.
+Return ONLY the title text (no quotes, no JSON), between 3 and 60 characters.
 
 PREMISE
 ${premise}
-        `.trim(),
+      `.trim(),
     });
     return text;
   }, "Title generation");
 
-  let parsed = TitleSchema.parse(robustJsonParse<{ title: string }>(raw));
-  parsed.title = await ensureTitleWithinLimit(parsed.title);
-  return parsed.title;
+  return ensureTitleWithinLimit(rawTitle);
 }
 
+/**
+ * PURPOSE: Generate an original short story from a user premise.
+ * - Step 1: Create a concise, evocative title (≤ 60 chars).
+ * - Step 2: Generate plain-text story targeting a character range based on duration.
+ * - Step 3: If needed, extend or tighten to stay within range.
+ * Returns { title, story }.
+ */
 export async function generateStory({
   duration,
   prompt,
@@ -124,16 +158,16 @@ export async function generateStory({
     const maxChars = Math.round(targetChars * 1.1);
     const headroomTokens = tokensForChars(maxChars);
 
-    // 1) First call: create title
+    // 1) Title (plain text)
     const storyTitle = await createTitle(prompt);
 
-    // 2) Generate story JSON using that exact title
+    // 2) Generate story (plain text only)
     const basePrompt = `
-You must return ONLY a JSON object matching the provided schema (no prose, no backticks, no Markdown).
-
 IMPORTANT
 - Title of story: "${storyTitle}".
 - Do not change, add punctuation to, or rephrase the title.
+- Do NOT include the title anywhere in the story body.
+- Begin directly with the first paragraph; no headings, no bolded title.
 
 TASK
 Write an original, high-quality short story based on the user's premise.
@@ -151,112 +185,117 @@ CONTENT & STYLE REQUIREMENTS
 - Story: plain text only; paragraphs separated by single blank lines; no chapter headings; no HTML/Markdown (asterisks for emphasis are allowed as cues).
 - Structure: hook → rising tension → clear climax → satisfying resolution.
 - Voice: show, don’t tell; vivid sensory detail; active voice; varied sentence rhythm.
-- Scene/beat breaks for TTS: insert *** between beats roughly every 1–3k characters.
 - Rating: PG-13 by default unless the premise requests otherwise.
 - Originality: do NOT use copyrighted characters, settings, or lyrics unless supplied.
 - Language: American English.
 
-OUTPUT FORMAT
-Return ONLY the story.
+TIPS
+- Punctuation matters! Exclamation points (!) for emphasis. Ellipsis (…) or dashes ( — ) for natural pauses.
+- You can emphasize specific words by surrounding them with asterisks, e.g., *need*.
+
+OUTPUT
+Return ONLY the story text.
     `.trim();
 
-    const initialText = await withRetry(async () => {
+    let story = await withRetry(async () => {
       const { text } = await generateText({
-        model: openai("gpt-4o-mini"),
+        model,
         prompt: basePrompt,
         maxOutputTokens: headroomTokens,
       });
-      return text;
+      return text.trim();
     }, "Initial story generation");
 
-    // 3) Parse + validate JSON; enforce that title matches exactly
-    let draft = StorySchema.parse(robustJsonParse<StoryResult>(initialText));
-    draft.title = storyTitle; // force exact title even if model deviated slightly
+    // Strip any leading title the model may have printed
+    story = stripLeadingTitle(story, storyTitle);
 
-    // 4) Guardrails: extend or tighten to meet char range using generateText only
+    // 3) Guardrails: extend or tighten to meet char range using plain text prompts only
     const enforceBounds = async (): Promise<void> => {
-      let len = draft.story.length;
+      let len = story.length;
 
       // Too short → extend with NEW material only
       if (len < minChars) {
         const needed = minChars - len;
         const extendPrompt = `
-Return ONLY the continuation text (no JSON, no title). Append NEW material only—no repetition—same voice and plot. 
-Ensure that after appending, TOTAL length is at least ${minChars} characters (target ~${targetChars}). 
-Preserve paragraphing and existing *** beat markers cadence.
+Return ONLY the continuation text. Append NEW material only—no repetition—same voice and plot.
+Do NOT restate or include the title anywhere.
+Ensure that after appending, TOTAL length is at least ${minChars} characters (target ~${targetChars}).
+Preserve paragraphing and any existing *** beat markers cadence.
 
 [STORY SO FAR]
-${draft.story}
+${story}
         `.trim();
 
         const addendum = await withRetry(async () => {
           const { text } = await generateText({
-            model: openai("gpt-4o-mini"),
+            model,
             prompt: extendPrompt,
             maxOutputTokens: tokensForChars(needed + 600),
           });
           return text.trim();
         }, "Story extension");
 
-        draft.story = (draft.story + "\n\n" + addendum).trim();
-        len = draft.story.length;
+        story = (story + "\n\n" + addendum).trim();
+        story = stripLeadingTitle(story, storyTitle); // Safety: if the model re-added it
+        len = story.length;
       }
 
       // Too long → rewrite to target range
       if (len > maxChars) {
         const rewritePrompt = `
-Rewrite the story below to ${targetChars} characters (±10%), preserving events, tone, and *** beat markers.
-Reply ONLY with the rewritten story text (no JSON, no title).
+Rewrite the story below to ${targetChars} characters (±10%), preserving events, tone, and any *** beat markers.
+Do NOT include or reinsert the title.
+Reply ONLY with the rewritten story text.
 
 [ORIGINAL]
-${draft.story}
+${story}
         `.trim();
 
-        const rewritten = await withRetry(async () => {
+        story = await withRetry(async () => {
           const { text } = await generateText({
-            model: openai("gpt-4o-mini"),
+            model,
             prompt: rewritePrompt,
             maxOutputTokens: tokensForChars(targetChars),
           });
           return text.trim();
         }, "Story tightening");
 
-        draft.story = rewritten;
+        story = stripLeadingTitle(story, storyTitle);
       }
     };
 
     await enforceBounds();
 
     // Final sanity pass: one more extend if short, clamp if long
-    if (draft.story.length < minChars) {
-      const needed = minChars - draft.story.length;
+    if (story.length < minChars) {
+      const needed = minChars - story.length;
       const fallbackExtendPrompt = `
-Return ONLY the continuation text (no JSON). New material, consistent voice/plot. 
+Return ONLY the continuation text. New material, consistent voice/plot.
+Do NOT include the title.
 After appending, total length must be ≥ ${minChars}. Avoid restating.
 
 [STORY SO FAR]
-${draft.story}
+${story}
       `.trim();
 
       const addendum = await withRetry(async () => {
         const { text } = await generateText({
-          model: openai("gpt-4o-mini"),
+          model,
           prompt: fallbackExtendPrompt,
           maxOutputTokens: tokensForChars(needed + 600),
         });
         return text.trim();
       }, "Fallback story extension");
 
-      draft.story = (draft.story + "\n\n" + addendum).trim();
-    } else if (draft.story.length > maxChars) {
-      draft.story = smartTrim(draft.story, maxChars);
+      story = (story + "\n\n" + addendum).trim();
+      story = stripLeadingTitle(story, storyTitle);
+    } else if (story.length > maxChars) {
+      story = smartTrim(story, maxChars);
     }
 
-    // Re-validate and force exact title
-    draft = StorySchema.parse(draft);
-    draft.title = storyTitle;
-
-    return draft;
+    // Return the final result (plain text fields)
+    story = stripLeadingTitle(story, storyTitle); // Final guard, no-ops if clean
+    return { title: storyTitle, story };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     throw new Error(`generateStory failed: ${msg}`);

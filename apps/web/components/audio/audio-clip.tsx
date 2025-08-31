@@ -18,6 +18,7 @@ import {
   PauseIcon,
   PlayIcon,
   RefreshCwIcon,
+  ShareIcon,
 } from "lucide-react/icons";
 import { useForm } from "react-hook-form";
 
@@ -32,6 +33,38 @@ import {
 import { toast } from "sonner";
 import CopyButton from "../copy-button";
 import { AudioSettingsButton } from "./audio-settings";
+
+function ShareButton() {
+  const handleShare = async () => {
+    const url = window.location.href;
+    if (navigator.share) {
+      try {
+        await navigator.share({ url });
+      } catch (e) {
+        // User cancelled or error
+      }
+    } else {
+      try {
+        await navigator.clipboard.writeText(url);
+        toast("Link copied to clipboard");
+      } catch (e) {
+        toast("Failed to copy link");
+      }
+    }
+  };
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button variant="outline" onClick={handleShare}>
+          <ShareIcon className="size-4" />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>
+        <p>Share Audio Book</p>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
 export interface AudioClipProps {
   af: AudioFile;
@@ -614,7 +647,7 @@ export default function AudioClip({ af }: AudioClipProps) {
 
         <div className="flex justify-between gap-2 items-center">
           {chunks.length > 0 && (
-            <span className="text-xs text-muted-foreground">
+            <span className="text-xs text-muted-foreground md:flex hidden">
               {(() => {
                 const cost = ((totalChars * 10) / 1_000_000).toFixed(4);
                 return `${totalChars} chars - $${cost}`;
@@ -622,22 +655,27 @@ export default function AudioClip({ af }: AudioClipProps) {
             </span>
           )}
 
-          <div className="hidden sm:flex gap-2 items-center">
-            <CopyButton info={"Click to copy transcript"} text={transcript} />
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  onClick={handleDownload}
-                  disabled={!resolvedUrl}
-                >
-                  <DownloadIcon className="size-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Download MP3</p>
-              </TooltipContent>
-            </Tooltip>
+          <div className="flex gap-2 items-center">
+            <div className="hidden md:block">
+              <CopyButton info={"Click to copy transcript"} text={transcript} />
+            </div>
+            <ShareButton />
+            <div>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    onClick={handleDownload}
+                    disabled={!resolvedUrl}
+                  >
+                    <DownloadIcon className="size-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Download MP3</p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
           </div>
         </div>
       </div>

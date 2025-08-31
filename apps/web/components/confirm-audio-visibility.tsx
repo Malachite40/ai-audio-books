@@ -18,7 +18,6 @@ import {
   AlertDialogTrigger,
 } from "@workspace/ui/components/alert-dialog";
 import { Button, buttonVariants } from "@workspace/ui/components/button";
-import { Checkbox } from "@workspace/ui/components/checkbox";
 import {
   Drawer,
   DrawerContent,
@@ -100,7 +99,7 @@ export function ConfirmAudioVisibility({
   );
 
   // Local state for "Save my choice" checkbox
-  const [saveChoice, setSaveChoice] = React.useState<boolean>(false);
+  const [saveChoice, setSaveChoice] = React.useState<boolean>(true);
 
   // When dialog opens, reset the uncontrolled value, favoring saved preference if present
   React.useEffect(() => {
@@ -163,19 +162,7 @@ export function ConfirmAudioVisibility({
               aria-label="Toggle to make the audio public"
             />
           </div>
-          {/* Save my choice checkbox (layout-matched) */}
-          <Label className="hover:bg-accent/50 flex items-start gap-3 rounded-lg border p-3">
-            <Checkbox
-              id="save-choice"
-              checked={saveChoice}
-              onCheckedChange={(v) => setSaveChoice(!!v)}
-              disabled={isPending}
-              className=""
-            />
-            <div className="grid gap-1.5 font-normal">
-              <p className="text-sm leading-none font-medium">Save my choice</p>
-            </div>
-          </Label>
+
           <AlertDialogFooter>
             {onCancel && (
               <AlertDialogCancel onClick={handleCancel} disabled={isPending}>
@@ -225,18 +212,7 @@ export function ConfirmAudioVisibility({
               aria-label="Toggle to make the audio public"
             />
           </div>
-          <Label className="flex items-start gap-3 rounded-lg border p-3">
-            <Checkbox
-              id="save-choice"
-              checked={saveChoice}
-              onCheckedChange={(v) => setSaveChoice(!!v)}
-              disabled={isPending}
-              className=""
-            />
-            <div className="grid gap-1.5 font-normal">
-              <p className="text-sm leading-none font-medium">Save my choice</p>
-            </div>
-          </Label>
+
           <div className="flex gap-2">
             {onCancel && (
               <Button
