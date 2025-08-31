@@ -101,7 +101,6 @@ export default function AudioClip({ af }: AudioClipProps) {
 
   /** Candidate final assets – try MP3, then M4A */
   const baseMp3 = `https://instantaudio.online/audio/${af.id}.mp3`;
-  const baseM4a = `https://instantaudio.online/audio/${af.id}.m4a`;
 
   // Playback rate (Zustand)
   const playbackRate = useAudioPlaybackStore((s) => s.playbackRate);
@@ -167,7 +166,7 @@ export default function AudioClip({ af }: AudioClipProps) {
       };
 
       const mp3 = await tryOne(baseMp3, "mp3");
-      const chosen = mp3 ?? (await tryOne(baseM4a, "m4a"));
+      const chosen = mp3;
       if (chosen) {
         setResolvedUrl(chosen.url);
         setResolvedExt(chosen.ext);
@@ -187,7 +186,7 @@ export default function AudioClip({ af }: AudioClipProps) {
       if (pollTimer != null) clearTimeout(pollTimer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [af.id, baseMp3, baseM4a, audioStatus]);
+  }, [af.id, baseMp3, audioStatus]);
 
   // ──────────────────────────
   // Video Event Handlers
@@ -523,27 +522,6 @@ export default function AudioClip({ af }: AudioClipProps) {
     selectedChunk?.paddingStartMs,
     selectedChunk?.paddingEndMs,
   ]);
-
-  const onSubmitPadding = async (values: z.infer<typeof PaddingSchema>) => {
-    if (!selectedChunk) return;
-    await setPaddingMutation.mutateAsync({
-      audioChunkId: selectedChunk.id,
-      paddingStartMs: Math.max(0, Math.round(values.paddingStartMs)),
-      paddingEndMs: Math.max(0, Math.round(values.paddingEndMs)),
-    });
-    await audioFileQuery.refetch();
-  };
-
-  const onSubmitPaddingAll = async (
-    values: z.infer<typeof PaddingAllSchema>
-  ) => {
-    await setPaddingForAllMutation.mutateAsync({
-      audioFileId: af.id,
-      paddingStartMs: Math.max(0, Math.round(values.paddingStartMs)),
-      paddingEndMs: Math.max(0, Math.round(values.paddingEndMs)),
-    });
-    await audioFileQuery.refetch();
-  };
 
   const retryMutation = api.audio.inworld.retry.useMutation();
   const { data: userData } = authClient.useSession();

@@ -1,6 +1,8 @@
+import { openai } from "@ai-sdk/openai";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
 import { TRPCError } from "@trpc/server";
+import { generateObject } from "ai";
 import ffmpegStatic from "ffmpeg-static";
 import { spawn } from "node:child_process";
 import { PassThrough, Transform } from "node:stream";
@@ -23,6 +25,17 @@ export const processAudioFileInput = z.object({
 export const concatAudioFileInput = z.object({
   id: z.string().uuid(),
   overwrite: z.boolean().optional().default(false),
+});
+
+export const generateStoryInput = z.object({
+  audioFileId: z.string().uuid(),
+  prompt: z.string(),
+  durationMinutes: z.number(),
+});
+
+export const createAudioFileChunksInput = z.object({
+  audioFileId: z.string().uuid(),
+  chunkSize: z.number().min(1).max(2000),
 });
 
 export const workersRouter = createTRPCRouter({
@@ -538,22 +551,155 @@ export const workersRouter = createTRPCRouter({
       }
       return {};
     }),
+
+  createAudioFileChunks: publicProcedure
+    .input(createAudioFileChunksInput)
+    .mutation(async ({ ctx, input }) => {
+      const audioFile = await ctx.db.audioFile.findUniqueOrThrow({
+        where: {
+          id: input.audioFileId,
+        },
+      });
+
+      const splitIntoSentences = (raw: string): string[] => {
+        const text = raw.replace(/\s+/g, " ").trim();
+        if (!text) return [];
+
+        // Try Intl.Segmenter
+        try {
+          if (typeof Intl !== "undefined" && Intl.Segmenter) {
+            const seg = new Intl.Segmenter("en", { granularity: "sentence" });
+            const out: string[] = [];
+            for (const { segment } of seg.segment(text)) {
+              const s = String(segment).trim();
+              if (s) out.push(s);
+            }
+            if (out.length) return out;
+          }
+        } catch {
+          // fall through to regex
+        }
+
+        const rx = /[^.!?…]+(?:\.\.\.|[.!?]|…)+(?=\s+|$)|[^.!?…]+$/g;
+        const matches = text.match(rx) ?? [];
+        return matches.map((s) => s.trim());
+      };
+
+      const softWrap = (sentence: string, limit: number): string[] => {
+        if (sentence.length <= limit) return [sentence];
+        const words = sentence.split(/\s+/);
+        const out: string[] = [];
+        let buf = "";
+        for (const w of words) {
+          const next = buf ? `${buf} ${w}` : w;
+          if (next.length > limit && buf) {
+            out.push(buf);
+            buf = w;
+          } else {
+            buf = next;
+          }
+        }
+        if (buf) out.push(buf);
+        return out;
+      };
+
+      const buildChunks = (sentences: string[], limit: number): string[] => {
+        const chunks: string[] = [];
+        let buf = "";
+
+        const flush = () => {
+          if (buf.trim()) chunks.push(buf.trim());
+          buf = "";
+        };
+
+        for (const s0 of sentences) {
+          const pieces = softWrap(s0, limit); // handle oversize sentence
+          for (const s of pieces) {
+            const candidate = buf ? `${buf} ${s}` : s;
+            if (candidate.length > limit && buf) {
+              flush();
+              buf = s;
+            } else {
+              buf = candidate;
+            }
+          }
+        }
+        flush();
+        return chunks;
+      };
+
+      const sentences = splitIntoSentences(audioFile.text);
+      const chunkTexts = buildChunks(sentences, input.chunkSize);
+
+      const allCreatedChunks = [];
+      const filteredChunks = chunkTexts.filter((c) => c.length > 0);
+      const batchSize = 50;
+      for (let i = 0; i < filteredChunks.length; i += batchSize) {
+        const batch = filteredChunks.slice(i, i + batchSize);
+        const batchCreated = await Promise.all(
+          batch.map((c, j) =>
+            ctx.db.audioChunk.create({
+              data: {
+                audioFileId: audioFile.id,
+                text: c,
+                sequence: i + j,
+                paddingEndMs: 550,
+              },
+            })
+          )
+        );
+        allCreatedChunks.push(...batchCreated);
+      }
+
+      const task = client.createTask(TASK_NAMES.processAudioFile);
+      task.applyAsync([
+        { id: audioFile.id } satisfies z.infer<typeof processAudioFileInput>,
+      ]);
+
+      // deduct credit
+      if (audioFile.ownerId) {
+        await ctx.db.credits.update({
+          where: { userId: audioFile.ownerId },
+          data: { amount: { decrement: audioFile.text.length } },
+        });
+      }
+
+      return {};
+    }),
+
+  generateStory: publicProcedure
+    .input(generateStoryInput)
+    .mutation(async ({ ctx, input }) => {
+      await ctx.db.audioFile.update({
+        where: { id: input.audioFileId },
+        data: { status: "GENERATING_STORY" },
+      });
+
+      const { title, story } = await generateStory({
+        duration: input.durationMinutes,
+        prompt: input.prompt,
+      });
+
+      await ctx.db.audioFile.update({
+        where: { id: input.audioFileId },
+        data: { name: title, text: story },
+      });
+
+      const task = client.createTask(TASK_NAMES.createAudioFileChunks);
+      task.applyAsync([
+        {
+          audioFileId: input.audioFileId,
+          chunkSize: 300,
+        } satisfies z.infer<typeof createAudioFileChunksInput>,
+      ]);
+
+      return {};
+    }),
 });
 
 /* ─────────────────────────────────────────────────────────────────────────────
    Helper Functions
    ──────────────────────────────────────────────────────────────────────────── */
-
-function streamToBuffer(readable: NodeJS.ReadableStream): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    readable.on("data", (chunk) => {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-    });
-    readable.on("end", () => resolve(Buffer.concat(chunks)));
-    readable.on("error", reject);
-  });
-}
 
 function detectMime(buf: Buffer): "audio/mpeg" | "audio/wav" {
   if (
@@ -775,4 +921,108 @@ function mp3DurationMs(buf: Buffer): number {
 async function getAudioDurationMs(buf: Buffer, mime?: string): Promise<number> {
   if (mime === "audio/mpeg") return mp3DurationMs(buf);
   return wavDurationMs(buf);
+}
+
+async function generateStory({
+  duration,
+  prompt,
+}: {
+  duration: number;
+  prompt: string;
+}) {
+  const targetChars = Math.round(duration * 2000);
+  const minChars = Math.round(targetChars * 0.9);
+  const maxChars = Math.round(targetChars * 1.1);
+
+  const headroomTokens = Math.ceil((maxChars / 4) * 1.2); // chars→tokens + slack
+
+  const StorySchema = z.object({
+    title: z.string().max(60).describe("Creative title of the story."),
+    story: z.string().min(minChars).max(maxChars).describe("The story text."),
+  });
+
+  const basePrompt = `
+You must return ONLY a JSON object matching the provided schema (no prose, no backticks, no Markdown).
+
+TASK
+Write an original, high-quality short story based on the user's premise.
+
+PREMISE
+${prompt}
+
+DURATION & LENGTH
+Target spoken duration: ${duration} minutes.
+Aim for ≈ ${targetChars} characters total (±10%). Keep pacing natural; avoid fluff.
+(Important: stay within ${minChars}–${maxChars} characters.)
+
+CONTENT & STYLE REQUIREMENTS
+- Title: evocative, ≤ 60 characters, no spoilers.
+- Story: plain text only; paragraphs separated by single blank lines; no chapter headings; no HTML/Markdown (asterisks for emphasis are allowed as cues).
+- Structure: hook → rising tension → clear climax → satisfying resolution.
+- Voice: show, don’t tell; vivid sensory detail; active voice; varied sentence rhythm.
+- Scene/beat breaks for TTS: insert *** between beats roughly every 1–3k characters.
+- Rating: PG-13 by default unless the premise requests otherwise.
+- Originality: do NOT use copyrighted characters, settings, or lyrics unless supplied.
+- Language: American English.
+
+OUTPUT FORMAT
+Return ONLY the JSON object with "title" and "story".
+  `.trim();
+
+  // First pass
+  let { object, finishReason } = await generateObject({
+    model: openai("gpt-4o-mini"),
+    mode: "json",
+    schema: StorySchema,
+    maxOutputTokens: headroomTokens,
+    maxRetries: 2,
+    prompt: basePrompt,
+  });
+
+  // Guard-rail: expand or tighten if out of range
+  const len = object.story.length;
+
+  if (len < minChars) {
+    const needed = minChars - len;
+    const { object: patch } = await generateObject({
+      model: openai("gpt-4o-mini"),
+      mode: "json",
+      maxOutputTokens: Math.ceil((needed / 4) * 1.2),
+      schema: z.object({
+        addendum: z
+          .string()
+          .min(needed)
+          .max(needed + 500),
+      }),
+      prompt: `
+Return ONLY JSON: {"addendum": string}
+
+Continue the story below with NEW material only (no repetition), same voice and plot, so the TOTAL becomes at least ${minChars} characters (target ~${targetChars}). Do not restate earlier text.
+
+[STORY SO FAR]
+${object.story}
+      `.trim(),
+    });
+    object.story += patch.addendum;
+  } else if (len > maxChars) {
+    const { object: tightened } = await generateObject({
+      model: openai("gpt-4o-mini"),
+      mode: "json",
+      maxOutputTokens: Math.ceil((targetChars / 4) * 1.2),
+      schema: z.object({
+        rewritten: z.string().min(minChars).max(maxChars),
+      }),
+      prompt: `
+Return ONLY JSON: {"rewritten": string}
+
+Rewrite the story below to ${targetChars} characters (±10%), preserving events and tone. Keep paragraphs and *** beat markers.
+
+[ORIGINAL]
+${object.story}
+      `.trim(),
+    });
+    object.story = tightened.rewritten;
+  }
+
+  return object;
 }

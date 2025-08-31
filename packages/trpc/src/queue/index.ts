@@ -3,6 +3,8 @@ const TASK_NAMES = {
   processAudioChunkWithInworld: "tasks.processAudioChunkWithInworld",
   processAudioFile: "tasks.processAudioFile",
   concatAudioFile: "tasks.concatAudioFile",
+  createAudioFileChunks: "tasks.createAudioFileChunks",
+  generateStory: "tasks.generateStory",
 } as const;
 
 export { TASK_NAMES };

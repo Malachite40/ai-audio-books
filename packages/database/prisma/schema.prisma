@@ -103,6 +103,7 @@ model Speaker {
 
 enum AudioFileStatus {
     PENDING
+    GENERATING_STORY
     PROCESSING
     PROCESSED
     ERROR
@@ -112,6 +113,7 @@ model AudioFile {
     id                String              @id @default(uuid())
     ownerId           String?
     name              String              @default("")
+    text              String              @default("")
     owner             User?               @relation(fields: [ownerId], references: [id], onDelete: Cascade)
     status            AudioFileStatus     @default(PENDING)
     speakerId         String
