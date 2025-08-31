@@ -6,9 +6,7 @@ import { Button } from "@workspace/ui/components/button";
 import { Pause, Play } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-type Props =
-  | { src: string; label?: string }
-  | { af: AudioFile; label?: string };
+type Props = { af: AudioFile; label?: string };
 
 function formatTime(sec: number) {
   if (!Number.isFinite(sec) || sec <= 0) return "00:00";
@@ -91,16 +89,11 @@ export default function SimpleAudioClip(props: Props) {
         onPause={() => setIsPlaying(false)}
         onEnded={() => setIsPlaying(false)}
       >
-        {"src" in props && <source src={props.src} />}
-        {"af" in props && (
+        {props.af && (
           <>
             <source
               src={`https://instantaudio.online/audio/${props.af.id}.mp3`}
               type="audio/mpeg"
-            />
-            <source
-              src={`https://instantaudio.online/audio/${props.af.id}.m4a`}
-              type="audio/mp4"
             />
           </>
         )}
