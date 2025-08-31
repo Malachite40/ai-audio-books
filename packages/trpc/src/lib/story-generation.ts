@@ -131,11 +131,8 @@ export async function generateStory({
     const basePrompt = `
 You must return ONLY a JSON object matching the provided schema (no prose, no backticks, no Markdown).
 
-SCHEMA
-{"title": "${storyTitle}", "story": string between ${minChars} and ${maxChars} characters}
-
 IMPORTANT
-- Use the title EXACTLY as provided: "${storyTitle}".
+- Title of story: "${storyTitle}".
 - Do not change, add punctuation to, or rephrase the title.
 
 TASK
@@ -160,7 +157,7 @@ CONTENT & STYLE REQUIREMENTS
 - Language: American English.
 
 OUTPUT FORMAT
-Return ONLY the JSON object with keys "title" and "story".
+Return ONLY the story.
     `.trim();
 
     const initialText = await withRetry(async () => {
