@@ -1,14 +1,13 @@
-import { openai } from "@ai-sdk/openai";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
 import { TRPCError } from "@trpc/server";
-import { generateObject } from "ai";
 import ffmpegStatic from "ffmpeg-static";
 import { spawn } from "node:child_process";
 import { PassThrough, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import z from "zod";
 import { env } from "../env";
+import { generateStory } from "../lib/story-generation";
 import { client } from "../queue/client";
 import { s3Client } from "../s3";
 import { TASK_NAMES } from "../server";
@@ -525,6 +524,11 @@ export const workersRouter = createTRPCRouter({
   processAudioFile: publicProcedure
     .input(processAudioFileInput)
     .mutation(async ({ ctx, input }) => {
+      await ctx.db.audioFile.update({
+        where: { id: input.id },
+        data: { status: "PROCESSING" },
+      });
+
       const chunks = await ctx.db.audioChunk.findMany({
         where: { audioFileId: input.id },
         orderBy: { sequence: "asc" },
@@ -921,108 +925,4 @@ function mp3DurationMs(buf: Buffer): number {
 async function getAudioDurationMs(buf: Buffer, mime?: string): Promise<number> {
   if (mime === "audio/mpeg") return mp3DurationMs(buf);
   return wavDurationMs(buf);
-}
-
-async function generateStory({
-  duration,
-  prompt,
-}: {
-  duration: number;
-  prompt: string;
-}) {
-  const targetChars = Math.round(duration * 2000);
-  const minChars = Math.round(targetChars * 0.9);
-  const maxChars = Math.round(targetChars * 1.1);
-
-  const headroomTokens = Math.ceil((maxChars / 4) * 1.2); // chars→tokens + slack
-
-  const StorySchema = z.object({
-    title: z.string().max(60).describe("Creative title of the story."),
-    story: z.string().min(minChars).max(maxChars).describe("The story text."),
-  });
-
-  const basePrompt = `
-You must return ONLY a JSON object matching the provided schema (no prose, no backticks, no Markdown).
-
-TASK
-Write an original, high-quality short story based on the user's premise.
-
-PREMISE
-${prompt}
-
-DURATION & LENGTH
-Target spoken duration: ${duration} minutes.
-Aim for ≈ ${targetChars} characters total (±10%). Keep pacing natural; avoid fluff.
-(Important: stay within ${minChars}–${maxChars} characters.)
-
-CONTENT & STYLE REQUIREMENTS
-- Title: evocative, ≤ 60 characters, no spoilers.
-- Story: plain text only; paragraphs separated by single blank lines; no chapter headings; no HTML/Markdown (asterisks for emphasis are allowed as cues).
-- Structure: hook → rising tension → clear climax → satisfying resolution.
-- Voice: show, don’t tell; vivid sensory detail; active voice; varied sentence rhythm.
-- Scene/beat breaks for TTS: insert *** between beats roughly every 1–3k characters.
-- Rating: PG-13 by default unless the premise requests otherwise.
-- Originality: do NOT use copyrighted characters, settings, or lyrics unless supplied.
-- Language: American English.
-
-OUTPUT FORMAT
-Return ONLY the JSON object with "title" and "story".
-  `.trim();
-
-  // First pass
-  let { object, finishReason } = await generateObject({
-    model: openai("gpt-4o-mini"),
-    mode: "json",
-    schema: StorySchema,
-    maxOutputTokens: headroomTokens,
-    maxRetries: 2,
-    prompt: basePrompt,
-  });
-
-  // Guard-rail: expand or tighten if out of range
-  const len = object.story.length;
-
-  if (len < minChars) {
-    const needed = minChars - len;
-    const { object: patch } = await generateObject({
-      model: openai("gpt-4o-mini"),
-      mode: "json",
-      maxOutputTokens: Math.ceil((needed / 4) * 1.2),
-      schema: z.object({
-        addendum: z
-          .string()
-          .min(needed)
-          .max(needed + 500),
-      }),
-      prompt: `
-Return ONLY JSON: {"addendum": string}
-
-Continue the story below with NEW material only (no repetition), same voice and plot, so the TOTAL becomes at least ${minChars} characters (target ~${targetChars}). Do not restate earlier text.
-
-[STORY SO FAR]
-${object.story}
-      `.trim(),
-    });
-    object.story += patch.addendum;
-  } else if (len > maxChars) {
-    const { object: tightened } = await generateObject({
-      model: openai("gpt-4o-mini"),
-      mode: "json",
-      maxOutputTokens: Math.ceil((targetChars / 4) * 1.2),
-      schema: z.object({
-        rewritten: z.string().min(minChars).max(maxChars),
-      }),
-      prompt: `
-Return ONLY JSON: {"rewritten": string}
-
-Rewrite the story below to ${targetChars} characters (±10%), preserving events and tone. Keep paragraphs and *** beat markers.
-
-[ORIGINAL]
-${object.story}
-      `.trim(),
-    });
-    object.story = tightened.rewritten;
-  }
-
-  return object;
 }

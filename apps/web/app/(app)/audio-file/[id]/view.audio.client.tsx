@@ -20,7 +20,7 @@ const ViewAudioClient = ({ af }: { af: AudioFile }) => {
 
   if (af.status === "GENERATING_STORY") {
     return (
-      <div className="container mx-auto p-4 flex flex-col md:justify-center items-center max-w-5xl text-primary">
+      <div className="container mx-auto p-4 flex flex-col justify-center items-center max-w-5xl text-primary">
         <div className="md:border max-w-lg w-full rounded-lg sm:p-4 flex flex-col items-center justify-center min-h-[200px] animate-pulse">
           <span className="text-lg font-semibold mb-2">
             Generating Story...
