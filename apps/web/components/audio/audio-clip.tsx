@@ -29,6 +29,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
+import { toast } from "sonner";
 import CopyButton from "../copy-button";
 import { AudioSettingsButton } from "./audio-settings";
 
@@ -608,14 +609,30 @@ export default function AudioClip({ af }: AudioClipProps) {
     [chunks]
   );
 
-  const handleDownload = () => {
-    const a = document.createElement("a");
-    const niceExt = resolvedExt || "mp3";
-    a.href = resolvedUrl ?? baseMp3; // fall back if still resolving
-    a.download = `audio-${af.id}.${niceExt}`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+  const handleDownload = async () => {
+    if (!resolvedUrl) {
+      toast("Hold on!", {
+        description:
+          "The audio is still being prepared. Please try again shortly.",
+      });
+      return;
+    }
+    try {
+      const res = await fetch(resolvedUrl);
+      if (!res.ok) throw new Error("Network error");
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = `${af.name || af.id}.mp3`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      console.error("Download error:", error);
+      toast("Failed to download audio");
+    }
   };
 
   return (

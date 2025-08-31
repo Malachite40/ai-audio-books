@@ -1,5 +1,4 @@
 "use client";
-import AudioClip from "@/components/audio/audio-clip";
 import { ConfirmAudioVisibility } from "@/components/confirm-audio-visibility";
 import ExampleAudioToggle from "@/components/example-audio-toggle";
 import Logo from "@/components/svgs/logo";
@@ -34,6 +33,7 @@ import { z } from "zod";
 import { LoginRequiredDialog } from "@/components/login-required-modal";
 import { NotEnoughCreditsDialog } from "@/components/not-enough-credits-modal";
 import { authClient } from "@/lib/auth-client";
+import { useRouter } from "next/navigation";
 
 // --- Schema ---
 const FormSchema = z.object({
@@ -78,6 +78,7 @@ const toProxyUrl = (targetUrl: string) =>
   READABILITY_PROXY_PREFIX + targetUrl.replace(/^https?:\/\//i, "");
 
 const TestClient = () => {
+  const router = useRouter();
   const [showConfirm, setShowConfirm] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
   const [showCredits, setShowCredits] = useState(false);
@@ -112,7 +113,7 @@ const TestClient = () => {
 
   const createAudioFile = api.audio.inworld.create.useMutation({
     onSuccess: (data) => {
-      setSelectedAudioFileId(data.audioFile.id);
+      router.push(`/audio/${data.audioFile.id}`);
       form.reset();
     },
     onError: (error) => {
@@ -332,11 +333,11 @@ const TestClient = () => {
                         disabled={speakersLoading}
                         defaultValue={field.value}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger className="w-[150px]">
                           <SelectValue
                             placeholder={
                               speakersLoading
-                                ? "Loading speakers..."
+                                ? "Loading..."
                                 : "Select a speaker"
                             }
                           />
@@ -439,13 +440,6 @@ const TestClient = () => {
             </div>
           </form>
         </Form>
-
-        {/* Render Audio */}
-        {audioFile.data?.audioFile && (
-          <div className="flex flex-col gap-4">
-            <AudioClip af={audioFile.data.audioFile} />
-          </div>
-        )}
       </div>
     </>
   );

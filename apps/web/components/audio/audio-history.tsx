@@ -12,7 +12,6 @@ import {
 } from "@workspace/ui/components/table";
 import { format } from "date-fns";
 import { Loader, Trash2 } from "lucide-react";
-import { Route } from "next";
 import { usePathname, useRouter } from "next/navigation";
 import { parseAsString, useQueryState } from "nuqs";
 import { useEffect, useRef } from "react";
@@ -142,7 +141,7 @@ export const AudioHistory = ({}: AudioHistoryProps) => {
               <TableRow
                 onClick={() => {
                   if (pathname !== "/") {
-                    router.push(`/?id=${af.id}` as Route);
+                    router.push(`/audio/${af.id}`);
                   } else {
                     setSelectedAudioFileId(af.id);
                   }

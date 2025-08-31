@@ -93,7 +93,16 @@ export const audioRouter = createTRPCRouter({
       const audioFile = await ctx.db.audioFile.findUnique({
         where: {
           id: input.id,
-          ownerId: ctx.user?.id ?? "",
+          deletedAt: null,
+          OR: [
+            ctx.user
+              ? {
+                  ownerId: ctx.user.id,
+                }
+              : {
+                  public: true,
+                },
+          ],
         },
         include: {
           AudioFileSettings: true,

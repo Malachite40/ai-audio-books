@@ -78,7 +78,7 @@ export function Header(props: HeaderProps) {
                 <AudioHistoryDrawer />
                 <Divider />
                 <Link
-                  href={"/"}
+                  href={"/audio/new"}
                   className={buttonVariants({ variant: "ghost" })}
                 >
                   New Audio

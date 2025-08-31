@@ -186,3 +186,11 @@ model AudioFileSettings {
 
     @@id([audioFileId, userId])
 }
+
+model KeyValueStore {
+    id        String   @id @default(uuid())
+    key       String   @unique
+    value     String
+    createdAt DateTime @default(now()) @db.Timestamptz
+    updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz
+}

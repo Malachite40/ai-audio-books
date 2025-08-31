@@ -36,7 +36,7 @@ import { featureNames, planFeatures } from "./pricing-plan-data";
 export default function SubscribeClientPage({
   setOpen,
 }: {
-  setOpen: (open: boolean) => void;
+  setOpen?: (open: boolean) => void;
 }) {
   const router = useRouter();
   const { data } = authClient.useSession();
@@ -49,15 +49,11 @@ export default function SubscribeClientPage({
 
   return (
     <div className="relative flex w-full flex-col items-center justify-center p-6 bg-background">
-      <Button
-        size={"icon"}
-        variant={"ghost"}
-        onClick={() => setOpen(false)}
-        className="absolute end-4 top-4"
-        aria-label="Close pricing"
-      >
-        <X />
-      </Button>
+      {setOpen && (
+        <Button size={"icon"} variant={"ghost"} onClick={() => setOpen(false)}>
+          <X />
+        </Button>
+      )}
 
       <div className="container py-24 lg:py-32 max-w-6xl">
         {/* Heading */}
