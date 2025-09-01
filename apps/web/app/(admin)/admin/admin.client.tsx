@@ -36,7 +36,7 @@ const SpeakerFormSchema = z.object({
 export type AdminClientPageProps = {};
 
 export function AdminClientPage(props: AdminClientPageProps) {
-  const { data, refetch, isLoading } = api.speakers.getAll.useQuery();
+  const { data, refetch, isLoading } = api.speakers.fetchAll.useQuery();
 
   const upsertSpeaker = api.speakers.upsert.useMutation({
     onSuccess: () => {

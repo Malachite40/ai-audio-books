@@ -22,8 +22,13 @@ export function LoginRequiredDialog({
   onOpenChange: (v: boolean) => void;
 }) {
   return (
-    <ResponsiveModal open={open} onOpenChange={onOpenChange} title="Login">
-      <div className="flex gap-2 mt-2">
+    <ResponsiveModal
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Login"
+      description="Your progress will be saved"
+    >
+      <div className="flex gap-4 mt-2 flex-col w-full">
         <Button
           onClick={(e) => {
             e.preventDefault();

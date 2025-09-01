@@ -89,16 +89,14 @@ model Verification {
 }
 
 model Speaker {
-    id               String      @id @default(uuid())
-    name             String
-    order            Int?
-    exampleAudio     String?
-    image            String?
-    gptCondLatent    Json?
-    speakerEmbedding Json?
-    createdAt        DateTime    @default(now()) @db.Timestamptz()
-    updatedAt        DateTime    @default(now()) @updatedAt @db.Timestamptz()
-    AudioFiles       AudioFile[]
+    id           String      @id @default(uuid())
+    name         String
+    order        Int?
+    exampleAudio String?
+    image        String?
+    createdAt    DateTime    @default(now()) @db.Timestamptz()
+    updatedAt    DateTime    @default(now()) @updatedAt @db.Timestamptz()
+    AudioFiles   AudioFile[]
 }
 
 enum AudioFileStatus {

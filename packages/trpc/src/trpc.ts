@@ -1,10 +1,14 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import SuperJSON from "superjson";
-import { BaseContext } from "./context";
+import { BaseContext, QueueContext } from "./context";
 
 // type Context = Awaited<ReturnType<typeof BaseContext>>;
 
 export const t = initTRPC.context<BaseContext>().create({
+  transformer: SuperJSON,
+});
+
+export const q = initTRPC.context<QueueContext>().create({
   transformer: SuperJSON,
 });
 
@@ -93,6 +97,22 @@ const enforceAdmin = t.middleware(async ({ ctx, next }) => {
   });
 });
 
+const enforceQueueAccess = q.middleware(async ({ ctx, next }) => {
+  if (ctx.apiKey !== "1113") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "You do not have permission to access this resource.",
+    });
+  }
+
+  return next({
+    ctx: {
+      ...ctx,
+    },
+  });
+});
+
 export const publicProcedure = t.procedure;
 export const authenticatedProcedure = t.procedure.use(enforceUserIsAuthed);
+export const queueProcedure = t.procedure.use(enforceQueueAccess);
 export const adminProcedure = t.procedure.use(enforceAdmin);

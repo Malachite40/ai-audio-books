@@ -19,6 +19,10 @@ export type BaseContext = {
   stripeCustomerId?: string;
 };
 
+export type QueueContext = BaseContext & {
+  apiKey: string;
+};
+
 export const createNextTRPCContext = async (opts: { headers: Headers }) => {
   const session = await auth.api.getSession({ headers: opts.headers });
 
@@ -92,6 +96,17 @@ export const createNextTRPCContext = async (opts: { headers: Headers }) => {
     ...opts,
   } satisfies BaseContext;
 };
+
+export async function createQueueContext({
+  apiKey,
+}: {
+  apiKey: string;
+}): Promise<QueueContext> {
+  return {
+    apiKey,
+    db: prisma,
+  } satisfies QueueContext;
+}
 
 export async function createContext(): Promise<BaseContext> {
   return {

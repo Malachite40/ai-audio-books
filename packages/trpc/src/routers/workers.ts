@@ -11,7 +11,7 @@ import { generateStory } from "../lib/story-generation";
 import { client } from "../queue/client";
 import { s3Client } from "../s3";
 import { TASK_NAMES } from "../server";
-import { createTRPCRouter, publicProcedure } from "../trpc";
+import { createTRPCRouter, queueProcedure } from "../trpc";
 
 export const audioChunkInput = z.object({
   id: z.string().uuid(),
@@ -38,7 +38,7 @@ export const createAudioFileChunksInput = z.object({
 });
 
 export const workersRouter = createTRPCRouter({
-  concatAudioFile: publicProcedure
+  concatAudioFile: queueProcedure
     .input(concatAudioFileInput)
     .mutation(async ({ ctx, input }) => {
       // 1) Load file + chunks
@@ -293,7 +293,7 @@ export const workersRouter = createTRPCRouter({
       return { key: finalKey, url: finalUrl };
     }),
 
-  processAudioChunkWithInworld: publicProcedure
+  processAudioChunkWithInworld: queueProcedure
     .input(audioChunkInput)
     .mutation(async ({ ctx, input }) => {
       const audioChunk = await ctx.db.audioChunk.findUnique({
@@ -521,7 +521,7 @@ export const workersRouter = createTRPCRouter({
       return {};
     }),
 
-  processAudioFile: publicProcedure
+  processAudioFile: queueProcedure
     .input(processAudioFileInput)
     .mutation(async ({ ctx, input }) => {
       await ctx.db.audioFile.update({
@@ -556,7 +556,7 @@ export const workersRouter = createTRPCRouter({
       return {};
     }),
 
-  createAudioFileChunks: publicProcedure
+  createAudioFileChunks: queueProcedure
     .input(createAudioFileChunksInput)
     .mutation(async ({ ctx, input }) => {
       const audioFile = await ctx.db.audioFile.findUniqueOrThrow({
@@ -671,7 +671,7 @@ export const workersRouter = createTRPCRouter({
       return {};
     }),
 
-  generateStory: publicProcedure
+  generateStory: queueProcedure
     .input(generateStoryInput)
     .mutation(async ({ ctx, input }) => {
       await ctx.db.audioFile.update({

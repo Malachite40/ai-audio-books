@@ -7,8 +7,10 @@ import { LoginRequiredDialog } from "@/components/login-required-modal";
 import { NotEnoughCreditsDialog } from "@/components/not-enough-credits-modal";
 import Logo from "@/components/svgs/logo";
 import { authClient } from "@/lib/auth-client";
+import { useTextInputStore } from "@/store/use-text-input-store";
 import { api } from "@/trpc/react";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { Speaker } from "@workspace/database";
 import { Button } from "@workspace/ui/components/button";
 import {
   Card,
@@ -83,17 +85,9 @@ function formatHm(minutes?: number) {
 // --- Schema (name now optional) ---
 const FormSchema = z.object({
   name: z.string().trim().max(100).optional(),
-  speakerId: z.string().uuid().min(1, "Please select a speaker."),
+  speakerId: z.string().uuid({ message: "Please select a speaker." }),
   text: z.string().min(1, "Please enter text to synthesize."),
-  durationMinutes: z
-    .number({ invalid_type_error: "Enter minutes as a number" })
-    .int("Use whole minutes")
-    .min(MIN_DURATION, `Minimum is ${MIN_DURATION} minutes`)
-    .max(MAX_DURATION, `Maximum is ${MAX_DURATION} minutes (2 hours)`)
-    .refine((v) => v % STEP_MINUTES === 0, {
-      message: `Use ${STEP_MINUTES}-minute increments`,
-    })
-    .optional(), // used only in AI mode
+  durationMinutes: z.number(/* ... */).optional(),
   public: z.boolean(),
 });
 
@@ -145,12 +139,19 @@ const slugify = (s: string) =>
     .replace(/^-+|-+$/g, "")
     .slice(0, 60);
 
-const NewAudioClient = () => {
+const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
   const router = useRouter();
   const [showConfirm, setShowConfirm] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
   const [showCredits, setShowCredits] = useState(false);
-
+  const {
+    setText,
+    text,
+    setSpeakerId,
+    speakerId,
+    setDurationMinutes,
+    durationMinutes: storeDurationMinutes,
+  } = useTextInputStore();
   // STEP state (2-step process) in URL via nuqs
   // step 1: choose "mode" -> "copy" or "ai"
   // step 2: show the form (same form, with slight UX differences)
@@ -193,24 +194,104 @@ const NewAudioClient = () => {
   // Queries
   const audioFile = api.audio.fetch.useQuery({ id: selectedAudioFileId });
   const creditsQuery = api.credits.fetch.useQuery();
-  const { data: speakersData, isLoading: speakersLoading } =
-    api.speakers.getAll.useQuery();
-
-  const [initialSpeakerId, setInitialSpeakerId] = useState<string | undefined>(
-    undefined
-  );
 
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
     defaultValues: {
       name: "",
-      text: "",
+      text: text || "",
       public: false,
-      speakerId: initialSpeakerId,
-      durationMinutes: 10, // default 10 minutes
+      speakerId: speakerId || speakers[0]?.id,
+      durationMinutes: storeDurationMinutes ?? 10,
     },
     mode: "onChange",
   });
+  // Sync form values to store on change
+  useEffect(() => {
+    const subscription = form.watch((value, { name }) => {
+      if (name === "text" && typeof value.text === "string") {
+        setText(value.text);
+      }
+      if (name === "speakerId") {
+        setSpeakerId(value.speakerId);
+      }
+      if (
+        name === "durationMinutes" &&
+        typeof value.durationMinutes === "number"
+      ) {
+        setDurationMinutes(value.durationMinutes);
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, [form, setText, setSpeakerId, setDurationMinutes]);
+
+  // Restore values from store on mount (if not already set)
+  useEffect(() => {
+    if (text && text !== form.getValues("text")) {
+      form.setValue("text", text, { shouldDirty: false });
+    }
+    if (
+      typeof storeDurationMinutes === "number" &&
+      storeDurationMinutes !== form.getValues("durationMinutes")
+    ) {
+      form.setValue("durationMinutes", storeDurationMinutes, {
+        shouldDirty: false,
+      });
+    }
+    // Only run on mount or if values change
+  }, [text, speakerId, storeDurationMinutes]);
+
+  useEffect(() => {
+    const current = form.getValues("speakerId");
+    const exists = (id?: string) => !!id && speakers.some((s) => s.id === id);
+
+    const preferred =
+      (exists(speakerId) && speakerId) ||
+      (exists(current) && current) ||
+      speakers[0]?.id ||
+      undefined;
+
+    if (preferred !== current) {
+      form.setValue("speakerId", preferred as any, { shouldDirty: false });
+    }
+
+    if (speakerId && !exists(speakerId)) {
+      form.setError("speakerId", {
+        type: "validate",
+        message:
+          "Previously selected speaker is no longer available. Please pick another.",
+      });
+    }
+  }, [speakers, speakerId, form]);
+
+  // 2) Robust restore logic
+  useEffect(() => {
+    // get what's currently in the form and in your store
+    const current = form.getValues("speakerId");
+    const persisted = speakerId; // from useTextInputStore()
+    const exists = (id?: string) => !!id && speakers.some((s) => s.id === id);
+
+    // prefer a valid persisted id, else a valid current id, else first speaker, else undefined
+    const next =
+      (exists(persisted) && persisted) ||
+      (exists(current) && current) ||
+      speakers[0]?.id ||
+      undefined;
+
+    // only update if different (prevents loops)
+    if (next !== current) {
+      form.setValue("speakerId", next as any, { shouldDirty: false });
+    }
+
+    // optional: surface error when persisted id disappeared
+    if (persisted && !exists(persisted)) {
+      form.setError("speakerId", {
+        type: "validate",
+        message:
+          "Previously selected speaker is no longer available. Please pick another.",
+      });
+    }
+  }, [speakers, speakerId]); // runs on reload/rehydration or speaker list changes
 
   const createAudioFile = api.audio.inworld.create.useMutation({
     onSuccess: (data) => {
@@ -225,25 +306,9 @@ const NewAudioClient = () => {
     },
   });
 
-  // Auto-select a speaker when loaded
-  useEffect(() => {
-    if (!speakersData?.speakers || speakersData.speakers.length <= 1) return;
-    const currentSpeakerId = form.getValues("speakerId");
-    if (!currentSpeakerId) {
-      const firstSpeakerId = speakersData.speakers[0]!.id;
-      setInitialSpeakerId(firstSpeakerId);
-      form.setValue("speakerId", firstSpeakerId, {
-        shouldDirty: true,
-        shouldValidate: true,
-      });
-    }
-  }, [speakersData, form]);
-
   // Derived values
   const selectedSpeakerId = form.watch("speakerId");
-  const currentSpeaker = speakersData?.speakers.find(
-    (s) => s.id === selectedSpeakerId
-  );
+  const currentSpeaker = speakers.find((s) => s.id === selectedSpeakerId);
   const exampleUrl =
     typeof currentSpeaker?.exampleAudio === "string" &&
     currentSpeaker.exampleAudio.length > 0
@@ -252,12 +317,6 @@ const NewAudioClient = () => {
 
   const nameValue = form.watch("name") ?? "";
   const textValue = form.watch("text") ?? "";
-
-  // Compute a helpful title suggestion (RR URL -> title, else derive from text)
-  const rrUrlCandidate = extractRoyalRoadUrl(textValue || "");
-  const rrSuggestedTitle = rrUrlCandidate
-    ? buildNameFromUrl(rrUrlCandidate)
-    : "";
 
   const suggestedTitle =
     nameValue.trim().length > 0
@@ -622,36 +681,23 @@ const NewAudioClient = () => {
                       <FormLabel>Speaker</FormLabel>
                       <FormControl>
                         <Select
-                          onValueChange={field.onChange}
-                          value={field.value}
-                          disabled={speakersLoading}
-                          defaultValue={field.value}
+                          value={field.value ?? undefined}
+                          onValueChange={(v) => {
+                            field.onChange(v); // update RHF
+                            setSpeakerId(v); // update store (user action only)
+                          }}
                         >
                           <SelectTrigger className="w-[180px]">
-                            <SelectValue
-                              placeholder={
-                                speakersLoading
-                                  ? "Loading..."
-                                  : "Select a speaker"
-                              }
-                            />
+                            <SelectValue placeholder="Select a speaker" />
                           </SelectTrigger>
                           <SelectContent>
-                            {speakersData?.speakers?.length ? (
-                              speakersData.speakers.map((speaker) => (
-                                <SelectItem key={speaker.id} value={speaker.id}>
-                                  <div className="flex items-center gap-2">
-                                    <span>{speaker.name}</span>
-                                  </div>
-                                </SelectItem>
-                              ))
-                            ) : (
-                              <SelectItem value="none" disabled>
-                                {speakersLoading
-                                  ? "Loading..."
-                                  : "No speakers found"}
+                            {speakers.map((s) => (
+                              <SelectItem key={s.id} value={s.id}>
+                                <div className="flex items-center gap-2">
+                                  <span>{s.name}</span>
+                                </div>
                               </SelectItem>
-                            )}
+                            ))}
                           </SelectContent>
                         </Select>
                       </FormControl>
@@ -664,7 +710,7 @@ const NewAudioClient = () => {
                 <ExampleAudioToggle
                   exampleUrl={exampleUrl}
                   speakerId={selectedSpeakerId}
-                  disabled={speakersLoading || !selectedSpeakerId}
+                  disabled={!selectedSpeakerId}
                 />
               </div>
 

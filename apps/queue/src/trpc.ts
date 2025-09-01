@@ -1,6 +1,8 @@
-import { createCaller, createContext } from "@workspace/trpc/server";
+import { createCaller, createQueueContext } from "@workspace/trpc/server";
 
-const ctx = await createContext();
+const ctx = await createQueueContext({
+  apiKey: "1113",
+});
 const api = createCaller(ctx);
 
 export { api };
