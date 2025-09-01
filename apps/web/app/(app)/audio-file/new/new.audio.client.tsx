@@ -153,6 +153,7 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
     durationMinutes: storeDurationMinutes,
     name: storeName,
     setName: setStoreName,
+    reset: resetStore,
   } = useNewAudioFormStore();
   // STEP state (2-step process) in URL via nuqs
   // step 1: choose "mode" -> "copy" or "ai"
@@ -304,6 +305,7 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
   const createAudioFile = api.audio.inworld.create.useMutation({
     onSuccess: (data) => {
       router.push(`/audio-file/${data.audioFile.id}`);
+      resetStore();
     },
     onError: (error) => {
       console.error("Error creating audio file:", error);

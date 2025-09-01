@@ -157,7 +157,7 @@ export function HomeClient(props: HomeClientProps) {
                 <Textarea
                   disabled
                   value="Once upon a time in a land far, far away where the sun shone brightly and the birds sang sweetly, there lived a young girl named Alice."
-                  className="w-full rounded-xl border bg-background/60 p-4 text-foreground/60 shadow-sm outline-none disabled:cursor-not-allowed"
+                  className="w-full h-32 rounded-xl border bg-background/60 p-4 text-foreground/60 shadow-sm outline-none disabled:cursor-not-allowed"
                 />
                 <p className="mt-2 text-xs text-foreground/50">
                   Large text supported — no manual chunking.
@@ -196,7 +196,7 @@ export function HomeClient(props: HomeClientProps) {
 
               {/* Try it now */}
               <div className="md:col-span-3 ml-auto">
-                <Link href="/audio-file/new">
+                <Link href="/audio-file/new" className={buttonVariants({})}>
                   <span>Try it now</span>
                 </Link>
               </div>
@@ -340,11 +340,8 @@ export function HomeClient(props: HomeClientProps) {
 
             {/* Subscribe CTA */}
             <div className="mt-6 flex justify-center">
-              <Link
-                href="/pricing"
-                className="inline-flex items-center rounded-xl border px-5 py-3 text-sm font-medium hover:shadow transition"
-              >
-                View pricing
+              <Link href="/pricing" className={buttonVariants({})}>
+                View Pricing
               </Link>
             </div>
           </div>

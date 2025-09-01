@@ -10,6 +10,7 @@ export interface NewAudioFormState {
   setDurationMinutes: (duration: number) => void;
   name: string;
   setName: (name: string) => void;
+  reset: () => void;
 }
 
 export const useNewAudioFormStore = create<NewAudioFormState>()(
@@ -24,6 +25,8 @@ export const useNewAudioFormStore = create<NewAudioFormState>()(
         set({ durationMinutes: duration }),
       name: "",
       setName: (name: string) => set({ name }),
+      reset: () =>
+        set({ text: "", speakerId: undefined, durationMinutes: 10, name: "" }),
     }),
     {
       name: "textInputStore",

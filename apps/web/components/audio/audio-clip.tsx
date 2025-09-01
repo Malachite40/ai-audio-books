@@ -599,7 +599,7 @@ export default function AudioClip({ af }: AudioClipProps) {
             onClick={togglePlay}
             aria-busy={isLoadingToStart ? true : undefined}
             disabled={isLoadingToStart}
-            size={isLoadingToStart ? "sm" : "icon"}
+            size={"icon"}
           >
             {isPlaying ? (
               <PauseIcon className="size-4 text-background/70 fill-background/80" />
