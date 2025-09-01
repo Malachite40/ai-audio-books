@@ -60,8 +60,8 @@ export function HomeClient(props: HomeClientProps) {
       <div className="min-h-screen w-dwv scroll-smooth snap-y">
         {/* HERO */}
         <section className="h-dvh flex flex-col justify-center items-center p-6 space-y-6 ">
-          <div className="mt-10" />
-          <Logo className="size-20 fill-primary" />
+          <div className="mt-0 md:mt-10" />
+          <Logo className="size-20  min-h-20 min-w-20  fill-primary" />
 
           <div className="flex flex-col text-center gap-2">
             <h1 className="text-3xl text-foreground/70">Instantly Create</h1>
