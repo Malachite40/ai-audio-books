@@ -18,10 +18,10 @@ import {
   PauseIcon,
   PlayIcon,
   RefreshCwIcon,
-  ShareIcon,
 } from "lucide-react/icons";
 import { useForm } from "react-hook-form";
 
+import { LoadingScreen } from "@/app/(app)/audio-file/[id]/loading";
 import { authClient } from "@/lib/auth-client";
 import { useAudioPlaybackStore } from "@/store/use-audio-playback-store";
 import { AudioFile } from "@workspace/database";
@@ -32,39 +32,9 @@ import {
 } from "@workspace/ui/components/tooltip";
 import { toast } from "sonner";
 import CopyButton from "../copy-button";
+import { FavoriteButton } from "./audio-favorites-button";
 import { AudioSettingsButton } from "./audio-settings";
-
-function ShareButton() {
-  const handleShare = async () => {
-    const url = window.location.href;
-    if (navigator.share) {
-      try {
-        await navigator.share({ url });
-      } catch (e) {
-        // User cancelled or error
-      }
-    } else {
-      try {
-        await navigator.clipboard.writeText(url);
-        toast("Link copied to clipboard");
-      } catch (e) {
-        toast("Failed to copy link");
-      }
-    }
-  };
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button variant="outline" onClick={handleShare}>
-          <ShareIcon className="size-4" />
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>
-        <p>Share Audio Book</p>
-      </TooltipContent>
-    </Tooltip>
-  );
-}
+import { ShareButton } from "./audio-share-button";
 
 export interface AudioClipProps {
   af: AudioFile;
@@ -282,6 +252,7 @@ export default function AudioClip({ af }: AudioClipProps) {
   // ──────────────────────────
   // Setup video element when URL changes
   // ──────────────────────────
+  // Only reset state and reload video when the URL changes
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !resolvedUrl) return;
@@ -306,7 +277,15 @@ export default function AudioClip({ af }: AudioClipProps) {
         rafRef.current = null;
       }
     };
-  }, [resolvedUrl, playbackRate]);
+  }, [resolvedUrl]);
+
+  // Only update playback rate when it changes
+  useEffect(() => {
+    const video = videoRef.current;
+    if (video) {
+      video.playbackRate = Math.max(0.25, Math.min(4, playbackRate));
+    }
+  }, [playbackRate]);
 
   // Update playback rate when it changes
   useEffect(() => {
@@ -626,7 +605,7 @@ export default function AudioClip({ af }: AudioClipProps) {
               <PauseIcon className="size-4 text-background/70 fill-background/80" />
             ) : isLoadingToStart ? (
               <span className="inline-flex items-center gap-2">
-                <span className="text-xs tabular-nums min-w-[5em] inline-block animate-pulse">
+                <span className="text-xs tabular-nums min-w-[5em] inline-block animate-pulse ">
                   {`${loadingPercent}%`}
                 </span>
               </span>
@@ -640,7 +619,7 @@ export default function AudioClip({ af }: AudioClipProps) {
             <AudioSettingsButton />
           </div>
 
-          <span className="tabular-nums">
+          <span className="tabular-nums text-sm md:text-base">
             {formatTime(uiCurrentTime)} / {formatTime(uiDuration)}
           </span>
         </div>
@@ -656,6 +635,10 @@ export default function AudioClip({ af }: AudioClipProps) {
           )}
 
           <div className="flex gap-2 items-center">
+            <div className="hidden md:block">
+              <FavoriteButton af={audioFile} />
+            </div>
+
             <div className="hidden md:block">
               <CopyButton info={"Click to copy transcript"} text={transcript} />
             </div>
@@ -675,6 +658,10 @@ export default function AudioClip({ af }: AudioClipProps) {
                   <p>Download MP3</p>
                 </TooltipContent>
               </Tooltip>
+            </div>
+
+            <div className="md:hidden">
+              <FavoriteButton af={audioFile} />
             </div>
           </div>
         </div>
@@ -804,22 +791,6 @@ export default function AudioClip({ af }: AudioClipProps) {
             <span>Retry Failed Chunks</span>
           </Button>
         )}
-      </div>
-    </div>
-  );
-}
-
-export interface LoadingScreenProps {
-  title: string;
-  subtitle: string;
-}
-
-export function LoadingScreen({ title, subtitle }: LoadingScreenProps) {
-  return (
-    <div className="container mx-auto p-4 flex flex-col justify-center items-center max-w-5xl text-primary">
-      <div className="md:border max-w-lg w-full rounded-lg sm:p-4 flex flex-col items-center justify-center min-h-[200px] animate-pulse">
-        <span className="text-lg font-semibold mb-2">{title}</span>
-        <span className="text-sm text-muted-foreground">{subtitle}</span>
       </div>
     </div>
   );

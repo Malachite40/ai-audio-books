@@ -7,7 +7,7 @@ import { LoginRequiredDialog } from "@/components/login-required-modal";
 import { NotEnoughCreditsDialog } from "@/components/not-enough-credits-modal";
 import Logo from "@/components/svgs/logo";
 import { authClient } from "@/lib/auth-client";
-import { useTextInputStore } from "@/store/use-text-input-store";
+import { useNewAudioFormStore } from "@/store/use-new-audio-form-store";
 import { api } from "@/trpc/react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Speaker } from "@workspace/database";
@@ -151,7 +151,9 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
     speakerId,
     setDurationMinutes,
     durationMinutes: storeDurationMinutes,
-  } = useTextInputStore();
+    name: storeName,
+    setName: setStoreName,
+  } = useNewAudioFormStore();
   // STEP state (2-step process) in URL via nuqs
   // step 1: choose "mode" -> "copy" or "ai"
   // step 2: show the form (same form, with slight UX differences)
@@ -212,6 +214,9 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
       if (name === "text" && typeof value.text === "string") {
         setText(value.text);
       }
+      if (name === "name") {
+        setStoreName(value.name ?? "");
+      }
       if (name === "speakerId") {
         setSpeakerId(value.speakerId);
       }
@@ -229,6 +234,9 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
   useEffect(() => {
     if (text && text !== form.getValues("text")) {
       form.setValue("text", text, { shouldDirty: false });
+    }
+    if (storeName && storeName !== form.getValues("name")) {
+      form.setValue("name", storeName, { shouldDirty: false });
     }
     if (
       typeof storeDurationMinutes === "number" &&
@@ -526,7 +534,12 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
                     <CardDescription>{option.description}</CardDescription>
                   </CardHeader>
                   <CardContent className="flex justify-end">
-                    <Button onClick={() => setMode(option.key)}>
+                    <Button
+                      onClick={() => {
+                        form.reset();
+                        setMode(option.key);
+                      }}
+                    >
                       <ArrowRight className="size-4" />
                     </Button>
                   </CardContent>

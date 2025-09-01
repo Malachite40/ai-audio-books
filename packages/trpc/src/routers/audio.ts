@@ -6,12 +6,15 @@ import {
 } from "../trpc";
 import { audioChunkRouter } from "./audioChunk";
 import { audioFileSettingsRouter } from "./audioFileSettings";
+import { favoritesRouter } from "./favoritesRouter";
 import { inworldRouter } from "./inworld";
 
 export const audioRouter = createTRPCRouter({
   inworld: inworldRouter,
   chunks: audioChunkRouter,
   settings: audioFileSettingsRouter,
+  favorites: favoritesRouter,
+
   fetchAll: publicProcedure
     .input(
       z.object({
@@ -19,57 +22,38 @@ export const audioRouter = createTRPCRouter({
         cursor: z.string().nullish(),
       })
     )
-    .query(
-      async ({
-        ctx,
-        input,
-      }: {
-        ctx: import("../context").BaseContext;
-        input: { limit: number; cursor?: string | null };
-      }) => {
-        if (!ctx.user) {
-          return {
-            audioFiles: [],
-            nextCursor: undefined,
-          };
-        }
-
-        const audioFiles = await ctx.db.audioFile.findMany({
-          take: input.limit + 1,
-          where: {
-            deletedAt: null,
-            ownerId: ctx.user.id,
-          },
-          orderBy: {
-            createdAt: "desc",
-          },
-          cursor: input.cursor ? { id: input.cursor } : undefined,
-          select: {
-            id: true,
-            name: true,
-            AudioChunks: true,
-            speakerId: true,
-            status: true,
-            createdAt: true,
-            deletedAt: true,
-            speaker: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
-          },
-        });
-
-        let nextCursor: string | undefined = undefined;
-        if (audioFiles.length > input.limit) {
-          const nextItem = audioFiles.pop();
-          nextCursor = nextItem!.id;
-        }
-
-        return { audioFiles, nextCursor };
+    .query(async ({ ctx, input }) => {
+      if (!ctx.user) {
+        return {
+          audioFiles: [],
+          nextCursor: undefined,
+        };
       }
-    ),
+
+      const audioFiles = await ctx.db.audioFile.findMany({
+        take: input.limit + 1,
+        where: {
+          deletedAt: null,
+          ownerId: ctx.user.id,
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+        cursor: input.cursor ? { id: input.cursor } : undefined,
+        include: {
+          AudioChunks: true,
+          speaker: true,
+        },
+      });
+
+      let nextCursor: string | undefined = undefined;
+      if (audioFiles.length > input.limit) {
+        const nextItem = audioFiles.pop();
+        nextCursor = nextItem!.id;
+      }
+
+      return { audioFiles, nextCursor };
+    }),
   delete: authenticatedProcedure
     .input(
       z.object({

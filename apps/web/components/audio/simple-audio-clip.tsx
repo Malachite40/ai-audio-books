@@ -69,9 +69,9 @@ export default function SimpleAudioClip(props: Props) {
         size="icon"
       >
         {isPlaying ? (
-          <Pause className="h-4 w-4" />
+          <Pause className="h-4 w-4 text-background/70 fill-background/80" />
         ) : (
-          <Play className="h-4 w-4" />
+          <Play className="h-4 w-4 text-background/70 fill-background/80" />
         )}
       </Button>
 

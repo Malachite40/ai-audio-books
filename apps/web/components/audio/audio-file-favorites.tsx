@@ -13,12 +13,12 @@ import {
 import { Loader, Trash2 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
-// Audio History component
-interface AudioHistoryProps {}
+// Audio Favorites component
+interface AudioFileFavoritesProps {}
 
 const PAGE_SIZE = 10;
 
-export const AudioHistory = ({}: AudioHistoryProps) => {
+export const AudioFileFavorites = ({}: AudioFileFavoritesProps) => {
   const pathname = usePathname();
   const router = useRouter();
   const { open, setOpen: setAudioHistoryOpen } = useAudioHistoryStore();
@@ -30,14 +30,14 @@ export const AudioHistory = ({}: AudioHistoryProps) => {
     hasNextPage,
     isFetchingNextPage,
     refetch,
-  } = api.audio.fetchAll.useInfiniteQuery(
+  } = api.audio.favorites.fetchAll.useInfiniteQuery(
     { limit: PAGE_SIZE },
     { getNextPageParam: (lastPage) => lastPage.nextCursor }
   );
 
   const allAudioFiles = data?.pages.flatMap((page) => page.audioFiles) ?? [];
 
-  const deleteAudioFileMutation = api.audio.delete.useMutation({
+  const deleteAudioFileMutation = api.audio.favorites.delete.useMutation({
     onSuccess: async () => {
       refetch();
     },
@@ -88,13 +88,14 @@ export const AudioHistory = ({}: AudioHistoryProps) => {
   return (
     <div className="">
       <AreYouSure
-        title={`Are you sure you want to delete ${object?.name}?`}
+        title={`Remove ${object?.name} from favorites?`}
+        description="This can always be added back!"
         onCancel={async () => {
           setShowAreYouSure(false);
         }}
         onConfirm={async () => {
           if (!object) return;
-          deleteAudioFileMutation.mutate({ id: object.id });
+          deleteAudioFileMutation.mutate({ audioFileId: object.id });
         }}
       />
 
@@ -127,7 +128,7 @@ export const AudioHistory = ({}: AudioHistoryProps) => {
 
           {allAudioFiles.map((af) => {
             const isDeleting =
-              deleteAudioFileMutation.variables?.id === af.id &&
+              deleteAudioFileMutation.variables?.audioFileId === af.id &&
               deleteAudioFileMutation.isPending;
 
             return (
