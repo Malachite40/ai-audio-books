@@ -1,9 +1,11 @@
+import { env } from "@/env";
 import { api } from "@/trpc/server";
 import { Metadata } from "next";
 import { HomeClient } from "./home.client";
 
 export async function generateMetadata(): Promise<Metadata> {
   return {
+    metadataBase: new URL(env.NEXT_PUBLIC_BASE_URL),
     title: "Instant Audio Online",
     description: "Create and listen to audio books instantly. Affordably.",
     openGraph: {
