@@ -25,9 +25,6 @@ export async function generateMetadata(
   // fetch data
   const { audioFile } = await api.audio.fetch({ id });
 
-  // optionally access and extend (rather than replace) parent metadata
-  const previousImages = (await parent).openGraph?.images || [];
-
   if (!audioFile) {
     return {
       title: "Audio file not found",
@@ -41,7 +38,7 @@ export async function generateMetadata(
     title: audioFile.name || "Audio File",
     description: audioFile.text || undefined,
     openGraph: {
-      images: previousImages,
+      images: audioFile.imageUrl ? [audioFile.imageUrl] : [],
     },
   };
 }

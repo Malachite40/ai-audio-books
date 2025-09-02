@@ -4,7 +4,10 @@ const TASK_NAMES = {
   processAudioFile: "tasks.processAudioFile",
   concatAudioFile: "tasks.concatAudioFile",
   createAudioFileChunks: "tasks.createAudioFileChunks",
-  generateStory: "tasks.generateStory",
+  ai: {
+    generateStory: "tasks.ai.generateStory",
+    generateImage: "tasks.ai.generateImage",
+  },
 } as const;
 
 export { TASK_NAMES };

@@ -7,11 +7,8 @@ import {
   createTRPCRouter,
   publicProcedure,
 } from "../trpc";
-import {
-  audioChunkInput,
-  createAudioFileChunksInput,
-  generateStoryInput,
-} from "./workers";
+import { audioChunkInput, createAudioFileChunksInput } from "./workers";
+import { generateStoryInput } from "./workers/ai";
 
 export const createInworldAudioFileInput = z.object({
   name: z.string().min(2, "Please enter a name.").max(100),
@@ -66,7 +63,7 @@ export const inworldRouter = createTRPCRouter({
       });
 
       if (input.mode === "ai") {
-        const task = client.createTask(TASK_NAMES.generateStory);
+        const task = client.createTask(TASK_NAMES.ai.generateStory);
         task.applyAsync([
           {
             audioFileId: audioFile.id,

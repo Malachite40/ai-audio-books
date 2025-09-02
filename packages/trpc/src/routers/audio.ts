@@ -89,6 +89,7 @@ export const audioRouter = createTRPCRouter({
           ],
         },
         include: {
+          speaker: true,
           AudioChunks: {
             orderBy: {
               sequence: "asc",

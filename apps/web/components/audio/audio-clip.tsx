@@ -94,6 +94,8 @@ export default function AudioClip({ af }: AudioClipProps) {
             return 1000;
           case "ERROR":
           case "PROCESSED":
+            if (a.imageUrl?.includes("/image-generating-placeholder.png"))
+              return 5000;
             return false;
         }
       },
@@ -588,8 +590,31 @@ export default function AudioClip({ af }: AudioClipProps) {
         </video>
       )}
 
-      {/* Title */}
-      <h3 className="text-lg font-semibold mb-4">{audioFile.name}</h3>
+      {/* Image and Title narrator */}
+      <div className="w-full flex justify-center items-center mb-6 flex-col gap-6">
+        {/* Image */}
+        {audioFile.imageUrl ? (
+          <img
+            src={audioFile.imageUrl}
+            alt={audioFile.name}
+            className="h-40 w-40 aspect-square object-cover rounded-lg shadow-xs"
+          />
+        ) : (
+          <div className="h-40 w-40 aspect-square bg-muted rounded-lg flex justify-center items-center shadow-xs">
+            <p className="text-sm text-muted-foreground">No Image Available</p>
+          </div>
+        )}
+
+        <div className="flex flex-col gap-1 text-center">
+          {/* Title */}
+          <h3 className="text-lg font-semibold">{audioFile.name}</h3>
+
+          {/* Narrator */}
+          <p className="text-sm text-muted-foreground">
+            Narrated by: {audioFile.speaker.name} Diaz
+          </p>
+        </div>
+      </div>
 
       {/* Unified controls (kept) */}
       <div className="flex-row-reverse sm:flex-row flex items-center justify-between gap-3 mb-2">

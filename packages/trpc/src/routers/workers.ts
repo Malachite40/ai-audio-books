@@ -7,11 +7,11 @@ import { PassThrough, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import z from "zod";
 import { env } from "../env";
-import { generateStory } from "../lib/story-generation";
 import { client } from "../queue/client";
 import { s3Client } from "../s3";
 import { TASK_NAMES } from "../server";
 import { createTRPCRouter, queueProcedure } from "../trpc";
+import { aiWorkerRouter } from "./workers/ai";
 
 export const audioChunkInput = z.object({
   id: z.string().uuid(),
@@ -26,18 +26,13 @@ export const concatAudioFileInput = z.object({
   overwrite: z.boolean().optional().default(false),
 });
 
-export const generateStoryInput = z.object({
-  audioFileId: z.string().uuid(),
-  prompt: z.string(),
-  durationMinutes: z.number(),
-});
-
 export const createAudioFileChunksInput = z.object({
   audioFileId: z.string().uuid(),
   chunkSize: z.number().min(1).max(2000),
 });
 
 export const workersRouter = createTRPCRouter({
+  ai: aiWorkerRouter,
   concatAudioFile: queueProcedure
     .input(concatAudioFileInput)
     .mutation(async ({ ctx, input }) => {
@@ -667,35 +662,6 @@ export const workersRouter = createTRPCRouter({
           data: { amount: { decrement: audioFile.text.length } },
         });
       }
-
-      return {};
-    }),
-
-  generateStory: queueProcedure
-    .input(generateStoryInput)
-    .mutation(async ({ ctx, input }) => {
-      await ctx.db.audioFile.update({
-        where: { id: input.audioFileId },
-        data: { status: "GENERATING_STORY" },
-      });
-
-      const { title, story } = await generateStory({
-        duration: input.durationMinutes,
-        prompt: input.prompt,
-      });
-
-      await ctx.db.audioFile.update({
-        where: { id: input.audioFileId },
-        data: { name: title, text: story },
-      });
-
-      const task = client.createTask(TASK_NAMES.createAudioFileChunks);
-      task.applyAsync([
-        {
-          audioFileId: input.audioFileId,
-          chunkSize: 500,
-        } satisfies z.infer<typeof createAudioFileChunksInput>,
-      ]);
 
       return {};
     }),

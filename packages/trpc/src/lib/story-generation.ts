@@ -114,6 +114,7 @@ async function createTitle(premise: string): Promise<string> {
   const rawTitle = await withRetry(async () => {
     const { text } = await generateText({
       model,
+      temperature: 1,
       maxOutputTokens: 120,
       prompt: `
 Create an evocative, spoiler-free title for a short story based on the user's premise.
@@ -200,6 +201,7 @@ Return ONLY the story text.
     let story = await withRetry(async () => {
       const { text } = await generateText({
         model,
+        temperature: 0.8,
         prompt: basePrompt,
         maxOutputTokens: headroomTokens,
       });

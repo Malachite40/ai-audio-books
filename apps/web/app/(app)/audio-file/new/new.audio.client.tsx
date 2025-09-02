@@ -205,7 +205,7 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
       text: text || "",
       public: false,
       speakerId: speakerId || speakers[0]?.id,
-      durationMinutes: storeDurationMinutes ?? 10,
+      durationMinutes: storeDurationMinutes ?? 5,
     },
     mode: "onChange",
   });
@@ -235,9 +235,11 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
   useEffect(() => {
     if (text && text !== form.getValues("text")) {
       form.setValue("text", text, { shouldDirty: false });
+      form.trigger();
     }
     if (storeName && storeName !== form.getValues("name")) {
       form.setValue("name", storeName, { shouldDirty: false });
+      form.trigger();
     }
     if (
       typeof storeDurationMinutes === "number" &&
@@ -246,7 +248,9 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
       form.setValue("durationMinutes", storeDurationMinutes, {
         shouldDirty: false,
       });
+      form.trigger();
     }
+
     // Only run on mount or if values change
   }, [text, speakerId, storeDurationMinutes]);
 

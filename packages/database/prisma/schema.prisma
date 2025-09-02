@@ -113,6 +113,7 @@ model AudioFile {
     ownerId           String?
     name              String              @default("")
     text              String              @default("")
+    imageUrl          String?
     owner             User?               @relation(fields: [ownerId], references: [id], onDelete: Cascade)
     status            AudioFileStatus     @default(PENDING)
     speakerId         String

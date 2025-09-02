@@ -20,13 +20,13 @@ export const useNewAudioFormStore = create<NewAudioFormState>()(
       setText: (text: string) => set({ text }),
       speakerId: undefined,
       setSpeakerId: (speakerId: string | undefined) => set({ speakerId }),
-      durationMinutes: 10,
+      durationMinutes: 5,
       setDurationMinutes: (duration: number) =>
         set({ durationMinutes: duration }),
       name: "",
       setName: (name: string) => set({ name }),
       reset: () =>
-        set({ text: "", speakerId: undefined, durationMinutes: 10, name: "" }),
+        set({ text: "", speakerId: undefined, durationMinutes: 5, name: "" }),
     }),
     {
       name: "textInputStore",
