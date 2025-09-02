@@ -37,10 +37,10 @@ export const aiWorkerRouter = createTRPCRouter({
       });
 
       const { image } = await generateImage({
-        model: openai.image("dall-e-3"),
+        model: openai.image("dall-e-2"),
         prompt: input.prompt,
         n: 1,
-        size: "1024x1024",
+        size: "512x512",
         aspectRatio: "1:1",
       });
 
