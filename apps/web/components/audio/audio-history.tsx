@@ -83,6 +83,13 @@ export const AudioHistory = ({}: AudioHistoryProps) => {
     };
   }, [hasNextPage, isFetchingNextPage, isLoading, fetchNextPage]);
 
+  // refetch when opened
+  useEffect(() => {
+    if (open) {
+      refetch();
+    }
+  }, [open, refetch]);
+
   return (
     <div className="">
       <AreYouSure
