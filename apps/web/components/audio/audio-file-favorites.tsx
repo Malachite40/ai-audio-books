@@ -102,10 +102,10 @@ export const AudioFileFavorites = ({}: AudioFileFavoritesProps) => {
       <Table>
         <TableHeader>
           <TableRow>
+            <TableHead></TableHead>
             <TableHead className="sm:max-w-none max-w-[100px] overflow-ellipsis">
               Name
             </TableHead>
-            <TableHead>Speaker</TableHead>
             <TableHead className="w-12 text-center"></TableHead>
           </TableRow>
         </TableHeader>
@@ -143,12 +143,25 @@ export const AudioFileFavorites = ({}: AudioFileFavoritesProps) => {
                 key={af.id}
                 className={`cursor-pointer`}
               >
+                <TableCell className="p-0">
+                  {/* Image */}
+                  {af.imageUrl ? (
+                    <img
+                      src={af.imageUrl}
+                      alt={af.name}
+                      className="size-9 aspect-square object-cover rounded-lg shadow-xs"
+                    />
+                  ) : (
+                    <div className="size-9 aspect-square bg-muted rounded-lg flex justify-center items-center shadow-xs">
+                      <p className="text-sm text-muted-foreground"></p>
+                    </div>
+                  )}
+                </TableCell>
                 <TableCell>
-                  <div className="sm:max-w-none max-w-[200px] overflow-ellipsis line-clamp-1 h-full">
+                  <div className="sm:max-w-none flex-1 overflow-ellipsis line-clamp-1 h-full max-w-[210px]">
                     {af.name}
                   </div>
                 </TableCell>
-                <TableCell>{af.speaker.name}</TableCell>
                 <TableCell className="text-center">
                   <Button
                     size="sm"
