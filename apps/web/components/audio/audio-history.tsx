@@ -6,8 +6,6 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
-  TableHeader,
   TableRow,
 } from "@workspace/ui/components/table";
 import { Loader, Trash2 } from "lucide-react";
@@ -99,15 +97,6 @@ export const AudioHistory = ({}: AudioHistoryProps) => {
       />
 
       <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead></TableHead>
-            <TableHead className="sm:max-w-none max-w-[100px] overflow-ellipsis">
-              Name
-            </TableHead>
-            <TableHead className="w-12 text-center"></TableHead>
-          </TableRow>
-        </TableHeader>
         <TableBody>
           {isLoading && (
             <TableRow>
