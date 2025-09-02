@@ -506,12 +506,14 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
               {[
                 {
                   key: "copy",
+                  mode: "copy",
                   label: "Copy & paste text",
                   description: "Paste your text. Quick and simple.",
                   Icon: ClipboardList,
                 },
                 {
                   key: "ai",
+                  mode: "ai",
                   label: "Generate from AI",
                   description:
                     "Give a prompt and generate a story with a length of your choice.",
@@ -519,6 +521,7 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
                 },
                 {
                   key: "royal-road",
+                  mode: "copy",
                   label: "RoyalRoad Chapter",
                   description:
                     "Paste a RoyalRoad chapter URL to generate audio from it.",
@@ -529,7 +532,7 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
                   key={option.key}
                   role="button"
                   tabIndex={0}
-                  onClick={() => setMode(option.key)}
+                  onClick={() => setMode(option.mode)}
                   className="cursor-pointer transition hover:border-primary"
                 >
                   <CardHeader>
