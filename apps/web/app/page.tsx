@@ -27,5 +27,5 @@ export default async function Home() {
     return <>no audio file found</>;
   }
 
-  return <HomeClient af={audioFile!} />;
+  return <HomeClient af={audioFile!} speaker={audioFile.speaker} />;
 }

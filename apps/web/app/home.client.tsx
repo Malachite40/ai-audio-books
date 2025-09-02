@@ -2,7 +2,7 @@
 
 import SimpleAudioClip from "@/components/audio/simple-audio-clip";
 import Logo from "@/components/svgs/logo";
-import { AudioFile } from "@workspace/database";
+import { AudioFile, Speaker } from "@workspace/database";
 import { Button, buttonVariants } from "@workspace/ui/components/button";
 import {
   Card,
@@ -41,6 +41,7 @@ import {
 
 export type HomeClientProps = {
   af: AudioFile;
+  speaker: Speaker;
 };
 
 export function HomeClient(props: HomeClientProps) {
@@ -68,19 +69,33 @@ export function HomeClient(props: HomeClientProps) {
             <h1 className="text-5xl text-primary font-semibold">Audio Books</h1>
           </div>
 
-          <Card className="w-full max-w-md">
-            <CardHeader>
-              <CardTitle>Listen to a Sample Audio Book</CardTitle>
-              <CardDescription>
-                <span className="text-foreground/70">
-                  Sample: {props.af.name}
+          <div className="w-full max-w-md shadow-sm rounded-lg border border-border overflow-hidden">
+            <div className="font-semibold px-4 py-2 border-border border-b">
+              Sample Audio Book
+            </div>
+
+            <div className="flex gap-4 p-4">
+              {/* Image */}
+              {props.af.imageUrl && (
+                <div className="flex gap-2 size-20">
+                  <img
+                    src={props.af.imageUrl}
+                    alt={props.af.name}
+                    className="h-20 w-20 aspect-square object-cover rounded-lg shadow-xs"
+                  />
+                </div>
+              )}
+              <div className="flex flex-col gap-1">
+                <div className="font-semibold">{props.af.name}</div>
+                <span className="text-sm text-foreground/70">
+                  Narrated by {props.speaker.name}
                 </span>
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
+              </div>
+            </div>
+            <div className="px-4 pb-4">
               <SimpleAudioClip af={props.af} />
-            </CardContent>
-          </Card>
+            </div>
+          </div>
 
           {/* Create Audio Book Button */}
           <Link

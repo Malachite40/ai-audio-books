@@ -189,6 +189,7 @@ CONTENT & STYLE REQUIREMENTS
 - Rating: PG-13 by default unless the premise requests otherwise.
 - Originality: do NOT use copyrighted characters, settings, or lyrics unless supplied.
 - Language: American English.
+- Avoid overly stylized language such as stuttered phrases (e.g., "W-we seek the sea witch!") which may not convert well to TTS.
 
 TIPS
 - Punctuation matters! Exclamation points (!) for emphasis. Ellipsis (…) or dashes ( — ) for natural pauses.
