@@ -36,6 +36,8 @@ export const workersRouter = createTRPCRouter({
   concatAudioFile: queueProcedure
     .input(concatAudioFileInput)
     .mutation(async ({ ctx, input }) => {
+      const startTime = Date.now();
+
       // 1) Load file + chunks
       const audioFile = await ctx.db.audioFile.findUnique({
         where: { id: input.id },
@@ -71,8 +73,8 @@ export const workersRouter = createTRPCRouter({
 
       // 3) FFmpeg configuration
       const ffmpegBin = (ffmpegStatic as string) || "ffmpeg";
-      const sampleRate = 48000;
-      const channelLayout = "stereo";
+      const sampleRate = 24000;
+      const channelLayout = "mono";
 
       // 4) Build input arguments - decode to PCM to avoid MP3 timing issues
       const args: string[] = [
@@ -178,11 +180,11 @@ export const workersRouter = createTRPCRouter({
         "-c:a",
         "libmp3lame",
         "-b:a",
-        "128k",
+        "96k",
         "-ar",
         String(sampleRate),
         "-ac",
-        "2",
+        "1",
         "-f",
         "mp3",
         "pipe:1",
@@ -194,6 +196,7 @@ export const workersRouter = createTRPCRouter({
       });
 
       // Keep only a small rolling window of stderr to avoid unbounded memory
+      console.log(`[${Date.now() - startTime}ms] Monitoring FFmpeg stderr...`);
       let errBuf = "";
       ff.stderr?.on("data", (d) => {
         errBuf += String(d);
@@ -206,19 +209,29 @@ export const workersRouter = createTRPCRouter({
 
       // Transform to count bytes BEFORE the Body stream; do NOT attach 'data' to Body.
       let totalBytes = 0;
+
+      const PART_SIZE = 32 * 1024 * 1024; // 32MB parts (≥5MB required)
+      const QUEUE_SIZE = 12; // try 8–16 based on bandwidth
+
       const counter = new Transform({
+        highWaterMark: PART_SIZE,
         transform(chunk, _enc, cb) {
           totalBytes += (chunk as Buffer).length;
           cb(null, chunk);
         },
       });
 
-      // PassThrough stream that becomes the Upload Body
-      const pass = new PassThrough({ highWaterMark: 1024 * 1024 }); // ~1MB chunks
+      const pass = new PassThrough({ highWaterMark: 10 * 1024 * 1024 }); // ~10MB chunks
 
       // Managed multipart upload handles streaming + checksums safely
+      console.log(
+        `[${Date.now() - startTime}ms] Starting S3 multipart upload...`
+      );
       const upload = new Upload({
         client: s3Client,
+        queueSize: QUEUE_SIZE,
+        partSize: PART_SIZE,
+        leavePartsOnError: false,
         params: {
           Bucket: bucket,
           Key: finalKey,
@@ -255,8 +268,6 @@ export const workersRouter = createTRPCRouter({
             message: `Generated audio is too small: ${totalBytes} bytes`,
           });
         }
-
-        console.log(`Uploaded to S3: ${finalUrl}`);
       } catch (err) {
         try {
           ff.kill("SIGKILL");
@@ -320,7 +331,6 @@ export const workersRouter = createTRPCRouter({
 
       let resp: Response;
       try {
-        console.log("Sending request to Inworld TTS API...");
         resp = await fetch("https://api.inworld.ai/tts/v1/voice", {
           method: "POST",
           headers: {
@@ -333,10 +343,6 @@ export const workersRouter = createTRPCRouter({
             modelId: "inworld-tts-1",
           }),
         });
-        console.log(
-          "Received response from Inworld TTS API with status:",
-          resp.status
-        );
       } catch (err: unknown) {
         console.error("Error calling Inworld TTS API:", err);
         await ctx.db.audioChunk.update({

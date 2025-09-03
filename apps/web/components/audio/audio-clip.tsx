@@ -719,7 +719,7 @@ export default function AudioClip({ af }: AudioClipProps) {
         {isStitching && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <span className="px-4 py-1 rounded bg-background/80 text-primary font-semibold text-sm animate-pulse shadow-lg border border-primary">
-              Stitching...
+              Stitching & Uploading...
             </span>
           </div>
         )}
