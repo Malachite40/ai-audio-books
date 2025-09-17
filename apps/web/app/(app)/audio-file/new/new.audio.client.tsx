@@ -478,7 +478,7 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
           !audioFile.data?.audioFile &&
           selectedAudioFileId.length > 0 && (
             <div className="mb-4 w-full justify-center flex items-center flex-col">
-              <Logo className="size-30" />
+              <Logo className="size-30 fill-primary" />
               <p className="mb-4">No audio file found.</p>
               <Button
                 className="flex gap-2"
