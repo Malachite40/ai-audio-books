@@ -234,8 +234,19 @@ export const workersRouter = createTRPCRouter({
       ];
 
       // 6) Run FFmpeg and stream directly to R2 (multipart, tuned)
-      const PART_SIZE = 64 * 1024 * 1024; // 64MB parts
-      const QUEUE_SIZE = 24; // higher parallelism
+      // Use conservative defaults and allow env overrides.
+      // Worst-case RAM ≈ QUEUE_SIZE * PART_SIZE (plus ffmpeg + Node overhead).
+      const DEFAULT_PART = 8 * 1024 * 1024; // 8MB
+      const DEFAULT_Q = 6; // 4 concurrent parts
+      // S3/R2 requires min 5MB for multipart parts.
+      const PART_SIZE = Math.max(
+        5 * 1024 * 1024,
+        Number(process.env.R2_PART_SIZE || DEFAULT_PART)
+      );
+      const QUEUE_SIZE = Math.max(
+        1,
+        Number(process.env.R2_QUEUE_SIZE || DEFAULT_Q)
+      );
 
       const ff = spawn(ffmpegBin, args, {
         stdio: ["ignore", "pipe", "pipe"],
