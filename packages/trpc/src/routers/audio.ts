@@ -1,5 +1,9 @@
+import { TRPCError } from "@trpc/server";
 import z from "zod";
+import { TASK_NAMES } from "../queue";
+import { client } from "../queue/client";
 import {
+  adminProcedure,
   authenticatedProcedure,
   createTRPCRouter,
   publicProcedure,
@@ -8,12 +12,40 @@ import { audioChunkRouter } from "./audioChunk";
 import { audioFileSettingsRouter } from "./audioFileSettings";
 import { favoritesRouter } from "./favoritesRouter";
 import { inworldRouter } from "./inworld";
+import { concatAudioFileInput } from "./workers";
 
 export const audioRouter = createTRPCRouter({
   inworld: inworldRouter,
   chunks: audioChunkRouter,
   settings: audioFileSettingsRouter,
   favorites: favoritesRouter,
+
+  queueConcatAudioFile: adminProcedure
+    .input(z.object({ audioFileId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const audioChunks = await ctx.db.audioChunk.count({
+        where: {
+          audioFileId: input.audioFileId,
+          status: {
+            notIn: ["PROCESSED"],
+          },
+        },
+      });
+
+      if (audioChunks > 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Audio file with ID ${input.audioFileId} has ${audioChunks} unprocessed chunks. Cannot re-stitch until all chunks are processed.`,
+        });
+      }
+
+      const task = client.createTask(TASK_NAMES.concatAudioFile);
+      await task.applyAsync([
+        { id: input.audioFileId, overwrite: true } as z.infer<
+          typeof concatAudioFileInput
+        >,
+      ]);
+    }),
 
   fetchAll: publicProcedure
     .input(

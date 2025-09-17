@@ -2,11 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { TASK_NAMES } from "../queue";
 import { client } from "../queue/client";
-import {
-  authenticatedProcedure,
-  createTRPCRouter,
-  publicProcedure,
-} from "../trpc";
+import { authenticatedProcedure, createTRPCRouter } from "../trpc";
 import { audioChunkInput, createAudioFileChunksInput } from "./workers";
 import { generateStoryInput } from "./workers/ai";
 
@@ -88,7 +84,7 @@ export const inworldRouter = createTRPCRouter({
         audioFile,
       };
     }),
-  retry: publicProcedure
+  retry: authenticatedProcedure
     .input(z.object({ audioFileId: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
       // fetch all failed audio chunks for audio-file

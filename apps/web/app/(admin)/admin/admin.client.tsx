@@ -25,6 +25,7 @@ import {
 import { Trash2 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
+import { ReStitchForm } from "./_components/re-stitch";
 
 const SpeakerFormSchema = z.object({
   id: z.string().optional(),
@@ -80,7 +81,7 @@ export function AdminClientPage(props: AdminClientPageProps) {
   };
 
   return (
-    <div className="container mx-auto p-4">
+    <div className="container mx-auto p-4 space-y-6">
       <h1 className="text-2xl font-bold mb-4">Speaker Management</h1>
 
       <Card className="mb-6 p-4">
@@ -218,6 +219,8 @@ export function AdminClientPage(props: AdminClientPageProps) {
           </TableBody>
         </Table>
       </Card>
+
+      <ReStitchForm />
     </div>
   );
 }

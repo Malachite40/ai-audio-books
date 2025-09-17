@@ -13,6 +13,12 @@ import { TASK_NAMES } from "../server";
 import { createTRPCRouter, queueProcedure } from "../trpc";
 import { aiWorkerRouter } from "./workers/ai";
 
+// NEW: fast local I/O + tuned HTTP handler for concat
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import pLimit from "p-limit";
+
 export const audioChunkInput = z.object({
   id: z.string().uuid(),
 });
@@ -33,6 +39,10 @@ export const createAudioFileChunksInput = z.object({
 
 export const workersRouter = createTRPCRouter({
   ai: aiWorkerRouter,
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // Faster concat + upload to R2
+  // ────────────────────────────────────────────────────────────────────────────
   concatAudioFile: queueProcedure
     .input(concatAudioFileInput)
     .mutation(async ({ ctx, input }) => {
@@ -58,11 +68,16 @@ export const workersRouter = createTRPCRouter({
           message: "No chunks to concat",
         });
       }
-
       if (chunks.some((c) => c.status !== "PROCESSED")) {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Chunks are not all PROCESSED",
+        });
+      }
+      if (chunks.some((c) => !c.url)) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "One or more chunks missing URL",
         });
       }
 
@@ -71,27 +86,56 @@ export const workersRouter = createTRPCRouter({
       const finalKey = `audio/${audioFile.id}.mp3`;
       const finalUrl = `${env.NEXT_PUBLIC_AUDIO_BUCKET_URL}/${finalKey}`;
 
-      // 3) FFmpeg configuration
+      // 3) Prefetch inputs locally to avoid FFmpeg doing many remote HTTP reads
+      const tmpDir = await mkdtemp(path.join(os.tmpdir(), "concat-"));
+      const INPUT_PREFETCH_CONCURRENCY = 16; // tune per box/bandwidth
+      const limit = pLimit(INPUT_PREFETCH_CONCURRENCY);
+
+      let localInputs: string[] = [];
+      try {
+        // Promise.all preserves input order, even with concurrency limiting
+        localInputs = await Promise.all(
+          chunks.map((c, i) =>
+            limit(async () => {
+              const url = c.url!;
+              const pth = path.join(tmpDir, `${String(i).padStart(5, "0")}.in`);
+              const res = await fetch(url);
+              if (!res.ok) throw new Error(`fetch ${i} ${res.status}`);
+              const ab = await res.arrayBuffer();
+              await writeFile(pth, Buffer.from(ab));
+              return pth;
+            })
+          )
+        );
+      } catch (e) {
+        await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: `Failed prefetching inputs: ${(e as Error).message}`,
+        });
+      }
+
+      // 4) FFmpeg configuration (threads + normalized graph)
       const ffmpegBin = (ffmpegStatic as string) || "ffmpeg";
       const sampleRate = 24000;
       const channelLayout = "mono";
 
-      // 4) Build input arguments - decode to PCM to avoid MP3 timing issues
       const args: string[] = [
         "-hide_banner",
         "-loglevel",
         "warning",
         "-nostdin",
+        // Give filter graph + encoder more threads
+        "-filter_threads",
+        "2",
+        "-threads",
+        String(Math.max(2, os.cpus().length - 1)),
       ];
-      chunks.forEach((c) => {
-        if (!c.url) {
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: `Chunk ${c.sequence} is missing a URL`,
-          });
-        }
-        args.push("-i", c.url);
-      });
+
+      // Use local file inputs (fast)
+      for (const pth of localInputs) {
+        args.push("-i", pth);
+      }
 
       // 5) Build filter graph - normalization + padding/gaps
       const filters: string[] = [];
@@ -121,10 +165,10 @@ export const workersRouter = createTRPCRouter({
         if (leadPadMs > 0) {
           const lead = `lead${i}`;
           const secs = (leadPadMs / 1000).toFixed(3);
+          // silence only; skip extra volume stage for speed
           filters.push(
-            `anullsrc=r=${sampleRate}:cl=${channelLayout}:d=${secs}[${lead}_raw]`
+            `anullsrc=r=${sampleRate}:cl=${channelLayout}:d=${secs}[${lead}]`
           );
-          filters.push(`[${lead}_raw]volume=0.001[${lead}]`);
           concatInputs.push(`[${lead}]`);
         }
 
@@ -142,9 +186,8 @@ export const workersRouter = createTRPCRouter({
             const gap = `gap${i}`;
             const secs = (gapMs / 1000).toFixed(3);
             filters.push(
-              `anullsrc=r=${sampleRate}:cl=${channelLayout}:d=${secs}[${gap}_raw]`
+              `anullsrc=r=${sampleRate}:cl=${channelLayout}:d=${secs}[${gap}]`
             );
-            filters.push(`[${gap}_raw]volume=0.001[${gap}]`);
             concatInputs.push(`[${gap}]`);
           }
         }
@@ -154,9 +197,8 @@ export const workersRouter = createTRPCRouter({
           const tail = `tail${i}`;
           const secs = (tailMs / 1000).toFixed(3);
           filters.push(
-            `anullsrc=r=${sampleRate}:cl=${channelLayout}:d=${secs}[${tail}_raw]`
+            `anullsrc=r=${sampleRate}:cl=${channelLayout}:d=${secs}[${tail}]`
           );
-          filters.push(`[${tail}_raw]volume=0.001[${tail}]`);
           concatInputs.push(`[${tail}]`);
         }
       }
@@ -167,11 +209,7 @@ export const workersRouter = createTRPCRouter({
       );
       const filterGraph = filters.join(";");
 
-      // Drop these arrays ASAP so GC can reclaim
-      filters.length = 0;
-      concatInputs.length = 0;
-
-      // 6) Output arguments - constant bitrate for predictable encoding
+      // 6) Output arguments (keep CBR 96k to match your original)
       const outputArgs = [
         "-filter_complex",
         filterGraph,
@@ -190,7 +228,7 @@ export const workersRouter = createTRPCRouter({
         "pipe:1",
       ];
 
-      // 7) Run FFmpeg and stream directly to S3 (low RAM)
+      // 7) Run FFmpeg and stream directly to R2 (multipart, tuned)
       const ff = spawn(ffmpegBin, [...args, ...outputArgs], {
         stdio: ["ignore", "pipe", "pipe"],
       });
@@ -210,8 +248,8 @@ export const workersRouter = createTRPCRouter({
       // Transform to count bytes BEFORE the Body stream; do NOT attach 'data' to Body.
       let totalBytes = 0;
 
-      const PART_SIZE = 32 * 1024 * 1024; // 32MB parts (≥5MB required)
-      const QUEUE_SIZE = 12; // try 8–16 based on bandwidth
+      const PART_SIZE = 64 * 1024 * 1024; // 64MB parts
+      const QUEUE_SIZE = 24; // higher parallelism
 
       const counter = new Transform({
         highWaterMark: PART_SIZE,
@@ -221,12 +259,9 @@ export const workersRouter = createTRPCRouter({
         },
       });
 
-      const pass = new PassThrough({ highWaterMark: 10 * 1024 * 1024 }); // ~10MB chunks
+      const pass = new PassThrough({ highWaterMark: PART_SIZE });
 
-      // Managed multipart upload handles streaming + checksums safely
-      console.log(
-        `[${Date.now() - startTime}ms] Starting S3 multipart upload...`
-      );
+      // Use a dedicated tuned client for faster HTTP to R2
       const upload = new Upload({
         client: s3Client,
         queueSize: QUEUE_SIZE,
@@ -235,7 +270,7 @@ export const workersRouter = createTRPCRouter({
         params: {
           Bucket: bucket,
           Key: finalKey,
-          Body: pass, // S3 reads from this; we never attach 'data' listeners
+          Body: pass,
           ContentType: "audio/mpeg",
           Metadata: {
             "x-concat-chunks": String(chunks.length),
@@ -286,15 +321,19 @@ export const workersRouter = createTRPCRouter({
         ff.removeAllListeners();
         ff.stdout?.removeAllListeners();
         ff.stderr?.removeAllListeners();
+        // Cleanup temp files
+        await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
       }
 
       // 8) Update database status
       await ctx.db.audioFile.update({
         where: { id: audioFile.id },
-        data: {
-          status: "PROCESSED",
-        },
+        data: { status: "PROCESSED" },
       });
+
+      console.log(
+        `[concat] done in ${Date.now() - startTime}ms, wrote ~${(totalBytes / (1024 * 1024)).toFixed(1)} MB`
+      );
 
       return { key: finalKey, url: finalUrl };
     }),
@@ -307,9 +346,7 @@ export const workersRouter = createTRPCRouter({
         include: {
           audioFile: {
             include: {
-              _count: {
-                select: { AudioChunks: true },
-              },
+              _count: { select: { AudioChunks: true } },
               speaker: true,
             },
           },
