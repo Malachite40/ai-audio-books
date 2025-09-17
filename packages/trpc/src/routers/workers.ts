@@ -13,11 +13,15 @@ import { TASK_NAMES } from "../server";
 import { createTRPCRouter, queueProcedure } from "../trpc";
 import { aiWorkerRouter } from "./workers/ai";
 
-// NEW: fast local I/O + tuned HTTP handler for concat
+// NEW: fast local I/O + tuned HTTP handler for concat via concat demuxer
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import pLimit from "p-limit";
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Schemas
+   ──────────────────────────────────────────────────────────────────────────── */
 
 export const audioChunkInput = z.object({
   id: z.string().uuid(),
@@ -37,11 +41,15 @@ export const createAudioFileChunksInput = z.object({
   chunkSize: z.number().min(1).max(2000),
 });
 
+/* ─────────────────────────────────────────────────────────────────────────────
+   Router
+   ──────────────────────────────────────────────────────────────────────────── */
+
 export const workersRouter = createTRPCRouter({
   ai: aiWorkerRouter,
 
   // ────────────────────────────────────────────────────────────────────────────
-  // Faster concat + upload to R2
+  // Faster concat + upload to R2 using concat demuxer (fixes E2BIG)
   // ────────────────────────────────────────────────────────────────────────────
   concatAudioFile: queueProcedure
     .input(concatAudioFileInput)
@@ -115,41 +123,56 @@ export const workersRouter = createTRPCRouter({
         });
       }
 
-      // 4) FFmpeg configuration (threads + normalized graph)
+      // 4) Build concat list with silence files (lead/gaps/tail)
+      //    Using a single input through concat demuxer => fixes E2BIG
       const ffmpegBin = (ffmpegStatic as string) || "ffmpeg";
       const sampleRate = 24000;
-      const channelLayout = "mono";
+      const channelLayout = "mono"; // informational; we force -ac 1 on output
 
-      const args: string[] = [
-        "-hide_banner",
-        "-loglevel",
-        "warning",
-        "-nostdin",
-        // Give filter graph + encoder more threads
-        "-filter_threads",
-        "2",
-        "-threads",
-        String(Math.max(2, os.cpus().length - 1)),
-      ];
+      const listPath = path.join(tmpDir, "list.ffconcat");
+      const SILENCE_SR = sampleRate;
+      const SILENCE_CH = 1;
 
-      // Use local file inputs (fast)
-      for (const pth of localInputs) {
-        args.push("-i", pth);
+      // Cache silence WAVs by duration to avoid duplicates
+      const silenceCache = new Map<number, string>();
+
+      async function writeSilenceWav(pth: string, ms: number) {
+        const secs = ms / 1000;
+        const numSamples = Math.max(0, Math.round(SILENCE_SR * secs));
+        const dataBytes = numSamples * SILENCE_CH * 2; // s16le
+        const buf = Buffer.alloc(44 + dataBytes); // WAV header + PCM zeros
+
+        // WAV header
+        buf.write("RIFF", 0, "ascii");
+        buf.writeUInt32LE(36 + dataBytes, 4);
+        buf.write("WAVEfmt ", 8, "ascii");
+        buf.writeUInt32LE(16, 16); // PCM fmt chunk size
+        buf.writeUInt16LE(1, 20); // audio format = PCM
+        buf.writeUInt16LE(SILENCE_CH, 22);
+        buf.writeUInt32LE(SILENCE_SR, 24);
+        const byteRate = SILENCE_SR * SILENCE_CH * 2;
+        buf.writeUInt32LE(byteRate, 28);
+        buf.writeUInt16LE(SILENCE_CH * 2, 32); // block align
+        buf.writeUInt16LE(16, 34); // bits per sample
+        buf.write("data", 36, "ascii");
+        buf.writeUInt32LE(dataBytes, 40);
+        // PCM payload already zeroed
+        await writeFile(pth, buf);
       }
 
-      // 5) Build filter graph - normalization + padding/gaps
-      const filters: string[] = [];
-      const concatInputs: string[] = [];
-
-      // Normalize all inputs to a consistent format
-      for (let i = 0; i < chunks.length; i++) {
-        const normalized = `norm${i}`;
-        filters.push(
-          `[${i}:a]aformat=sample_fmts=s16:sample_rates=${sampleRate}:channel_layouts=${channelLayout}[${normalized}]`
-        );
+      async function getSilencePath(ms: number) {
+        const dur = Math.max(0, Math.round(ms));
+        if (dur === 0) return null;
+        if (!silenceCache.has(dur)) {
+          const p = path.join(tmpDir, `silence_${dur}.wav`);
+          await writeSilenceWav(p, dur);
+          silenceCache.set(dur, p);
+        }
+        return silenceCache.get(dur)!;
       }
 
-      // Build the concat sequence with gaps and edge padding
+      let list = "ffconcat version 1.0\n";
+
       for (let i = 0; i < chunks.length; i++) {
         const c = chunks[i]!;
         const isFirst = i === 0;
@@ -158,78 +181,63 @@ export const workersRouter = createTRPCRouter({
         const startMs = Math.max(0, c.paddingStartMs ?? 0);
         const endMs = Math.max(0, c.paddingEndMs ?? 0);
 
-        const leadPadMs = isFirst ? startMs : 0;
-        const tailMs = isLast ? endMs : 0;
-
-        // Lead padding only for the first chunk
-        if (leadPadMs > 0) {
-          const lead = `lead${i}`;
-          const secs = (leadPadMs / 1000).toFixed(3);
-          // silence only; skip extra volume stage for speed
-          filters.push(
-            `anullsrc=r=${sampleRate}:cl=${channelLayout}:d=${secs}[${lead}]`
-          );
-          concatInputs.push(`[${lead}]`);
+        if (isFirst && startMs) {
+          const s = await getSilencePath(startMs);
+          if (s) list += `file '${s}'\n`;
         }
 
-        // Actual audio chunk
-        concatInputs.push(`[norm${i}]`);
+        list += `file '${localInputs[i]}'\n`;
 
-        // Inter-chunk gap
         if (!isLast) {
           const next = chunks[i + 1]!;
           const gapMs = Math.max(
             0,
             (c.paddingEndMs ?? 0) + (next.paddingStartMs ?? 0)
           );
-          if (gapMs > 0) {
-            const gap = `gap${i}`;
-            const secs = (gapMs / 1000).toFixed(3);
-            filters.push(
-              `anullsrc=r=${sampleRate}:cl=${channelLayout}:d=${secs}[${gap}]`
-            );
-            concatInputs.push(`[${gap}]`);
+          if (gapMs) {
+            const s = await getSilencePath(gapMs);
+            if (s) list += `file '${s}'\n`;
           }
         }
 
-        // Tail padding only for the last chunk
-        if (tailMs > 0) {
-          const tail = `tail${i}`;
-          const secs = (tailMs / 1000).toFixed(3);
-          filters.push(
-            `anullsrc=r=${sampleRate}:cl=${channelLayout}:d=${secs}[${tail}]`
-          );
-          concatInputs.push(`[${tail}]`);
+        if (isLast && endMs) {
+          const s = await getSilencePath(endMs);
+          if (s) list += `file '${s}'\n`;
         }
       }
 
-      const numInputs = concatInputs.length;
-      filters.push(
-        `${concatInputs.join("")}concat=n=${numInputs}:v=0:a=1[outa]`
-      );
-      const filterGraph = filters.join(";");
+      await writeFile(listPath, list);
 
-      // 6) Output arguments (keep CBR 96k to match your original)
-      const outputArgs = [
-        "-filter_complex",
-        filterGraph,
-        "-map",
-        "[outa]",
-        "-c:a",
-        "libmp3lame",
-        "-b:a",
-        "96k",
+      // 5) FFmpeg arguments: single input via concat demuxer; normalize on output
+      const args: string[] = [
+        "-hide_banner",
+        "-loglevel",
+        "warning",
+        "-nostdin",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        listPath,
         "-ar",
         String(sampleRate),
         "-ac",
         "1",
+        "-c:a",
+        "libmp3lame",
+        "-b:a",
+        "96k",
         "-f",
         "mp3",
         "pipe:1",
       ];
 
-      // 7) Run FFmpeg and stream directly to R2 (multipart, tuned)
-      const ff = spawn(ffmpegBin, [...args, ...outputArgs], {
+      // 6) Run FFmpeg and stream directly to R2 (multipart, tuned)
+      const PART_SIZE = 64 * 1024 * 1024; // 64MB parts
+      const QUEUE_SIZE = 24; // higher parallelism
+
+      const ff = spawn(ffmpegBin, args, {
         stdio: ["ignore", "pipe", "pipe"],
       });
 
@@ -245,11 +253,8 @@ export const workersRouter = createTRPCRouter({
         console.error("[ffmpeg] process error:", err);
       });
 
-      // Transform to count bytes BEFORE the Body stream; do NOT attach 'data' to Body.
+      // Count bytes BEFORE the Body stream; do NOT attach 'data' to Body.
       let totalBytes = 0;
-
-      const PART_SIZE = 64 * 1024 * 1024; // 64MB parts
-      const QUEUE_SIZE = 24; // higher parallelism
 
       const counter = new Transform({
         highWaterMark: PART_SIZE,
@@ -325,14 +330,17 @@ export const workersRouter = createTRPCRouter({
         await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
       }
 
-      // 8) Update database status
+      // 7) Update database status
       await ctx.db.audioFile.update({
         where: { id: audioFile.id },
         data: { status: "PROCESSED" },
       });
 
       console.log(
-        `[concat] done in ${Date.now() - startTime}ms, wrote ~${(totalBytes / (1024 * 1024)).toFixed(1)} MB`
+        `[concat] done in ${Date.now() - startTime}ms, wrote ~${(
+          totalBytes /
+          (1024 * 1024)
+        ).toFixed(1)} MB`
       );
 
       return { key: finalKey, url: finalUrl };
@@ -609,8 +617,10 @@ export const workersRouter = createTRPCRouter({
 
         // Try Intl.Segmenter
         try {
-          if (typeof Intl !== "undefined" && Intl.Segmenter) {
-            const seg = new Intl.Segmenter("en", { granularity: "sentence" });
+          if (typeof Intl !== "undefined" && (Intl as any).Segmenter) {
+            const seg = new (Intl as any).Segmenter("en", {
+              granularity: "sentence",
+            });
             const out: string[] = [];
             for (const { segment } of seg.segment(text)) {
               const s = String(segment).trim();
@@ -673,7 +683,7 @@ export const workersRouter = createTRPCRouter({
       const sentences = splitIntoSentences(audioFile.text);
       const chunkTexts = buildChunks(sentences, input.chunkSize);
 
-      const allCreatedChunks = [];
+      const allCreatedChunks: any[] = [];
       const filteredChunks = chunkTexts.filter((c) => c.length > 0);
       const batchSize = 50;
       for (let i = 0; i < filteredChunks.length; i += batchSize) {
@@ -837,7 +847,7 @@ function parseMpegHeaderAt(buf: Buffer, i: number): MpegHeader | null {
     },
   } as const;
 
-  const bitrateKbps = br[version][layer][bitrateIdx]!;
+  const bitrateKbps = br[version][layer][bitrateIdx as 0 | 15]!;
   if (!bitrateKbps) return null;
 
   let samplesPerFrame: number;
