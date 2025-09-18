@@ -12,22 +12,18 @@ export const speakersRouter = createTRPCRouter({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const { name } = input;
-
-      await ctx.db.speaker.upsert({
-        where: { id: input.id },
-        create: {
-          name,
-          order: input.order,
-          exampleAudio: input.exampleAudio,
-        },
-        update: {
-          name,
-          order: input.order,
-          exampleAudio: input.exampleAudio,
-        },
-      });
-
+      const { id, name, order, exampleAudio } = input;
+      if (id) {
+        await ctx.db.speaker.upsert({
+          where: { id },
+          create: { name, order, exampleAudio },
+          update: { name, order, exampleAudio },
+        });
+      } else {
+        await ctx.db.speaker.create({
+          data: { name, order, exampleAudio },
+        });
+      }
       return {};
     }),
   fetchAll: publicProcedure.query(async ({ ctx }) => {

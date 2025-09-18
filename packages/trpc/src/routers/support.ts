@@ -11,7 +11,6 @@ export const supportRouter = createTRPCRouter({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      // Save to database using Prisma
       await ctx.db.supportSubmission.create({
         data: {
           name: input.name,
@@ -19,5 +18,25 @@ export const supportRouter = createTRPCRouter({
         },
       });
       return { success: true };
+    }),
+
+  fetchAll: publicProcedure
+    .input(
+      z.object({
+        page: z.number().min(1).default(1),
+        pageSize: z.number().min(1).max(100).default(10),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      const { page, pageSize } = input;
+      const [submissions, total] = await Promise.all([
+        ctx.db.supportSubmission.findMany({
+          orderBy: { createdAt: "desc" },
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+        }),
+        ctx.db.supportSubmission.count(),
+      ]);
+      return { submissions, total };
     }),
 });
