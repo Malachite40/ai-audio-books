@@ -92,6 +92,7 @@ model Verification {
 model Speaker {
     id           String      @id @default(uuid())
     name         String
+    displayName  String      @default("")
     order        Int?
     exampleAudio String?
     image        String?

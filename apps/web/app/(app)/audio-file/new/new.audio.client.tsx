@@ -716,7 +716,7 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
                             {speakers.map((s) => (
                               <SelectItem key={s.id} value={s.id}>
                                 <div className="flex items-center gap-2">
-                                  <span>{s.name}</span>
+                                  <span>{s.displayName}</span>
                                 </div>
                               </SelectItem>
                             ))}

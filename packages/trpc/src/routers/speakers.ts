@@ -7,17 +7,18 @@ export const speakersRouter = createTRPCRouter({
       z.object({
         id: z.string().uuid().optional(),
         name: z.string(),
+        displayName: z.string().min(1, "Please enter a speaker name."),
         order: z.number().min(0).optional(),
         exampleAudio: z.string().optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const { id, name, order, exampleAudio } = input;
+      const { id, name, order, exampleAudio, displayName } = input;
       if (id) {
         await ctx.db.speaker.upsert({
           where: { id },
-          create: { name, order, exampleAudio },
-          update: { name, order, exampleAudio },
+          create: { name, order, exampleAudio, displayName },
+          update: { name, order, exampleAudio, displayName },
         });
       } else {
         await ctx.db.speaker.create({
