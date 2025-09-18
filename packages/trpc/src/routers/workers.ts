@@ -3,6 +3,8 @@ import { Upload } from "@aws-sdk/lib-storage";
 import { TRPCError } from "@trpc/server";
 import ffmpegStatic from "ffmpeg-static";
 import { spawn } from "node:child_process";
+import { createWriteStream } from "node:fs";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { PassThrough, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import z from "zod";
@@ -13,29 +15,21 @@ import { TASK_NAMES } from "../server";
 import { createTRPCRouter, queueProcedure } from "../trpc";
 import { aiWorkerRouter } from "./workers/ai";
 
-// NEW: fast local I/O + tuned HTTP handler for concat via concat demuxer
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { Readable } from "node:stream";
+import type { ReadableStream as NodeWebReadableStream } from "node:stream/web";
 import pLimit from "p-limit";
-
 /* ─────────────────────────────────────────────────────────────────────────────
    Schemas
    ──────────────────────────────────────────────────────────────────────────── */
 
-export const audioChunkInput = z.object({
-  id: z.string().uuid(),
-});
-
-export const processAudioFileInput = z.object({
-  id: z.string().uuid(),
-});
-
+export const audioChunkInput = z.object({ id: z.string().uuid() });
+export const processAudioFileInput = z.object({ id: z.string().uuid() });
 export const concatAudioFileInput = z.object({
   id: z.string().uuid(),
   overwrite: z.boolean().optional().default(false),
 });
-
 export const createAudioFileChunksInput = z.object({
   audioFileId: z.string().uuid(),
   chunkSize: z.number().min(1).max(2000),
@@ -49,7 +43,9 @@ export const workersRouter = createTRPCRouter({
   ai: aiWorkerRouter,
 
   // ────────────────────────────────────────────────────────────────────────────
-  // Faster concat + upload to R2 using concat demuxer (fixes E2BIG)
+  // Concat via demuxer (single input) after transcoding all chunks to WAV.
+  // Silence padding generated as WAV -> concat -> encode MP3.
+  // Uses streaming IO and conservative multipart to avoid OOM/SIGKILL.
   // ────────────────────────────────────────────────────────────────────────────
   concatAudioFile: queueProcedure
     .input(concatAudioFileInput)
@@ -61,7 +57,6 @@ export const workersRouter = createTRPCRouter({
         where: { id: input.id },
         include: { AudioChunks: { orderBy: { sequence: "asc" } } },
       });
-
       if (!audioFile) {
         throw new TRPCError({
           code: "NOT_FOUND",
@@ -94,24 +89,69 @@ export const workersRouter = createTRPCRouter({
       const finalKey = `audio/${audioFile.id}.mp3`;
       const finalUrl = `${env.NEXT_PUBLIC_AUDIO_BUCKET_URL}/${finalKey}`;
 
-      // 3) Prefetch inputs locally to avoid FFmpeg doing many remote HTTP reads
+      // 3) Prefetch & TRANSCODE each chunk to WAV (streamed; no big buffers)
       const tmpDir = await mkdtemp(path.join(os.tmpdir(), "concat-"));
-      const INPUT_PREFETCH_CONCURRENCY = 16; // tune per box/bandwidth
+      const INPUT_PREFETCH_CONCURRENCY = Number(
+        process.env.CONCAT_PREFETCH_CONCURRENCY || 8
+      );
       const limit = pLimit(INPUT_PREFETCH_CONCURRENCY);
 
-      let localInputs: string[] = [];
+      const sampleRate = 24000;
+      const listPath = path.join(tmpDir, "list.ffconcat");
+
+      let localInputsWav: string[] = [];
       try {
-        // Promise.all preserves input order, even with concurrency limiting
-        localInputs = await Promise.all(
+        localInputsWav = await Promise.all(
           chunks.map((c, i) =>
             limit(async () => {
               const url = c.url!;
-              const pth = path.join(tmpDir, `${String(i).padStart(5, "0")}.in`);
+              const srcPath = path.join(
+                tmpDir,
+                `${String(i).padStart(6, "0")}.mp3`
+              );
+              const wavPath = path.join(
+                tmpDir,
+                `${String(i).padStart(6, "0")}.wav`
+              );
+
+              // Stream download to disk
               const res = await fetch(url);
-              if (!res.ok) throw new Error(`fetch ${i} ${res.status}`);
-              const ab = await res.arrayBuffer();
-              await writeFile(pth, Buffer.from(ab));
-              return pth;
+              if (!res.ok || !res.body)
+                throw new Error(`fetch ${i} ${res.status}`);
+              const webBody =
+                res.body as unknown as NodeWebReadableStream<Uint8Array>;
+              const nodeBody = Readable.fromWeb(webBody);
+
+              await pipeline(
+                nodeBody,
+                createWriteStream(srcPath, { flags: "w" })
+              );
+
+              // Transcode MP3 -> WAV 24kHz mono (s16le)
+              await new Promise<void>((resolve, reject) => {
+                const p = spawn((ffmpegStatic as string) || "ffmpeg", [
+                  "-hide_banner",
+                  "-loglevel",
+                  "error",
+                  "-nostdin",
+                  "-i",
+                  srcPath,
+                  "-ar",
+                  String(sampleRate),
+                  "-ac",
+                  "1",
+                  "-f",
+                  "wav",
+                  wavPath,
+                ]);
+                p.on("close", (code) =>
+                  code === 0
+                    ? resolve()
+                    : reject(new Error(`ffmpeg wav transcode exited ${code}`))
+                );
+              });
+
+              return wavPath;
             })
           )
         );
@@ -119,45 +159,60 @@ export const workersRouter = createTRPCRouter({
         await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message: `Failed prefetching inputs: ${(e as Error).message}`,
+          message: `Failed prefetch/transcode inputs: ${(e as Error).message}`,
         });
       }
 
-      // 4) Build concat list with silence files (lead/gaps/tail)
-      //    Using a single input through concat demuxer => fixes E2BIG
-      const ffmpegBin = (ffmpegStatic as string) || "ffmpeg";
-      const sampleRate = 24000;
-      const channelLayout = "mono"; // informational; we force -ac 1 on output
-
-      const listPath = path.join(tmpDir, "list.ffconcat");
+      // 4) Build ffconcat list with SILENCE WAVs (lead/gaps/tail)
       const SILENCE_SR = sampleRate;
       const SILENCE_CH = 1;
-
-      // Cache silence WAVs by duration to avoid duplicates
       const silenceCache = new Map<number, string>();
 
-      async function writeSilenceWav(pth: string, ms: number) {
-        const secs = ms / 1000;
-        const numSamples = Math.max(0, Math.round(SILENCE_SR * secs));
+      async function writeSilenceWavStreamed(pth: string, ms: number) {
+        const secs = Math.max(0, ms) / 1000;
+        const numSamples = Math.round(SILENCE_SR * secs);
         const dataBytes = numSamples * SILENCE_CH * 2; // s16le
-        const buf = Buffer.alloc(44 + dataBytes); // WAV header + PCM zeros
 
         // WAV header
-        buf.write("RIFF", 0, "ascii");
-        buf.writeUInt32LE(36 + dataBytes, 4);
-        buf.write("WAVEfmt ", 8, "ascii");
-        buf.writeUInt32LE(16, 16); // PCM fmt chunk size
-        buf.writeUInt16LE(1, 20); // audio format = PCM
-        buf.writeUInt16LE(SILENCE_CH, 22);
-        buf.writeUInt32LE(SILENCE_SR, 24);
+        const hdr = Buffer.alloc(44);
+        hdr.write("RIFF", 0, "ascii");
+        hdr.writeUInt32LE(36 + dataBytes, 4);
+        hdr.write("WAVEfmt ", 8, "ascii");
+        hdr.writeUInt32LE(16, 16);
+        hdr.writeUInt16LE(1, 20); // PCM
+        hdr.writeUInt16LE(SILENCE_CH, 22);
+        hdr.writeUInt32LE(SILENCE_SR, 24);
         const byteRate = SILENCE_SR * SILENCE_CH * 2;
-        buf.writeUInt32LE(byteRate, 28);
-        buf.writeUInt16LE(SILENCE_CH * 2, 32); // block align
-        buf.writeUInt16LE(16, 34); // bits per sample
-        buf.write("data", 36, "ascii");
-        buf.writeUInt32LE(dataBytes, 40);
-        // PCM payload already zeroed
-        await writeFile(pth, buf);
+        hdr.writeUInt32LE(byteRate, 28);
+        hdr.writeUInt16LE(SILENCE_CH * 2, 32);
+        hdr.writeUInt16LE(16, 34);
+        hdr.write("data", 36, "ascii");
+        hdr.writeUInt32LE(dataBytes, 40);
+
+        await new Promise<void>((resolve, reject) => {
+          const ws = createWriteStream(pth, { flags: "w" });
+          ws.once("error", reject);
+          ws.write(hdr);
+
+          const zeroChunk = Buffer.allocUnsafe(64 * 1024);
+          zeroChunk.fill(0);
+          let remaining = dataBytes;
+
+          function writeMore() {
+            while (remaining > 0) {
+              const toWrite = Math.min(remaining, zeroChunk.length);
+              const ok = ws.write(zeroChunk.subarray(0, toWrite));
+              remaining -= toWrite;
+              if (!ok) {
+                ws.once("drain", writeMore);
+                return;
+              }
+            }
+            ws.end();
+          }
+          ws.once("finish", resolve);
+          writeMore();
+        });
       }
 
       async function getSilencePath(ms: number) {
@@ -165,14 +220,13 @@ export const workersRouter = createTRPCRouter({
         if (dur === 0) return null;
         if (!silenceCache.has(dur)) {
           const p = path.join(tmpDir, `silence_${dur}.wav`);
-          await writeSilenceWav(p, dur);
+          await writeSilenceWavStreamed(p, dur);
           silenceCache.set(dur, p);
         }
         return silenceCache.get(dur)!;
       }
 
       let list = "ffconcat version 1.0\n";
-
       for (let i = 0; i < chunks.length; i++) {
         const c = chunks[i]!;
         const isFirst = i === 0;
@@ -186,7 +240,7 @@ export const workersRouter = createTRPCRouter({
           if (s) list += `file '${s}'\n`;
         }
 
-        list += `file '${localInputs[i]}'\n`;
+        list += `file '${localInputsWav[i]}'\n`;
 
         if (!isLast) {
           const next = chunks[i + 1]!;
@@ -205,11 +259,10 @@ export const workersRouter = createTRPCRouter({
           if (s) list += `file '${s}'\n`;
         }
       }
-
       await writeFile(listPath, list);
 
-      // 5) FFmpeg arguments: single input via concat demuxer; normalize on output
-      const args: string[] = [
+      // 5) FFmpeg: concat demuxer (all WAV) -> encode MP3 96k CBR mono 24kHz
+      const ffArgs: string[] = [
         "-hide_banner",
         "-loglevel",
         "warning",
@@ -233,12 +286,9 @@ export const workersRouter = createTRPCRouter({
         "pipe:1",
       ];
 
-      // 6) Run FFmpeg and stream directly to R2 (multipart, tuned)
-      // Use conservative defaults and allow env overrides.
-      // Worst-case RAM ≈ QUEUE_SIZE * PART_SIZE (plus ffmpeg + Node overhead).
+      // 6) Stream to R2 with conservative memory
       const DEFAULT_PART = 8 * 1024 * 1024; // 8MB
-      const DEFAULT_Q = 6; // 4 concurrent parts
-      // S3/R2 requires min 5MB for multipart parts.
+      const DEFAULT_Q = 6; // good for ~4GB containers
       const PART_SIZE = Math.max(
         5 * 1024 * 1024,
         Number(process.env.R2_PART_SIZE || DEFAULT_PART)
@@ -248,25 +298,21 @@ export const workersRouter = createTRPCRouter({
         Number(process.env.R2_QUEUE_SIZE || DEFAULT_Q)
       );
 
-      const ff = spawn(ffmpegBin, args, {
+      const ff = spawn((ffmpegStatic as string) || "ffmpeg", ffArgs, {
         stdio: ["ignore", "pipe", "pipe"],
       });
 
-      // Keep only a small rolling window of stderr to avoid unbounded memory
+      // Rolling stderr (small)
       console.log(`[${Date.now() - startTime}ms] Monitoring FFmpeg stderr...`);
       let errBuf = "";
       ff.stderr?.on("data", (d) => {
         errBuf += String(d);
         if (errBuf.length > 64_000) errBuf = errBuf.slice(-64_000);
       });
+      ff.on("error", (err) => console.error("[ffmpeg] process error:", err));
 
-      ff.on("error", (err) => {
-        console.error("[ffmpeg] process error:", err);
-      });
-
-      // Count bytes BEFORE the Body stream; do NOT attach 'data' to Body.
+      // Count bytes (no additional buffering)
       let totalBytes = 0;
-
       const counter = new Transform({
         highWaterMark: PART_SIZE,
         transform(chunk, _enc, cb) {
@@ -277,7 +323,6 @@ export const workersRouter = createTRPCRouter({
 
       const pass = new PassThrough({ highWaterMark: PART_SIZE });
 
-      // Use a dedicated tuned client for faster HTTP to R2
       const upload = new Upload({
         client: s3Client,
         queueSize: QUEUE_SIZE,
@@ -296,10 +341,7 @@ export const workersRouter = createTRPCRouter({
       });
 
       try {
-        // Pipe ffmpeg -> counter (counts bytes) -> pass (Body for Upload)
         const pipePromise = pipeline(ff.stdout!, counter, pass);
-
-        // Run ffmpeg, piping, and S3 upload concurrently
         const [exitCode] = await Promise.all([
           new Promise<number>((res) => ff.once("close", res)),
           pipePromise,
@@ -312,7 +354,6 @@ export const workersRouter = createTRPCRouter({
             message: `ffmpeg exited with ${exitCode}: ${errBuf}`,
           });
         }
-
         if (totalBytes < 1000) {
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",
@@ -332,31 +373,29 @@ export const workersRouter = createTRPCRouter({
           message: `Concat upload failed: ${(err as Error).message}\n${errBuf}`,
         });
       } finally {
-        // Proactively drop references to help GC
         errBuf = "";
         ff.removeAllListeners();
         ff.stdout?.removeAllListeners();
         ff.stderr?.removeAllListeners();
-        // Cleanup temp files
         await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
       }
 
-      // 7) Update database status
+      // 7) Update DB
       await ctx.db.audioFile.update({
         where: { id: audioFile.id },
         data: { status: "PROCESSED" },
       });
 
       console.log(
-        `[concat] done in ${Date.now() - startTime}ms, wrote ~${(
-          totalBytes /
-          (1024 * 1024)
-        ).toFixed(1)} MB`
+        `[concat] done in ${Date.now() - startTime}ms, wrote ~${(totalBytes / (1024 * 1024)).toFixed(1)} MB`
       );
 
       return { key: finalKey, url: finalUrl };
     }),
 
+  // ────────────────────────────────────────────────────────────────────────────
+  // (unchanged) processAudioChunkWithInworld / processAudioFile / createAudioFileChunks
+  // ────────────────────────────────────────────────────────────────────────────
   processAudioChunkWithInworld: queueProcedure
     .input(audioChunkInput)
     .mutation(async ({ ctx, input }) => {
@@ -407,9 +446,7 @@ export const workersRouter = createTRPCRouter({
         });
         throw new TRPCError({
           code: "BAD_GATEWAY",
-          message: `Could not reach Inworld TTS API: ${
-            err instanceof Error ? err.message : String(err)
-          }`,
+          message: `Could not reach Inworld TTS API: ${err instanceof Error ? err.message : String(err)}`,
         });
       }
 
@@ -426,7 +463,7 @@ export const workersRouter = createTRPCRouter({
         });
       }
 
-      // Parse and measure audio BEFORE uploading to minimize time retaining the buffer
+      // Parse & measure
       let audioBuffer: Buffer | undefined;
       let durationMs = 0;
       let mime: "audio/mpeg" | "audio/wav" = "audio/mpeg";
@@ -439,17 +476,10 @@ export const workersRouter = createTRPCRouter({
           );
         }
         audioBuffer = Buffer.from(result.audioContent, "base64");
-        console.log(
-          "Received audio buffer from Inworld, length:",
-          audioBuffer.length
-        );
-
-        if (audioBuffer.length < 100) {
+        if (audioBuffer.length < 100)
           throw new Error(
             `Buffer too small to be audio (${audioBuffer.length} bytes)`
           );
-        }
-
         mime = detectMime(audioBuffer);
         durationMs = await getAudioDurationMs(audioBuffer, mime);
       } catch (err) {
@@ -460,28 +490,20 @@ export const workersRouter = createTRPCRouter({
         });
         throw new TRPCError({
           code: "BAD_GATEWAY",
-          message: `Failed to parse Inworld TTS API response: ${
-            err instanceof Error ? err.message : String(err)
-          }`,
+          message: `Failed to parse Inworld TTS API response: ${err instanceof Error ? err.message : String(err)}`,
         });
       }
 
       // Upload to S3
-      const key = `audio/${audioChunk.audioFileId}/chunks/${String(
-        audioChunk.sequence
-      ).padStart(7, "0")}.mp3`;
+      const key = `audio/${audioChunk.audioFileId}/chunks/${String(audioChunk.sequence).padStart(7, "0")}.mp3`;
 
       try {
         const put = new PutObjectCommand({
           Bucket: env.NEXT_PUBLIC_CLOUD_FLARE_AUDIO_BUCKET_NAME,
           Key: key,
-          Body: audioBuffer!, // already validated
+          Body: audioBuffer!,
           ContentType: "audio/mpeg",
         });
-        console.log(
-          "S3 upload URL:",
-          env.NEXT_PUBLIC_AUDIO_BUCKET_URL + "/" + key
-        );
         await s3Client.send(put);
       } catch (err) {
         console.error("S3 upload error:", err);
@@ -491,16 +513,13 @@ export const workersRouter = createTRPCRouter({
         });
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message: `ERROR to upload audio to storage: ${
-            err instanceof Error ? err.message : String(err)
-          }`,
+          message: `ERROR to upload audio to storage: ${err instanceof Error ? err.message : String(err)}`,
         });
       } finally {
-        // Drop the large buffer reference ASAP
         audioBuffer = undefined;
       }
 
-      // Save chunk with RAW audio duration (no padding)
+      // Save + recompute totals / enqueue concat (unchanged)
       await ctx.db.audioChunk.update({
         where: { id: audioChunk.id },
         data: {
@@ -510,11 +529,6 @@ export const workersRouter = createTRPCRouter({
         },
       });
 
-      console.log(
-        "Audio chunk processed successfully. Recomputing file total…"
-      );
-
-      // Recompute total duration including padding
       const allForFile = await ctx.db.audioChunk.findMany({
         where: { audioFileId: audioChunk.audioFileId },
         select: {
@@ -565,8 +579,6 @@ export const workersRouter = createTRPCRouter({
           where: { id: audioChunk.audioFileId },
           data: { status: "PROCESSING" },
         });
-
-        // Enqueue concat job
         const task = client.createTask(TASK_NAMES.concatAudioFile);
         await task.applyAsync([
           { id: audioChunk.audioFileId, overwrite: true } as z.infer<
@@ -591,7 +603,6 @@ export const workersRouter = createTRPCRouter({
         orderBy: { sequence: "asc" },
       });
 
-      // Process chunks in batches
       const BATCH_SIZE = 15;
       for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
         const batch = chunks.slice(i, i + BATCH_SIZE);
@@ -605,10 +616,8 @@ export const workersRouter = createTRPCRouter({
             ]);
           })
         );
-        // Throttle between batches
-        if (i + BATCH_SIZE < chunks.length) {
-          await new Promise((resolve) => setTimeout(resolve, 5000));
-        }
+        if (i + BATCH_SIZE < chunks.length)
+          await new Promise((r) => setTimeout(r, 5000));
       }
       return {};
     }),
@@ -617,16 +626,12 @@ export const workersRouter = createTRPCRouter({
     .input(createAudioFileChunksInput)
     .mutation(async ({ ctx, input }) => {
       const audioFile = await ctx.db.audioFile.findUniqueOrThrow({
-        where: {
-          id: input.audioFileId,
-        },
+        where: { id: input.audioFileId },
       });
 
       const splitIntoSentences = (raw: string): string[] => {
         const text = raw.replace(/\s+/g, " ").trim();
         if (!text) return [];
-
-        // Try Intl.Segmenter
         try {
           if (typeof Intl !== "undefined" && (Intl as any).Segmenter) {
             const seg = new (Intl as any).Segmenter("en", {
@@ -639,10 +644,7 @@ export const workersRouter = createTRPCRouter({
             }
             if (out.length) return out;
           }
-        } catch {
-          // fall through to regex
-        }
-
+        } catch {}
         const rx = /[^.!?…]+(?:\.\.\.|[.!?]|…)+(?=\s+|$)|[^.!?…]+$/g;
         const matches = text.match(rx) ?? [];
         return matches.map((s) => s.trim());
@@ -669,14 +671,12 @@ export const workersRouter = createTRPCRouter({
       const buildChunks = (sentences: string[], limit: number): string[] => {
         const chunks: string[] = [];
         let buf = "";
-
         const flush = () => {
           if (buf.trim()) chunks.push(buf.trim());
           buf = "";
         };
-
         for (const s0 of sentences) {
-          const pieces = softWrap(s0, limit); // handle oversize sentence
+          const pieces = softWrap(s0, limit);
           for (const s of pieces) {
             const candidate = buf ? `${buf} ${s}` : s;
             if (candidate.length > limit && buf) {
@@ -694,12 +694,11 @@ export const workersRouter = createTRPCRouter({
       const sentences = splitIntoSentences(audioFile.text);
       const chunkTexts = buildChunks(sentences, input.chunkSize);
 
-      const allCreatedChunks: any[] = [];
-      const filteredChunks = chunkTexts.filter((c) => c.length > 0);
+      const filtered = chunkTexts.filter((c) => c.length > 0);
       const batchSize = 50;
-      for (let i = 0; i < filteredChunks.length; i += batchSize) {
-        const batch = filteredChunks.slice(i, i + batchSize);
-        const batchCreated = await Promise.all(
+      for (let i = 0; i < filtered.length; i += batchSize) {
+        const batch = filtered.slice(i, i + batchSize);
+        await Promise.all(
           batch.map((c, j) =>
             ctx.db.audioChunk.create({
               data: {
@@ -711,7 +710,6 @@ export const workersRouter = createTRPCRouter({
             })
           )
         );
-        allCreatedChunks.push(...batchCreated);
       }
 
       const task = client.createTask(TASK_NAMES.processAudioFile);
@@ -719,14 +717,12 @@ export const workersRouter = createTRPCRouter({
         { id: audioFile.id } satisfies z.infer<typeof processAudioFileInput>,
       ]);
 
-      // deduct credit
       if (audioFile.ownerId) {
         await ctx.db.credits.update({
           where: { userId: audioFile.ownerId },
           data: { amount: { decrement: audioFile.text.length } },
         });
       }
-
       return {};
     }),
 });
@@ -811,11 +807,10 @@ type MpegHeader = {
 
 function parseMpegHeaderAt(buf: Buffer, i: number): MpegHeader | null {
   if (i + 4 > buf.length) return null;
-  const b1 = buf[i]!;
-  const b2 = buf[i + 1]!;
-  const b3 = buf[i + 2]!;
-  const b4 = buf[i + 3]!;
-
+  const b1 = buf[i]!,
+    b2 = buf[i + 1]!,
+    b3 = buf[i + 2]!,
+    b4 = buf[i + 3]!;
   if (b1 !== 0xff || (b2 & 0xe0) !== 0xe0) return null;
 
   const verBits = (b2 >> 3) & 0x03;
@@ -858,7 +853,7 @@ function parseMpegHeaderAt(buf: Buffer, i: number): MpegHeader | null {
     },
   } as const;
 
-  const bitrateKbps = br[version][layer][bitrateIdx as 0 | 15]!;
+  const bitrateKbps = br[version][layer][bitrateIdx]!;
   if (!bitrateKbps) return null;
 
   let samplesPerFrame: number;
@@ -921,22 +916,20 @@ function tryXingVBRI(buf: Buffer, start: number, h: MpegHeader): number | null {
     const seconds = (frames * h.samplesPerFrame) / h.sampleRate;
     return Math.round(seconds * 1000);
   }
-
   return null;
 }
 
 function mp3DurationMs(buf: Buffer): number {
   let i = skipID3v2(buf);
-
   while (i + 4 < buf.length) {
     const h = parseMpegHeaderAt(buf, i);
     if (h) {
       const vbrMs = tryXingVBRI(buf, i, h);
       if (vbrMs != null) return vbrMs;
 
-      let totalSamples = 0;
-      let pos = i;
-      let safety = 0;
+      let totalSamples = 0,
+        pos = i,
+        safety = 0;
       while (pos + 4 <= buf.length && safety < 2_000_000) {
         const hh = parseMpegHeaderAt(buf, pos);
         if (!hh) break;
