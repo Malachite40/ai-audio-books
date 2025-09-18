@@ -74,7 +74,7 @@ export function HomeClient(props: HomeClientProps) {
               <CardTitle>Sample: {props.af.name}</CardTitle>
               <CardDescription>
                 <span className="text-foreground/70">
-                  Narrated By: {props.speaker.name}
+                  Narrated By: {props.speaker.displayName} Diaz
                 </span>
               </CardDescription>
             </CardHeader>

@@ -611,7 +611,7 @@ export default function AudioClip({ af }: AudioClipProps) {
 
           {/* Narrator */}
           <p className="text-sm text-muted-foreground">
-            Narrated by: {audioFile.speaker.name} Diaz
+            Narrated by: {audioFile.speaker.displayName} Diaz
           </p>
         </div>
       </div>
