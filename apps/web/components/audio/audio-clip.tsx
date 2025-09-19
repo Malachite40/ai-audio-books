@@ -3,7 +3,7 @@
 // ──────────────────────────────────────────────────────────────────────────────
 
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 
 import { api } from "@/trpc/react";
@@ -12,17 +12,9 @@ import { Slider } from "@workspace/ui/components/slider";
 import { cn } from "@workspace/ui/lib/utils";
 
 // Forms
-import { zodResolver } from "@hookform/resolvers/zod";
-import {
-  DownloadIcon,
-  PauseIcon,
-  PlayIcon,
-  RefreshCwIcon,
-} from "lucide-react/icons";
-import { useForm } from "react-hook-form";
+import { DownloadIcon, PauseIcon, PlayIcon } from "lucide-react/icons";
 
 import { LoadingScreen } from "@/app/(app)/audio-file/[id]/loading";
-import { authClient } from "@/lib/auth-client";
 import { useAudioPlaybackStore } from "@/store/use-audio-playback-store";
 import { AudioFile } from "@workspace/database";
 import {
@@ -58,7 +50,67 @@ const END_EPSILON = 1e-3;
 const clampPlayable = (offset: number, duration: number) =>
   Math.min(Math.max(0, offset), Math.max(0, duration - END_EPSILON));
 
-export default function AudioClip({ af }: AudioClipProps) {
+const AudioClip = memo(function AudioClip({ af }: AudioClipProps) {
+  // Fetch chunk status counts
+  const chunkStatusCountsQuery = api.audio.chunkStatusCounts.useQuery(
+    { audioFileId: af.id },
+    {
+      refetchInterval: (query) => {
+        if (!query.state.data?.counts) return 3000;
+        // Transform rawCounts array into { status: count }
+        const rawCounts = query.state.data.counts;
+        const chunkCounts: Record<string, number> = {};
+        for (const row of rawCounts) {
+          chunkCounts[row.status] = row._count.status;
+        }
+        const totalChunks = Object.values(chunkCounts).reduce(
+          (a, b) => Number(a) + Number(b),
+          0
+        );
+        const processedChunks = chunkCounts["PROCESSED"] ?? 0;
+
+        const isAllProcessed =
+          totalChunks > 0 && processedChunks === totalChunks;
+        return isAllProcessed ? false : 5000;
+      },
+    }
+  );
+
+  // Progress bar logic (memoized)
+  const {
+    totalChunks,
+    processedChunks,
+    errorChunks,
+    isAllProcessed,
+    isError,
+    progressPercent,
+    chunkCounts,
+  } = useMemo(() => {
+    const rawCounts = chunkStatusCountsQuery.data?.counts ?? [];
+    const chunkCounts: Record<string, number> = {};
+    for (const row of rawCounts) {
+      chunkCounts[row.status] = row._count.status;
+    }
+    const totalChunks = Object.values(chunkCounts).reduce(
+      (a, b) => Number(a) + Number(b),
+      0
+    );
+    const processedChunks = chunkCounts["PROCESSED"] ?? 0;
+    const errorChunks = chunkCounts["ERROR"] ?? 0;
+    const isAllProcessed = totalChunks > 0 && processedChunks === totalChunks;
+    const isError = errorChunks > 0;
+    const progressPercent =
+      totalChunks > 0 ? Math.round((processedChunks / totalChunks) * 100) : 0;
+    return {
+      totalChunks,
+      processedChunks,
+      errorChunks,
+      isAllProcessed,
+      isError,
+      progressPercent,
+      chunkCounts,
+    };
+  }, [chunkStatusCountsQuery.data]);
   // ──────────────────────────
   // State
   // ──────────────────────────
@@ -91,11 +143,11 @@ export default function AudioClip({ af }: AudioClipProps) {
           case "GENERATING_STORY":
           case "PENDING":
           case "PROCESSING":
-            return 1000;
+            return 3000;
           case "ERROR":
           case "PROCESSED":
             if (a.imageUrl?.includes("/image-generating-placeholder.png"))
-              return 5000;
+              return 10000;
             return false;
         }
       },
@@ -162,6 +214,8 @@ export default function AudioClip({ af }: AudioClipProps) {
       appliedInitialRef.current = true;
     }
   };
+
+  const [showFullText, setShowFullText] = useState(false);
 
   const handleTimeUpdate = () => {
     const video = videoRef.current;
@@ -341,166 +395,38 @@ export default function AudioClip({ af }: AudioClipProps) {
 
     if (video.paused) {
       const nativeDuration = video.duration || 0;
-      const startT = clampPlayable(
-        desiredStartRef.current || video.currentTime || currentTime || 0,
-        nativeDuration
-      );
-
-      video.currentTime = startT;
+      // If at (or very near) the end, reset to 0
+      if (
+        nativeDuration > 0 &&
+        Math.abs(video.currentTime - nativeDuration) < END_EPSILON * 2
+      ) {
+        video.currentTime = 0;
+      } else {
+        const startT = clampPlayable(
+          desiredStartRef.current || video.currentTime || currentTime || 0,
+          nativeDuration
+        );
+        video.currentTime = startT;
+      }
       video.play().catch(console.error);
     } else {
       pause();
     }
   };
 
-  const chunks = useMemo(
-    () =>
-      (audioFileQuery.data?.audioFile?.AudioChunks ?? [])
-        .slice()
-        .sort((a: any, b: any) => a.sequence - b.sequence),
-    [audioFileQuery.data]
-  );
-
-  const transcript = useMemo(
-    () => chunks.map((c: any) => c.text).join("") ?? "",
-    [chunks]
-  );
-
-  // Build a timeline map of actual chunk positions with padding
-  const chunkTimeline = useMemo(() => {
-    if (!chunks.length) return [];
-
-    let t = 0;
-    return chunks.map((chunk: any) => {
-      const startPad = Math.max(0, chunk.paddingStartMs ?? 0);
-      const endPad = Math.max(0, chunk.paddingEndMs ?? 0);
-      const bodyMs = Math.max(0, chunk.durationMs ?? 0);
-
-      // Inclusive start: include the chunk’s start padding
-      const startMs = t;
-
-      t += startPad;
-
-      // First sample of the spoken content
-      const contentStartMs = t;
-
-      t += bodyMs;
-      const contentEndMs = t;
-
-      // Include the chunk’s end padding
-      t += endPad;
-      const endMs = t; // exclusive end
-
-      return {
-        chunk,
-        startMs,
-        endMs,
-        startSec: startMs / 1000,
-        endSec: endMs / 1000,
-        contentStartSec: contentStartMs / 1000,
-        contentEndSec: contentEndMs / 1000,
-      };
-    });
-  }, [chunks]);
-
-  const activeSequence = useMemo(() => {
-    if (!chunkTimeline.length) return null as number | null;
-
-    // Find which chunk contains the current playback time, including padding
-    const currentSec = currentTime;
-    // If at or before the very start, highlight the first chunk
-    if (currentSec <= chunkTimeline[0]!.startSec) {
-      return chunkTimeline[0]!.chunk.sequence;
-    }
-    // If at or after the very end, highlight the last chunk
-    if (currentSec >= chunkTimeline[chunkTimeline.length - 1]!.endSec) {
-      return chunkTimeline[chunkTimeline.length - 1]!.chunk.sequence;
-    }
-    // Otherwise, find the chunk whose timeline includes the current time
-    const entry = chunkTimeline.find(
-      (t) => currentSec >= t.startSec && currentSec < t.endSec
-    );
-    return entry?.chunk.sequence ?? null;
-  }, [chunkTimeline, currentTime]);
-
-  const selectedChunk = useMemo(
-    () => chunks.find((c) => c.sequence === (activeSequence ?? -1)),
-    [chunks, activeSequence]
-  );
-
-  const seekToSequence = (sequence: number) => {
-    if (!chunkTimeline.length) return;
-    const entry = chunkTimeline.find((t) => t.chunk.sequence === sequence);
-    if (!entry) return;
-
-    // Start of spoken content; falls back to padded start if needed
-    const target = (entry as any).contentStartSec ?? entry.startSec;
-    setCurrentTime(target);
-    desiredStartRef.current = target;
-    playFrom(target);
-  };
-  const paddingForm = useForm<z.infer<typeof PaddingSchema>>({
-    resolver: zodResolver(PaddingSchema),
-    defaultValues: { paddingStartMs: 0, paddingEndMs: 0 },
-  });
-
-  useEffect(() => {
-    paddingForm.reset({
-      paddingStartMs: selectedChunk?.paddingStartMs ?? 0,
-      paddingEndMs: selectedChunk?.paddingEndMs ?? 0,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    selectedChunk?.id,
-    selectedChunk?.paddingStartMs,
-    selectedChunk?.paddingEndMs,
-  ]);
-
-  const retryMutation = api.audio.inworld.retry.useMutation();
-  const { data: userData } = authClient.useSession();
-
-  // ──────────────────────────
-  // Scrubbing
-  // ──────────────────────────
-  const isScrubbingRef = useRef(false);
-  const wasPlayingBeforeScrubRef = useRef(false);
-  const handleScrubStart = () => {
-    if (isScrubbingRef.current) return;
-    isScrubbingRef.current = true;
-    wasPlayingBeforeScrubRef.current = isPlaying;
-    if (isPlaying) pause();
-  };
-  const handleScrubEnd = (val?: number) => {
-    if (!isScrubbingRef.current) return;
-    isScrubbingRef.current = false;
-    if (typeof val !== "number") return;
-    const d = uiDuration;
-    const t = clampPlayable(val, d || val);
-    desiredStartRef.current = t;
-    setCurrentTime(t);
-
-    const video = videoRef.current;
-    if (video) {
-      video.currentTime = t;
-    }
-
-    if (wasPlayingBeforeScrubRef.current) {
-      playFrom(t);
-    }
-    wasPlayingBeforeScrubRef.current = false;
-  };
-
-  // Helpers
-  const formatTime = (sec: number) => {
-    if (!Number.isFinite(sec)) return "00:00";
-    const s = Math.floor(sec);
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    const ss = s % 60;
-    return h > 0
-      ? `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(ss).padStart(2, "0")}`
-      : `${String(m).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
-  };
+  // Format time helper (memoized)
+  const formatTime = useMemo(() => {
+    return (sec: number) => {
+      if (!Number.isFinite(sec)) return "00:00";
+      const s = Math.floor(sec);
+      const h = Math.floor(s / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      const ss = s % 60;
+      return h > 0
+        ? `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(ss).padStart(2, "0")}`
+        : `${String(m).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+    };
+  }, []);
 
   // Derived UI values & helpers - use native audio duration
   const uiDuration = duration || 0;
@@ -509,16 +435,8 @@ export default function AudioClip({ af }: AudioClipProps) {
   /** Treat "preparing" as loading state */
   const isLoadingToStart = !resolvedUrl && !isPlaying;
 
-  // Show 'Stitching...' if all chunks are processed but no resolvedUrl
-  const allChunksProcessed =
-    chunks.length > 0 && chunks.every((c: any) => c.status === "PROCESSED");
-  const isStitching = allChunksProcessed && !resolvedUrl;
-
-  const totalChars = useMemo(
-    () =>
-      chunks.reduce((sum: number, c: any) => sum + (c.text?.length || 0), 0),
-    [chunks]
-  );
+  // Stitching state is now derived from chunkStatusCounts
+  const isStitching = isAllProcessed && !resolvedUrl;
 
   const handleDownload = async () => {
     if (!resolvedUrl) {
@@ -650,22 +568,24 @@ export default function AudioClip({ af }: AudioClipProps) {
         </div>
 
         <div className="flex justify-between gap-2 items-center">
-          {chunks.length > 0 && (
+          {audioFile.text && (
             <span className="text-xs text-muted-foreground md:flex hidden">
               {(() => {
-                const cost = ((totalChars * 10) / 1_000_000).toFixed(4);
-                return `${totalChars} chars - $${cost}`;
+                const charCount = audioFile.text.length;
+                const cost = ((charCount * 10) / 1_000_000).toFixed(4);
+                return `${charCount} chars - $${cost}`;
               })()}
             </span>
           )}
-
           <div className="flex gap-2 items-center">
             <div className="hidden md:block">
               <FavoriteButton af={audioFile} />
             </div>
-
             <div className="hidden md:block">
-              <CopyButton info={"Click to copy transcript"} text={transcript} />
+              <CopyButton
+                info={"Copy transcript"}
+                text={audioFile.text ?? ""}
+              />
             </div>
             <ShareButton />
             <div>
@@ -684,7 +604,6 @@ export default function AudioClip({ af }: AudioClipProps) {
                 </TooltipContent>
               </Tooltip>
             </div>
-
             <div className="md:hidden">
               <FavoriteButton af={audioFile} />
             </div>
@@ -699,19 +618,24 @@ export default function AudioClip({ af }: AudioClipProps) {
           min={0}
           max={Math.max(0.01, uiDuration)}
           step={0.01}
-          onTouchStart={handleScrubStart}
-          onMouseDown={handleScrubStart}
-          onPointerDown={handleScrubStart}
           onValueChange={([v]) => {
             if (v == null) return;
-            if (!isScrubbingRef.current) handleScrubStart();
             const clamped = clampPlayable(v, uiDuration || v);
             desiredStartRef.current = clamped;
             setCurrentTime(clamped);
+            const video = videoRef.current;
+            if (video) {
+              video.currentTime = clamped;
+            }
           }}
           onValueCommit={([v]) => {
             if (v == null) return;
-            handleScrubEnd(v);
+            const clamped = clampPlayable(v, uiDuration || v);
+            setCurrentTime(clamped);
+            const video = videoRef.current;
+            if (video) {
+              video.currentTime = clamped;
+            }
           }}
           className="w-full h-10"
           disabled={!resolvedUrl}
@@ -725,98 +649,63 @@ export default function AudioClip({ af }: AudioClipProps) {
         )}
       </div>
 
-      {/* Chunk status bar with accurate positioning */}
-      <div className="py-4 flex w-full sm:gap-px">
-        {(() => {
-          // If any chunk is not PROCESSED, use equal width for all
-          const allProcessed = chunks.every(
-            (c: any) => c.status === "PROCESSED"
-          );
-          return chunkTimeline.map((entry, i) => {
-            const chunk = entry.chunk;
-            const isActive =
-              activeSequence != null && chunk.sequence === activeSequence;
+      {/* Animated progress bar for chunk processing */}
+      {!isAllProcessed && totalChunks > 0 && (
+        <div className="w-full py-4">
+          <div
+            className={cn(
+              "h-4 rounded-md transition-all",
+              isError
+                ? "bg-red-500 animate-pulse"
+                : "bg-primary/70 animate-pulse"
+            )}
+            style={{ width: `${progressPercent}%` }}
+          />
+          <div className="flex justify-between text-xs mt-1">
+            <span>
+              {isError
+                ? `${errorChunks} error${errorChunks > 1 ? "s" : ""}`
+                : `${processedChunks} / ${totalChunks} processed`}
+            </span>
+            <span>{progressPercent}%</span>
+          </div>
+        </div>
+      )}
 
-            // Calculate progress within this specific chunk
-            let progress = 0;
-            if (isActive && entry.endSec > entry.startSec) {
-              // If in the padding before or after the chunk's main audio, show full progress
-              if (currentTime < entry.startSec || currentTime >= entry.endSec) {
-                progress = 100;
-              } else {
-                const chunkProgress = currentTime - entry.startSec;
-                const chunkDuration = entry.endSec - entry.startSec;
-                progress =
-                  (Math.max(0, Math.min(chunkProgress, chunkDuration)) /
-                    chunkDuration) *
-                  100;
+      {/* Transcript snippet and retry are unavailable without chunk data */}
+      {audioFile.text && (
+        <>
+          <div className="w-full">
+            <div
+              className={
+                showFullText
+                  ? "whitespace-pre-line break-words"
+                  : "whitespace-pre-line break-words line-clamp-10"
               }
-            }
-
-            // If not all processed, use equal width; else use proportional width
-            let flexValue = 1;
-            if (allProcessed) {
-              const totalDurationMs =
-                chunkTimeline[chunkTimeline.length - 1]?.endMs ?? 1;
-              const chunkDurationMs = entry.endMs - entry.startMs;
-              flexValue = Math.max(
-                0.1,
-                (chunkDurationMs / totalDurationMs) * chunks.length
-              );
-            }
-
-            return (
-              <div
-                key={chunk.id}
-                title={`seq ${chunk.sequence} – ${chunk.status} (${Math.round(entry.startSec)}s-${Math.round(entry.endSec)}s)`}
-                onClick={() => seekToSequence(chunk.sequence)}
-                aria-current={isActive ? "true" : undefined}
-                style={{ flex: flexValue }}
-                className={cn(
-                  "relative first:rounded-l-md last:rounded-r-md h-4 cursor-pointer transition-shadow",
-                  chunk.status === "PROCESSING" &&
-                    "bg-yellow-500 hover:bg-yellow-500/90",
-                  chunk.status === "PROCESSED" &&
-                    "bg-green-500 hover:bg-green-500/90",
-                  chunk.status === "ERROR" && "bg-red-500 hover:bg-red-500/90",
-                  chunk.status === "PENDING" &&
-                    "bg-gray-500 hover:bg-gray-500/90",
-                  isActive && "outline outline-blue-500 animate-pulse"
-                )}
+              style={{ wordBreak: "break-word" }}
+            >
+              {audioFile.text}
+            </div>
+            {!showFullText && (
+              <button
+                className="mt-1 text-xs text-primary underline cursor-pointer"
+                onClick={() => setShowFullText(true)}
               >
-                {isActive && (
-                  <div
-                    className="absolute inset-y-0 left-0 bg-white/30 pointer-events-none"
-                    style={{ width: `${progress}%` }}
-                  />
-                )}
-              </div>
-            );
-          });
-        })()}
-      </div>
-
-      {/* Transcript snippet (kept) */}
-      <div className="flex flex-col w-full">
-        <span className="text-sm text-muted-foreground min-h-[200px] sm:min-h-[125px]">
-          {chunks.find((c) => c.sequence === activeSequence)?.text}
-        </span>
-      </div>
-
-      {/* Retry failed chunks (kept) */}
-      <div className="flex gap-4 items-center">
-        {(chunks.some((c) => c.status === "ERROR") ||
-          userData?.user.role === "admin") && (
-          <Button
-            className="md:flex-0 flex-1 gap-2 flex"
-            variant="outline"
-            onClick={() => retryMutation.mutate({ audioFileId: af.id })}
-          >
-            <RefreshCwIcon className="h-4 w-4" />
-            <span>Retry Failed Chunks</span>
-          </Button>
-        )}
-      </div>
+                View More
+              </button>
+            )}
+            {showFullText && (
+              <button
+                className="mt-1 text-xs text-primary underline cursor-pointer"
+                onClick={() => setShowFullText(false)}
+              >
+                Show Less
+              </button>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
-}
+});
+export default AudioClip;

@@ -8,6 +8,12 @@ const TASK_NAMES = {
     generateStory: "tasks.ai.generateStory",
     generateImage: "tasks.ai.generateImage",
   },
+  test: {
+    processTestAudioChunk: "tasks.test.processTestAudioChunk",
+    concatTestAudioFile: "tasks.test.concatTestAudioFile",
+    createAudioFileTest: "tasks.test.createAudioFileTest",
+    processTestAudioFile: "tasks.test.processTestAudioFile",
+  },
 } as const;
 
 export { TASK_NAMES };

@@ -10,12 +10,28 @@ import {
 } from "../trpc";
 import { audioChunkRouter } from "./audioChunk";
 import { audioFileSettingsRouter } from "./audioFileSettings";
+import { audioFileTestRouter } from "./audioFileTest";
 import { favoritesRouter } from "./favoritesRouter";
 import { inworldRouter } from "./inworld";
 import { concatAudioFileInput } from "./workers";
 
 export const audioRouter = createTRPCRouter({
+  /**
+   * Returns the count of audio chunks for a given audioFileId, grouped by status.
+   * Example output: { PROCESSED: 10, ERROR: 1, PENDING: 2 }
+   */
+  chunkStatusCounts: publicProcedure
+    .input(z.object({ audioFileId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const counts = await ctx.db.audioChunk.groupBy({
+        by: ["status"],
+        where: { audioFileId: input.audioFileId },
+        _count: { status: true },
+      });
+      return { counts };
+    }),
   inworld: inworldRouter,
+  test: audioFileTestRouter,
   chunks: audioChunkRouter,
   settings: audioFileSettingsRouter,
   favorites: favoritesRouter,
@@ -73,7 +89,6 @@ export const audioRouter = createTRPCRouter({
         },
         cursor: input.cursor ? { id: input.cursor } : undefined,
         include: {
-          AudioChunks: true,
           speaker: true,
         },
       });
@@ -117,11 +132,6 @@ export const audioRouter = createTRPCRouter({
         },
         include: {
           speaker: true,
-          AudioChunks: {
-            orderBy: {
-              sequence: "asc",
-            },
-          },
           AudioFileSettings: ctx.user
             ? {
                 where: {

@@ -13,6 +13,7 @@ import { client } from "../queue/client";
 import { s3Client } from "../s3";
 import { TASK_NAMES } from "../server";
 import { createTRPCRouter, queueProcedure } from "../trpc";
+import { testWorkersRouter } from "./testWorkers";
 import { aiWorkerRouter } from "./workers/ai";
 
 import os from "node:os";
@@ -41,6 +42,7 @@ export const createAudioFileChunksInput = z.object({
 
 export const workersRouter = createTRPCRouter({
   ai: aiWorkerRouter,
+  test: testWorkersRouter,
 
   // ────────────────────────────────────────────────────────────────────────────
   // Concat via demuxer (single input) after transcoding all chunks to WAV.

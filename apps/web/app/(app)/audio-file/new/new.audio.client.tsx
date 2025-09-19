@@ -193,6 +193,22 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
   // Auth state (assumes next-auth). If you don't use next-auth, swap this for your auth query.
   const { data: userData } = authClient.useSession();
   const isLoggedIn = !!userData?.session;
+  // Fix: Use userData.session.role or userData.session.userId for admin check
+  // Adjust this logic to match your actual session/user structure
+  // Fallback: check if userId matches a known admin ID (replace with your logic)
+  const isAdmin = userData?.user.role === "admin";
+  // Admin test audio mutation
+  const testAudioMutation = api.audio.test.create.useMutation({
+    onSuccess: (data) => {
+      router.push(`/audio-file/${data.audioFile.id}`);
+    },
+    onError: (error) => {
+      toast("Test audio creation failed", {
+        description: error.message,
+        duration: 4000,
+      });
+    },
+  });
 
   // Queries
   const audioFile = api.audio.fetch.useQuery({ id: selectedAudioFileId });
@@ -443,7 +459,6 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
         needed={requiredCredits}
         available={availableCredits}
       />
-
       {/* Visibility confirmation */}
       <ConfirmAudioVisibility
         open={showConfirm}
@@ -464,7 +479,6 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
           });
         }}
       />
-
       <div className="container mx-auto p-4 flex flex-col md:justify-center max-w-5xl">
         {/* Loading State */}
         {audioFile.isLoading && selectedAudioFileId.length > 0 && (
@@ -472,7 +486,6 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
             <p className="mb-4">Loading...</p>
           </div>
         )}
-
         {/* Error page: Create new audio file */}
         {!audioFile.isLoading &&
           !audioFile.data?.audioFile &&
@@ -494,7 +507,6 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
               </Button>
             </div>
           )}
-
         {/* STEP 1: Choose how to start */}
         {!mode && (
           <div className="mb-8">
@@ -557,7 +569,6 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
             </div>
           </div>
         )}
-
         {/* STEP 2 (both modes): Create new audio file form */}
         {mode && (
           <Form {...form}>
@@ -832,6 +843,30 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
                     ? "Synthesizing..."
                     : "Create Audio"}
                 </Button>
+                {/* Admin-only Test Audio Creation Button */}
+                {isAdmin && (
+                  <div className="flex flex-col gap-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={!form.formState.isValid}
+                      onClick={() => {
+                        const vals = form.getValues();
+                        testAudioMutation.mutate({
+                          name: vals.name?.trim() || "Untitled Audio",
+                          speakerId: vals.speakerId,
+                          text: vals.text,
+                          durationMinutes: vals.durationMinutes,
+                          public: vals.public,
+                          mode: mode as "copy" | "ai",
+                          chunkSize: 1000,
+                        });
+                      }}
+                    >
+                      {"Test"}
+                    </Button>
+                  </div>
+                )}
               </div>
             </form>
           </Form>
