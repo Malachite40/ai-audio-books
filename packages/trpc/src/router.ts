@@ -1,5 +1,6 @@
 import { audioRouter } from "./routers/audio";
 import { creditsRouter } from "./routers/credits";
+import { emailsRouter } from "./routers/emails";
 import { keyValueRouter } from "./routers/keyValueRouter";
 import { speakersRouter } from "./routers/speakers";
 import { stripeRouter } from "./routers/stripe";
@@ -19,6 +20,7 @@ export const appRouter = createTRPCRouter({
   subscriptions: subscriptionsRouter,
   support: supportRouter,
   kv: keyValueRouter,
+  emails: emailsRouter,
 });
 
 // export type definition of API

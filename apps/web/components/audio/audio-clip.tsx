@@ -587,7 +587,7 @@ const AudioClip = memo(function AudioClip({ af }: AudioClipProps) {
                 text={audioFile.text ?? ""}
               />
             </div>
-            <ShareButton />
+            {audioFile.public && <ShareButton />}
             <div>
               <Tooltip>
                 <TooltipTrigger asChild>

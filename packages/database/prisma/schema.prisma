@@ -207,3 +207,13 @@ model UserAudioFile {
 
     @@id([userId, audioFileId])
 }
+
+model Emails {
+    email     String
+    group     String
+    isContact Boolean  @default(false)
+    createdAt DateTime @default(now()) @db.Timestamptz
+    updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz
+
+    @@id([email, group])
+}

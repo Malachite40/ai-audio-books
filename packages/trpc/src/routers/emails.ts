@@ -1,0 +1,44 @@
+import z from "zod";
+import { createTRPCRouter, publicProcedure } from "../trpc";
+
+export const emailsRouter = createTRPCRouter({
+  join: publicProcedure
+    .input(
+      z.object({
+        email: z.string().email(),
+        group: z.string(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const emailLower = input.email.toLowerCase();
+
+      await ctx.db.emails.upsert({
+        where: { email_group: { email: emailLower, group: input.group } },
+        update: { group: input.group.toLowerCase() },
+        create: { email: emailLower, group: input.group.toLowerCase() },
+      });
+
+      return {};
+    }),
+  check: publicProcedure
+    .input(
+      z.object({
+        email: z.string().email(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const existingEmail = await ctx.db.emails.findFirst({
+        where: {
+          email: {
+            mode: "insensitive",
+            equals: input.email.toLowerCase(),
+          },
+        },
+      });
+      if (existingEmail) return { subscribed: true };
+
+      return {
+        subscribed: false,
+      };
+    }),
+});
