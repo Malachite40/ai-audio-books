@@ -19,7 +19,8 @@
   ],
   "scripts": {
     "build": "bunx --bun tsc -p tsconfig.json",
-    "dev": "email dev --port 3050",
+    "watch": "bunx --bun tsc -p tsconfig.json -w --preserveWatchOutput",
+    "dev": "bunx --bun tsc -p tsconfig.json -w --preserveWatchOutput & email dev --port 3050",
     "export": "email export",
     "prepare": "bun run build"
   },

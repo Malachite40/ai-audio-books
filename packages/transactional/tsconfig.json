@@ -4,6 +4,8 @@
     "jsx": "react-jsx",
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "composite": true,
+    "incremental": true,
     "outDir": "./dist",
     "types": [
       "node"
