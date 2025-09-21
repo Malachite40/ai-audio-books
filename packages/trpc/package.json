@@ -19,6 +19,7 @@
     }
   },
   "dependencies": {
+    "@workspace/transactional": "workspace:*",
     "@aws-sdk/client-s3": "^3.812.0",
     "@aws-sdk/lib-storage": "^3.879.0",
     "@aws-sdk/s3-presigned-post": "^3.812.0",
@@ -35,6 +36,7 @@
     "ffmpeg-static": "^5.2.0",
     "get-mp3-duration": "^1.0.0",
     "jsonwebtoken": "^9.0.2",
+    "resend": "^6.1.0",
     "stripe": "^18.4.0",
     "superjson": "^2.2.2",
     "uuid": "^11.1.0",

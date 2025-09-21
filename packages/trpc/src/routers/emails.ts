@@ -1,4 +1,6 @@
 import z from "zod";
+import { resend } from "../lib/resend";
+import { WelcomeEmail } from "@workspace/transactional/emails/welcome";
 import { createTRPCRouter, publicProcedure } from "../trpc";
 
 export const emailsRouter = createTRPCRouter({
@@ -16,6 +18,13 @@ export const emailsRouter = createTRPCRouter({
         where: { email_group: { email: emailLower, group: input.group } },
         update: { group: input.group.toLowerCase() },
         create: { email: emailLower, group: input.group.toLowerCase() },
+      });
+
+      await resend.emails.send({
+        from: "Instant Audio Online <support@instantaudio.online>",
+        to: [input.email],
+        subject: "Welcome to Instant Audio Online!",
+        react: WelcomeEmail({ username: input.email.split("@")[0] }),
       });
 
       return {};

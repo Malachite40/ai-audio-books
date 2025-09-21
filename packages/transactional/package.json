@@ -1,9 +1,27 @@
 {
-  "name": "transactional",
-  "module": "index.ts",
+  "name": "@workspace/transactional",
   "type": "module",
+  "main": "./dist/src/index.js",
+  "module": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
+    "./emails/*": {
+      "types": "./dist/emails/*.d.ts",
+      "default": "./dist/emails/*.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "dev": "email dev --port 3050"
+    "build": "bunx --bun tsc -p tsconfig.json",
+    "dev": "email dev --port 3050",
+    "export": "email export",
+    "prepare": "bun run build"
   },
   "devDependencies": {
     "@react-email/preview-server": "4.2.11",
