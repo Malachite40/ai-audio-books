@@ -4,12 +4,40 @@
     <loc>https://instantaudio.online/</loc>
     <priority>1.0</priority>
   </url>
-  <url>
-    <loc>https://instantaudio.online/terms</loc>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://instantaudio.online/privacy</loc>
-    <priority>0.8</priority>
-  </url>
+    <url>
+      <loc>https://instantaudio.online/term</loc>
+      <priority>0.8</priority>
+    </url>
+    <url>
+      <loc>https://instantaudio.online/privacy</loc>
+      <priority>0.8</priority>
+    </url>
+    <url>
+      <loc>https://instantaudio.online/discover</loc>
+      <priority>0.7</priority>
+    </url>
+    <url>
+      <loc>https://instantaudio.online/pricing</loc>
+      <priority>0.7</priority>
+    </url>
+    <url>
+      <loc>https://instantaudio.online/billing</loc>
+      <priority>0.6</priority>
+    </url>
+    <url>
+      <loc>https://instantaudio.online/support</loc>
+      <priority>0.6</priority>
+    </url>
+    <url>
+      <loc>https://instantaudio.online/subscribe</loc>
+      <priority>0.6</priority>
+    </url>
+    <url>
+      <loc>https://instantaudio.online/subscribe/success</loc>
+      <priority>0.5</priority>
+    </url>
+    <url>
+      <loc>https://instantaudio.online/audio-file/new</loc>
+      <priority>0.5</priority>
+    </url>
 </urlset>
