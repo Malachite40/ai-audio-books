@@ -13,6 +13,7 @@ const TASK_NAMES = {
     concatTestAudioFile: "tasks.test.concatTestAudioFile",
     createAudioFileTest: "tasks.test.createAudioFileTest",
     processTestAudioFile: "tasks.test.processTestAudioFile",
+    heapSnapShot: "tasks.test.heapSnapShot",
   },
 } as const;
 

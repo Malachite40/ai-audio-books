@@ -8,6 +8,7 @@ import {
 } from "@workspace/ui/components/tabs";
 // ...existing code...
 import { AdminSpeakersCard } from "./_components/admin-speakers";
+import { DebugInfoCard } from "./_components/debug-info-card";
 import { ReStitchForm } from "./_components/re-stitch";
 import { SupportSubmissionsCard } from "./_components/support-submissions-card";
 
@@ -22,6 +23,7 @@ export function AdminClientPage(props: AdminClientPageProps) {
           <TabsTrigger value="speakers">Speakers</TabsTrigger>
           <TabsTrigger value="restitch">Re-Stitch Audio</TabsTrigger>
           <TabsTrigger value="support">Support Submissions</TabsTrigger>
+          <TabsTrigger value="debug">Debug</TabsTrigger>
         </TabsList>
         <TabsContent value="speakers">
           <AdminSpeakersCard />
@@ -31,6 +33,9 @@ export function AdminClientPage(props: AdminClientPageProps) {
         </TabsContent>
         <TabsContent value="support">
           <SupportSubmissionsCard />
+        </TabsContent>
+        <TabsContent value="debug">
+          <DebugInfoCard />
         </TabsContent>
       </Tabs>
     </div>
