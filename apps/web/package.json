@@ -4,6 +4,7 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "prebuild": "turbo run build --filter=@workspace/transactional",
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
