@@ -1,7 +1,8 @@
 export { render } from "@react-email/components";
 
 // Re-export all email templates
-export { WelcomeEmail } from "../emails/welcome";
+// Export default as named to guarantee a callable function shape across bundlers
+export { default as WelcomeEmail } from "../emails/welcome";
 
 // Export shared styles and components for creating new templates
 export * from "./components";
