@@ -7,7 +7,9 @@ import {
   Subscriptions,
   User,
 } from "@workspace/database";
+import { WelcomeEmail } from "@workspace/transactional";
 import { auth } from "./lib/auth";
+import { resend } from "./lib/resend";
 import { CreateStripeAccount } from "./lib/stripe/create-customer";
 
 export type BaseContext = {
@@ -76,6 +78,13 @@ export const createNextTRPCContext = async (opts: { headers: Headers }) => {
       });
       stripeCustomerId = stripeCustomerAccount.id;
       user = updatedUser;
+
+      await resend.emails.send({
+        from: "Instant Audio Online <support@instantaudio.online>",
+        to: [updatedUser.email],
+        subject: "Welcome to Instant Audio Online!",
+        react: WelcomeEmail({}),
+      });
     }
 
     if (!user.stripeCustomerId) {
