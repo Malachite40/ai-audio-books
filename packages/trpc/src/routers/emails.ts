@@ -1,4 +1,5 @@
-import WelcomeEmail from "@workspace/transactional/emails/welcome";
+import { WelcomeEmail } from "@workspace/transactional";
+import React from "react";
 import z from "zod";
 import { resend } from "../lib/resend";
 import { createTRPCRouter, publicProcedure } from "../trpc";
@@ -24,7 +25,9 @@ export const emailsRouter = createTRPCRouter({
         from: "Instant Audio Online <support@instantaudio.online>",
         to: [input.email],
         subject: "Welcome to Instant Audio Online!",
-        react: WelcomeEmail({ username: input.email.split("@")[0] }),
+        react: React.createElement(WelcomeEmail as any, {
+          username: input.email.split("@")[0],
+        }),
       });
 
       return {};
