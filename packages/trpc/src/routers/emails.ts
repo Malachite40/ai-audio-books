@@ -21,7 +21,7 @@ export const emailsRouter = createTRPCRouter({
       });
 
       const { data, error } = await resend.emails.send({
-        from: "Instant Audio Online <support@isntantaudio.online>",
+        from: "Instant Audio Online <support@instantaudio.online>",
         to: [input.email],
         subject: "Welcome to Instant Audio Online!",
         react: WelcomeEmail({}),
