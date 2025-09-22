@@ -1,4 +1,4 @@
-import { WelcomeEmail } from "@workspace/transactional";
+import WelcomeEmail from "@workspace/transactional/emails/welcome";
 import z from "zod";
 import { resend } from "../lib/resend";
 import { createTRPCRouter, publicProcedure } from "../trpc";
