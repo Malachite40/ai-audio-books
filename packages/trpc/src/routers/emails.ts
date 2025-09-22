@@ -1,6 +1,6 @@
+import { WelcomeEmail } from "@workspace/transactional";
 import z from "zod";
 import { resend } from "../lib/resend";
-import { WelcomeEmail } from "@workspace/transactional";
 import { createTRPCRouter, publicProcedure } from "../trpc";
 
 export const emailsRouter = createTRPCRouter({

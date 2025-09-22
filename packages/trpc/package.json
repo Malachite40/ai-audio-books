@@ -11,11 +11,13 @@
   "exports": {
     "./server": {
       "types": "./src/server.ts",
-      "default": "./dist/server.js"
+      "import": "./src/server.ts",
+      "require": "./dist/server.js"
     },
     "./client": {
       "types": "./src/client.ts",
-      "default": "./dist/client.js"
+      "import": "./src/client.ts",
+      "require": "./dist/client.js"
     }
   },
   "dependencies": {
