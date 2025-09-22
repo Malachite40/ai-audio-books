@@ -1,33 +1,43 @@
 // Shared styles for all email templates
 
-// Color palette
+// Color palette (aligned with packages/ui/src/styles/globals.css light theme)
 export const colors = {
-  primary: "#007bff", // Satflow blue
-  secondary: "#667eea", // Purple accent
-  success: "#28a745", // Green for positive actions
-  error: "#dc3545", // Red for errors/warnings
-  warning: "#ffc107", // Yellow for alerts
-  info: "#17a2b8", // Light blue for info
+  // Core brand tokens
+  primary: "oklch(0.7120 0.1795 53.5447)",
+  secondary: "oklch(0.4217 0.1569 259.9133)",
+
+  // Status tokens (mapped where available in globals.css)
+  success: "#28a745", // No explicit success token in globals.css
+  error: "oklch(0.5680 0.2002 26.4057)", // maps to --destructive
+  warning: "#ffc107", // No explicit warning token in globals.css
+  info: "#17a2b8", // No explicit info token in globals.css
+
+  // Text tokens
   text: {
-    primary: "#333",
-    secondary: "#555",
-    muted: "#666",
-    light: "#8898aa",
+    primary: "oklch(0.2101 0.0318 264.6645)", // --foreground
+    secondary: "oklch(0.5544 0.0407 257.4166)", // --muted-foreground
+    muted: "oklch(0.5544 0.0407 257.4166)", // --muted-foreground
+    light: "oklch(0.5544 0.0407 257.4166)", // closest available token
     white: "#ffffff",
   },
+
+  // Background tokens
   background: {
-    main: "#f6f9fc",
-    white: "#ffffff",
-    gray: "#f8f9fa",
-    light: "#f4f7fa",
+    main: "oklch(0.9816 0.0017 247.8390)", // --background
+    white: "oklch(1.0000 0 0)", // --card (pure white)
+    gray: "oklch(0.9683 0.0069 247.8956)", // --muted
+    light: "oklch(0.9532 0.0218 239.4275)", // --accent
+    // The following have no direct tokens; retain sensible defaults
     info: "#f0f8ff",
     warning: "#f0f7ff",
     success: "#f0fff4",
     error: "#fff0f0",
   },
+
+  // Border tokens
   border: {
-    default: "#e6ebf1",
-    light: "#cce5ff",
+    default: "oklch(0.9288 0.0126 255.5078)", // --border
+    light: "oklch(0.9288 0.0126 255.5078)", // closest available token
   },
 };
 
