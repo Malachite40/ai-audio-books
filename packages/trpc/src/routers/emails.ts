@@ -20,12 +20,14 @@ export const emailsRouter = createTRPCRouter({
         create: { email: emailLower, group: input.group.toLowerCase() },
       });
 
-      await resend.emails.send({
+      const { data, error } = await resend.emails.send({
         from: "Instant Audio Online <support@isntantaudio.online>",
         to: [input.email],
         subject: "Welcome to Instant Audio Online!",
         react: WelcomeEmail({}),
       });
+
+      console.log({ data, error });
 
       return {};
     }),
