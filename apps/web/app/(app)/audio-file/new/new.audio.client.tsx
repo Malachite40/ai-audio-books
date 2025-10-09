@@ -274,7 +274,7 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
       name: "",
       text: text || "",
       public: false,
-      speakerId: speakerId || "",
+      speakerId: speakerId || speakers?.[0]?.id,
       durationMinutes: storeDurationMinutes ?? 5,
     },
     mode: "onChange",
