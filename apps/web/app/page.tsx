@@ -1,6 +1,8 @@
 import { env } from "@/env";
 import { api } from "@/trpc/server";
+import { buttonVariants } from "@workspace/ui/components/button";
 import { Metadata } from "next";
+import Link from "next/link";
 import { HomeClient } from "./home.client";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -24,8 +26,17 @@ export default async function Home() {
   const { audioFile } = await api.audio.fetch({ id: kv.value });
 
   if (!audioFile) {
-    return <>no audio file found</>;
+    return (
+      <div className="flex flex-1 justify-center items-center h-dvh">
+        <Link
+          href={"/audio-file/new"}
+          className={buttonVariants({ variant: "default" })}
+        >
+          New Audio File
+        </Link>
+      </div>
+    );
   }
 
-  return <HomeClient af={audioFile!} speaker={audioFile.speaker} />;
+  return <HomeClient af={audioFile} speaker={audioFile.speaker} />;
 }

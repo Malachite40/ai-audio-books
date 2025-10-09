@@ -11,6 +11,7 @@ import { useNewAudioFormStore } from "@/store/use-new-audio-form-store";
 import { api } from "@/trpc/react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Speaker } from "@workspace/database";
+import { Languages } from "@workspace/trpc/client";
 import { Button } from "@workspace/ui/components/button";
 import {
   Card,
@@ -29,6 +30,12 @@ import {
 } from "@workspace/ui/components/form";
 import { Input } from "@workspace/ui/components/input";
 import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupText,
+  InputGroupTextarea,
+} from "@workspace/ui/components/input-group";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -36,7 +43,6 @@ import {
   SelectValue,
 } from "@workspace/ui/components/select";
 import { Slider } from "@workspace/ui/components/slider";
-import { Textarea } from "@workspace/ui/components/textarea";
 import { cn } from "@workspace/ui/lib/utils";
 import {
   ArrowLeft,
@@ -52,12 +58,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
-
 // ------------------------------
 // Helpers for duration UX
 // ------------------------------
 const MIN_DURATION = 5; // minutes
-const MAX_DURATION = 60; // minutes (2 hours)
+const MAX_DURATION = 60; // minutes
 const STEP_MINUTES = 5; // slider/input increments
 
 function clamp(n: number, lo: number, hi: number) {
@@ -87,13 +92,11 @@ const FormSchema = z.object({
   name: z.string().trim().max(100).optional(),
   speakerId: z.string().uuid({ message: "Please select a speaker." }),
   text: z.string().min(1, "Please enter text to synthesize."),
-  durationMinutes: z.number(/* ... */).optional(),
+  durationMinutes: z.number().optional(),
   public: z.boolean(),
 });
 
 // --- RoyalRoad helpers (client-only import flow) ---
-// Matches chapter URLs like:
-// https://www.royalroad.com/fiction/21220/mother-of-learning/chapter/301778/1-good-morning-brother
 const ROYALROAD_CHAPTER_RE =
   /^https?:\/\/(?:www\.)?royalroad\.com\/fiction\/(\d+)\/([^/]+)\/chapter\/(\d+)(?:\/([^/]+))?\/?$/i;
 
@@ -125,7 +128,6 @@ const buildNameFromUrl = (url: string) => {
 // NOTE: For a pure client-side approach (no server route), we use a
 // CORS-friendly readability proxy. For production, consider hosting
 // your own lightweight proxy to reduce external dependency.
-// The proxy expects http:// after its host; we pass target without scheme.
 const READABILITY_PROXY_PREFIX = "https://r.jina.ai/http://";
 const toProxyUrl = (targetUrl: string) =>
   READABILITY_PROXY_PREFIX + targetUrl.replace(/^https?:\/\//i, "");
@@ -146,6 +148,7 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
   const [showCredits, setShowCredits] = useState(false);
   const {
     setText,
+    hasHydrated,
     text,
     setSpeakerId,
     speakerId,
@@ -153,11 +156,13 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
     durationMinutes: storeDurationMinutes,
     name: storeName,
     setName: setStoreName,
+    // Persisted language selection
+    language: storedLanguage,
+    setLanguage: setStoredLanguage,
     reset: resetStore,
   } = useNewAudioFormStore();
-  // STEP state (2-step process) in URL via nuqs
-  // step 1: choose "mode" -> "copy" or "ai"
-  // step 2: show the form (same form, with slight UX differences)
+
+  // STEP state in URL via nuqs
   const [mode, setMode] = useQueryState(
     "mode",
     parseAsString.withDefault("").withOptions({})
@@ -190,13 +195,11 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
     parseAsString.withDefault("").withOptions({})
   );
 
-  // Auth state (assumes next-auth). If you don't use next-auth, swap this for your auth query.
+  // Auth state
   const { data: userData } = authClient.useSession();
   const isLoggedIn = !!userData?.session;
-  // Fix: Use userData.session.role or userData.session.userId for admin check
-  // Adjust this logic to match your actual session/user structure
-  // Fallback: check if userId matches a known admin ID (replace with your logic)
   const isAdmin = userData?.user.role === "admin";
+
   // Admin test audio mutation
   const testAudioMutation = api.audio.test.create.useMutation({
     onSuccess: (data) => {
@@ -214,17 +217,69 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
   const audioFile = api.audio.fetch.useQuery({ id: selectedAudioFileId });
   const creditsQuery = api.credits.fetch.useQuery();
 
+  const initialLanguage: (typeof Languages)[number] = useMemo(() => {
+    // 1) Prefer persisted store language if valid
+    const fromStore = storedLanguage as unknown as string | undefined;
+    if (fromStore && (Languages as readonly string[]).includes(fromStore)) {
+      return fromStore as (typeof Languages)[number];
+    }
+
+    // 2) Otherwise, if we already have a persisted speaker, use its language
+    const fromSpeaker = speakers.find((s) => s.id === speakerId)
+      ?.language as unknown as string | undefined;
+    if (fromSpeaker && (Languages as readonly string[]).includes(fromSpeaker)) {
+      return fromSpeaker as (typeof Languages)[number];
+    }
+
+    // 3) Fallback to first speaker language or first Languages entry
+    const fallback = (speakers?.[0]?.language as any) ?? Languages[0];
+    return (Languages as readonly string[]).includes(fallback)
+      ? (fallback as (typeof Languages)[number])
+      : Languages[0];
+  }, [speakers, speakerId, storedLanguage]);
+
+  const [languageFilter, setLanguageFilter] =
+    useState<(typeof Languages)[number]>(initialLanguage);
+
+  // Keep local language filter in sync with persisted language when it rehydrates/changes
+  useEffect(() => {
+    const lang = storedLanguage as unknown as string | undefined;
+    if (
+      lang &&
+      (Languages as readonly string[]).includes(lang) &&
+      lang !== languageFilter
+    ) {
+      setLanguageFilter(lang as (typeof Languages)[number]);
+    }
+  }, [storedLanguage]);
+
+  // Speakers filtered by the chosen language
+  const filteredSpeakers = useMemo(() => {
+    const list = Array.isArray(speakers) ? speakers : [];
+    return list.filter(
+      (s) => (s as any).language === (languageFilter as unknown as string)
+    );
+  }, [speakers, languageFilter]);
+
+  // Persist language selection to store when it changes
+  useEffect(() => {
+    if (languageFilter && languageFilter !== storedLanguage) {
+      setStoredLanguage(languageFilter as unknown as string);
+    }
+  }, [languageFilter, storedLanguage]);
+
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
     defaultValues: {
       name: "",
       text: text || "",
       public: false,
-      speakerId: speakerId || speakers[0]?.id,
+      speakerId: speakerId || "",
       durationMinutes: storeDurationMinutes ?? 5,
     },
     mode: "onChange",
   });
+
   // Sync form values to store on change
   useEffect(() => {
     const subscription = form.watch((value, { name }) => {
@@ -234,9 +289,6 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
       if (name === "name") {
         setStoreName(value.name ?? "");
       }
-      if (name === "speakerId") {
-        setSpeakerId(value.speakerId);
-      }
       if (
         name === "durationMinutes" &&
         typeof value.durationMinutes === "number"
@@ -245,17 +297,18 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
       }
     });
     return () => subscription.unsubscribe();
-  }, [form, setText, setSpeakerId, setDurationMinutes]);
+  }, [form, setText, setSpeakerId, setDurationMinutes, setStoreName]);
 
-  // Restore values from store on mount (if not already set)
+  // Restore from store on mount
   useEffect(() => {
+    if (!hasHydrated) return;
     if (text && text !== form.getValues("text")) {
       form.setValue("text", text, { shouldDirty: false });
-      form.trigger();
+      form.trigger("text");
     }
     if (storeName && storeName !== form.getValues("name")) {
       form.setValue("name", storeName, { shouldDirty: false });
-      form.trigger();
+      form.trigger("name");
     }
     if (
       typeof storeDurationMinutes === "number" &&
@@ -264,63 +317,37 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
       form.setValue("durationMinutes", storeDurationMinutes, {
         shouldDirty: false,
       });
-      form.trigger();
+      form.trigger("durationMinutes");
     }
-
-    // Only run on mount or if values change
-  }, [text, speakerId, storeDurationMinutes]);
+  }, [text, storeName, speakerId, storeDurationMinutes, storedLanguage]);
 
   useEffect(() => {
-    const current = form.getValues("speakerId");
-    const exists = (id?: string) => !!id && speakers.some((s) => s.id === id);
+    if (!hasHydrated) return;
+    if (!speakerId) return;
 
-    const preferred =
-      (exists(speakerId) && speakerId) ||
-      (exists(current) && current) ||
-      speakers[0]?.id ||
-      undefined;
+    const speaker = speakers.find((s) => s.id === speakerId);
+    if (!speaker) return;
 
-    if (preferred !== current) {
-      form.setValue("speakerId", preferred as any, { shouldDirty: false });
+    // 1) ensure language matches the speaker's language
+    if (speaker.language !== languageFilter) {
+      setLanguageFilter(speaker.language as (typeof Languages)[number]);
+      return; // wait for next render where filteredSpeakers is correct
     }
 
-    if (speakerId && !exists(speakerId)) {
-      form.setError("speakerId", {
-        type: "validate",
-        message:
-          "Previously selected speaker is no longer available. Please pick another.",
-      });
+    // 2) only set the field once the options include the value
+    const inOptions = filteredSpeakers.some((s) => s.id === speakerId);
+    if (inOptions && form.getValues("speakerId") !== speakerId) {
+      form.setValue("speakerId", speakerId, { shouldDirty: false });
+      form.trigger("speakerId");
     }
-  }, [speakers, speakerId, form]);
-
-  // 2) Robust restore logic
-  useEffect(() => {
-    // get what's currently in the form and in your store
-    const current = form.getValues("speakerId");
-    const persisted = speakerId; // from useTextInputStore()
-    const exists = (id?: string) => !!id && speakers.some((s) => s.id === id);
-
-    // prefer a valid persisted id, else a valid current id, else first speaker, else undefined
-    const next =
-      (exists(persisted) && persisted) ||
-      (exists(current) && current) ||
-      speakers[0]?.id ||
-      undefined;
-
-    // only update if different (prevents loops)
-    if (next !== current) {
-      form.setValue("speakerId", next as any, { shouldDirty: false });
-    }
-
-    // optional: surface error when persisted id disappeared
-    if (persisted && !exists(persisted)) {
-      form.setError("speakerId", {
-        type: "validate",
-        message:
-          "Previously selected speaker is no longer available. Please pick another.",
-      });
-    }
-  }, [speakers, speakerId]); // runs on reload/rehydration or speaker list changes
+  }, [
+    hasHydrated,
+    speakerId,
+    speakers,
+    languageFilter,
+    filteredSpeakers,
+    form,
+  ]);
 
   const createAudioFile = api.audio.inworld.create.useMutation({
     onSuccess: (data) => {
@@ -338,7 +365,9 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
 
   // Derived values
   const selectedSpeakerId = form.watch("speakerId");
-  const currentSpeaker = speakers.find((s) => s.id === selectedSpeakerId);
+  const currentSpeaker = filteredSpeakers.find(
+    (s) => s.id === selectedSpeakerId
+  );
   const exampleUrl =
     typeof currentSpeaker?.exampleAudio === "string" &&
     currentSpeaker.exampleAudio.length > 0
@@ -348,14 +377,11 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
   const nameValue = form.watch("name") ?? "";
   const textValue = form.watch("text") ?? "";
 
-  const suggestedTitle =
-    nameValue.trim().length > 0
-      ? "" // user is typing; don't suggest
-      : "Untitled Audio";
+  const suggestedTitle = nameValue.trim().length > 0 ? "" : "Untitled Audio";
 
   const slugPreview = slugify((nameValue || suggestedTitle || "audio").trim());
 
-  // Credits calculation: if AI mode, use durationMinutes * 1000; else use text length
+  // Credits calculation: if AI mode, use durationMinutes * 1000; else text length
   const durationMinutes = form.watch("durationMinutes") ?? 0;
   const requiredCredits =
     mode === "ai" ? durationMinutes * 1000 : textValue.length;
@@ -367,12 +393,11 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
   // Clicking Create Audio:
   const handleCreateClick = async () => {
     const valid = await form.trigger();
-    if (!valid) return;
-
     if (!isLoggedIn) {
       setShowLogin(true);
       return;
     }
+    if (!valid) return;
     if (overCharacterLimit) {
       setShowCredits(true);
       return;
@@ -380,7 +405,7 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
     setShowConfirm(true);
   };
 
-  // --- RoyalRoad import state + logic (kept inside this component) ---
+  // --- RoyalRoad import state  logic ---
   const [isImportingRR, setIsImportingRR] = useState(false);
 
   const importRoyalRoadChapter = async (url: string) => {
@@ -389,12 +414,10 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
     toast("Fetching RoyalRoad chapter…");
 
     try {
-      // Client-only readable proxy fetch
       const proxied = toProxyUrl(url);
       const res = await fetch(proxied, { credentials: "omit" });
       if (!res.ok) throw new Error(`Fetch failed (${res.status})`);
 
-      // Proxy returns readable text / minimal HTML; normalize to plain text.
       let body = await res.text();
       const text = body
         .replace(/<script[\s\S]*?<\/script>/gi, "")
@@ -408,7 +431,6 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
 
       if (!text) throw new Error("No content found");
 
-      // Fill in form values (keep RR naming behavior)
       form.setValue("name", buildNameFromUrl(url), {
         shouldDirty: true,
         shouldValidate: true,
@@ -440,11 +462,10 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
   ) => {
     const pasted = e.clipboardData.getData("text")?.trim();
     const url = extractRoyalRoadUrl(pasted || "");
-    if (!url) return; // allow normal paste
+    if (!url) return;
 
-    // Let the URL paste happen for immediate feedback
     requestAnimationFrame(async () => {
-      await importRoyalRoadChapter(url); // replaces pasted URL with chapter text later
+      await importRoyalRoadChapter(url);
     });
   };
 
@@ -479,6 +500,7 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
           });
         }}
       />
+
       <div className="container mx-auto p-4 flex flex-col md:justify-center max-w-5xl">
         {/* Loading State */}
         {audioFile.isLoading && selectedAudioFileId.length > 0 && (
@@ -486,6 +508,7 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
             <p className="mb-4">Loading...</p>
           </div>
         )}
+
         {/* Error page: Create new audio file */}
         {!audioFile.isLoading &&
           !audioFile.data?.audioFile &&
@@ -507,6 +530,7 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
               </Button>
             </div>
           )}
+
         {/* STEP 1: Choose how to start */}
         {!mode && (
           <div className="mb-8">
@@ -569,13 +593,14 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
             </div>
           </div>
         )}
+
         {/* STEP 2 (both modes): Create new audio file form */}
         {mode && (
           <Form {...form}>
             <form
               className={cn(selectedAudioFileId.length > 0 ? "hidden" : "")}
             >
-              {/* Back to mode selection (also visible for copy mode) */}
+              {/* Back to mode selection */}
               <div className="mb-2">
                 <Button
                   className="!pl-0"
@@ -604,7 +629,6 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
                       </FormLabel>
                       <FormControl>
                         <div className="space-y-3">
-                          {/* Slider controls the same field (5–120 minutes, 5-min steps) */}
                           <Slider
                             min={MIN_DURATION}
                             max={MAX_DURATION}
@@ -630,7 +654,6 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
                               onChange={(e) => {
                                 const raw = Number(e.target.value);
                                 if (Number.isNaN(raw)) return;
-                                // Let the user type; clamp/step on blur below
                                 field.onChange(raw);
                               }}
                               onBlur={(e) => {
@@ -650,7 +673,7 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
                 />
               )}
 
-              {/* Title (formerly "File name") */}
+              {/* Title (copy mode only) */}
               {mode === "copy" && (
                 <FormField
                   control={form.control}
@@ -658,7 +681,7 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
                   render={({ field }) => (
                     <FormItem className={cn("mb-4 md:max-w-96")}>
                       <FormLabel>
-                        Title
+                        Title{" "}
                         <span className="text-muted-foreground font-normal">
                           (optional)
                         </span>
@@ -667,13 +690,13 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
                         <Input
                           placeholder="e.g., My Morning Affirmations"
                           {...field}
-                          value={field.value ?? ""} // avoid uncontrolled warnings
+                          value={field.value ?? ""}
                         />
                       </FormControl>
 
                       <p className="text-xs text-muted-foreground mt-1">
-                        {`This is how it appears in your Library. If you leave it
-                      blank, we’ll pick a title for you.`}
+                        This is how it appears in your Library. If you leave it
+                        blank, we’ll pick a title for you.
                       </p>
 
                       {!nameValue && suggestedTitle && (
@@ -704,8 +727,49 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
                 />
               )}
 
-              <div className="flex gap-4 mb-4 items-end">
-                {/* Speaker select */}
+              {/* Language + Speaker row */}
+              <div className="flex gap-4 mb-4 items-end flex-wrap">
+                {/* Language filter */}
+                <div className="flex flex-col gap-2">
+                  <FormLabel>Language</FormLabel>
+                  <Select
+                    value={languageFilter}
+                    onValueChange={(v) => {
+                      setLanguageFilter(v as (typeof Languages)[number]);
+                      const match = speakers.find((s) => s.language === v);
+                      // preselect first speaker in that language to keep control stable
+                      if (match) {
+                        form.setValue("speakerId", match.id, {
+                          shouldDirty: true,
+                          shouldValidate: true,
+                        });
+                        setSpeakerId(match.id);
+                      } else {
+                        // don't clear to ""; keep previous value until user picks one
+                      }
+                    }}
+                  >
+                    <SelectTrigger
+                      value={languageFilter}
+                      className="capitalize w-[180px]"
+                    >
+                      <SelectValue placeholder="Select language" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Languages.map((lang) => (
+                        <SelectItem
+                          className="capitalize"
+                          key={lang}
+                          value={lang}
+                        >
+                          {lang.toLocaleLowerCase()}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Speaker select (filtered) */}
                 <FormField
                   control={form.control}
                   name="speakerId"
@@ -714,20 +778,35 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
                       <FormLabel>Speaker</FormLabel>
                       <FormControl>
                         <Select
-                          value={field.value ?? undefined}
+                          // ALWAYS controlled — never undefined
+                          value={field.value ?? ""}
                           onValueChange={(v) => {
-                            field.onChange(v); // update RHF
-                            setSpeakerId(v); // update store (user action only)
+                            if (!v) return;
+
+                            if (!filteredSpeakers.some((s) => s.id === v))
+                              return;
+
+                            field.onChange(v);
+                            setSpeakerId(v);
                           }}
+                          disabled={filteredSpeakers.length === 0}
                         >
-                          <SelectTrigger className="w-[180px]">
-                            <SelectValue placeholder="Select a speaker" />
+                          <SelectTrigger className="w-[220px]">
+                            <SelectValue
+                              placeholder={
+                                filteredSpeakers.length === 0
+                                  ? "No speakers in this language"
+                                  : "Select a speaker"
+                              }
+                            />
                           </SelectTrigger>
                           <SelectContent>
-                            {speakers.map((s) => (
+                            {filteredSpeakers.map((s) => (
                               <SelectItem key={s.id} value={s.id}>
                                 <div className="flex items-center gap-2">
-                                  <span>{s.displayName}</span>
+                                  <span>
+                                    {(s as any).displayName ?? s.name}
+                                  </span>
                                 </div>
                               </SelectItem>
                             ))}
@@ -758,71 +837,66 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
                         {modeTextConfig[mode as keyof typeof modeTextConfig]
                           ?.label || modeTextConfig.default.label}
                       </span>
-                      {/* Desktop: show credits info in label */}
-                      <span className="hidden md:flex gap-2 items-center">
-                        {isImportingRR && mode === "copy" && (
-                          <span className="text-xs text-muted-foreground animate-pulse">
-                            Importing from RoyalRoad…
-                          </span>
-                        )}
-                        {(requiredCredits > 0 ||
-                          creditsQuery.data?.credits) && (
-                          <span
-                            className={cn(
-                              "text-xs",
-                              overCharacterLimit
-                                ? "text-amber-600"
-                                : "text-muted-foreground"
-                            )}
-                          >
-                            {requiredCredits > 0
-                              ? `${requiredCredits} Credits - $${((requiredCredits * 10) / 1_000_000).toFixed(4)}`
-                              : "0"}
-                            {typeof availableCredits === "number" &&
-                              userData &&
-                              ` |  Remaining Credits: ${availableCredits}`}
-                          </span>
-                        )}
-                      </span>
                     </FormLabel>
+
                     <FormControl>
-                      <Textarea
-                        rows={4}
-                        className="max-h-[400px]"
-                        placeholder={
-                          modeTextConfig[mode as keyof typeof modeTextConfig]
-                            ?.placeholder || modeTextConfig.default.placeholder
-                        }
-                        {...field}
-                        value={field.value ?? ""}
-                        onPaste={
-                          mode === "copy" || mode === "royal-road"
-                            ? handleRoyalRoadPaste
-                            : undefined
-                        }
-                      />
+                      <InputGroup>
+                        <InputGroupTextarea
+                          rows={4}
+                          className="max-h-[400px]"
+                          placeholder={
+                            modeTextConfig[mode as keyof typeof modeTextConfig]
+                              ?.placeholder ||
+                            modeTextConfig.default.placeholder
+                          }
+                          {...field}
+                          value={field.value ?? ""}
+                          onPaste={
+                            mode === "copy" || mode === "royal-road"
+                              ? handleRoyalRoadPaste
+                              : undefined
+                          }
+                        />
+
+                        {/* Add-on with your credit/loader text */}
+                        <InputGroupAddon align="block-end">
+                          {/* Keep it tiny + responsive like your original (hidden on mobile) */}
+                          <div
+                            className="flex gap-2 items-end justify-end"
+                            aria-live="polite"
+                          >
+                            {isImportingRR && mode === "copy" && (
+                              <InputGroupText className="text-xs text-muted-foreground animate-pulse">
+                                Importing from RoyalRoad…
+                              </InputGroupText>
+                            )}
+
+                            {(requiredCredits > 0 ||
+                              creditsQuery.data?.credits) && (
+                              <InputGroupText
+                                className={cn(
+                                  "text-xs ml-auto",
+                                  overCharacterLimit
+                                    ? "text-amber-600"
+                                    : "text-muted-foreground"
+                                )}
+                              >
+                                {requiredCredits > 0
+                                  ? `${requiredCredits} Credits - $${(
+                                      (requiredCredits * 10) /
+                                      1_000_000
+                                    ).toFixed(4)}`
+                                  : "0"}
+                                {typeof availableCredits === "number" &&
+                                  isLoggedIn &&
+                                  ` |  Remaining Credits: ${availableCredits}`}
+                              </InputGroupText>
+                            )}
+                          </div>
+                        </InputGroupAddon>
+                      </InputGroup>
                     </FormControl>
 
-                    {/* Mobile: show credits info below input */}
-                    <div className="md:hidden mt-1">
-                      {(requiredCredits > 0 || creditsQuery.data?.credits) && (
-                        <span
-                          className={cn(
-                            "text-xs",
-                            overCharacterLimit
-                              ? "text-amber-600"
-                              : "text-muted-foreground"
-                          )}
-                        >
-                          {requiredCredits > 0
-                            ? `${requiredCredits} Credits - $${((requiredCredits * 10) / 1_000_000).toFixed(4)}`
-                            : "0"}
-                          {typeof availableCredits === "number" &&
-                            userData &&
-                            ` |  Remaining Credits: ${availableCredits}`}
-                        </span>
-                      )}
-                    </div>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -833,9 +907,11 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
                   className="md:w-fit w-full"
                   type="button"
                   onClick={handleCreateClick}
-                  // Do NOT disable based on credits; we surface the modal instead.
                   disabled={
-                    createAudioFile.isPending || !form.formState.isValid
+                    createAudioFile.isPending ||
+                    !form.formState.isValid ||
+                    !form.getValues("speakerId") ||
+                    filteredSpeakers.length === 0
                   }
                 >
                   <AudioLinesIcon className="h-4 w-4" />
@@ -843,13 +919,18 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
                     ? "Synthesizing..."
                     : "Create Audio"}
                 </Button>
+
                 {/* Admin-only Test Audio Creation Button */}
-                {isAdmin && (
+                {!isAdmin && (
                   <div className="flex flex-col gap-2">
                     <Button
                       type="button"
                       variant="secondary"
-                      disabled={!form.formState.isValid}
+                      disabled={
+                        !form.formState.isValid ||
+                        !form.getValues("speakerId") ||
+                        filteredSpeakers.length === 0
+                      }
                       onClick={() => {
                         const vals = form.getValues();
                         testAudioMutation.mutate({
@@ -863,7 +944,7 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
                         });
                       }}
                     >
-                      {"Test"}
+                      Test
                     </Button>
                   </div>
                 )}

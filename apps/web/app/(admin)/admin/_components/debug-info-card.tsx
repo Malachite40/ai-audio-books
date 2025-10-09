@@ -18,12 +18,11 @@ import {
 import { useEffect, useMemo, useState } from "react";
 
 import { format } from "date-fns";
-import { Snapshot, useDebugMutationStore } from "./useDebugMutationStore";
+import { useDebugMutationStore } from "./useDebugMutationStore";
 
 export type DebugInfoCardProps = {};
 
-// Snapshot type now imported from store
-
+// ---------- Utilities ----------
 function downloadJson(filename: string, data: unknown) {
   try {
     const blob = new Blob([JSON.stringify(data, null, 2)], {
@@ -42,37 +41,62 @@ function downloadJson(filename: string, data: unknown) {
   }
 }
 
+// Render-agnostic stringifier for cells
+function fmtCell(value: unknown): string {
+  if (value == null) return "";
+  // Dates come in as ISO strings (we format them elsewhere)
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean")
+    return String(value);
+  // Pretty print small objects; truncate large ones
+  try {
+    const s = JSON.stringify(value);
+    return s.length > 400 ? s.slice(0, 400) + "…" : s;
+  } catch {
+    return String(value);
+  }
+}
+
+// ---------- Table ----------
 function SnapshotTable({
   title,
   snapshots,
+  prettyCols = [],
 }: {
   title: string;
-  snapshots: Snapshot[];
+  snapshots: Array<Record<string, unknown>>;
+  prettyCols?: string[];
 }) {
   const preferredOrder = [
+    "runtime",
     "rssMB",
     "heapUsedMB",
     "heapTotalMB",
     "externalMB",
     "arrayBuffersMB",
+    "v8_usedMB",
+    "v8_totalMB",
+    "v8_limitMB",
   ] as const;
 
   const columns = useMemo(() => {
     const allKeys = new Set<string>();
     for (const s of snapshots) {
       Object.keys(s).forEach((k) => {
-        if (k !== "raw" && k !== "date") allKeys.add(k); // exclude raw and date
+        if (k !== "raw" && k !== "procStatus" && k !== "procStatm")
+          allKeys.add(k);
       });
     }
+    const ordered = preferredOrder.filter((k) => allKeys.has(k as any));
     const extras = [...allKeys]
-      .filter((k) => !preferredOrder.includes(k as any))
+      .filter((k) => !ordered.includes(k as any) && k !== "date")
       .sort();
-    return ["date", ...preferredOrder.filter((k) => allKeys.has(k)), ...extras];
+    return ["date", ...ordered, ...extras];
   }, [snapshots]);
 
   return (
     <div className="w-full overflow-x-auto">
-      <Table className="min-w-full">
+      <Table className="min-w-full table-fixed">
         <TableCaption>{title}</TableCaption>
         <TableHeader>
           <TableRow>
@@ -90,17 +114,34 @@ function SnapshotTable({
               <TableRow key={`row-${idx}`}>
                 <TableCell className="whitespace-nowrap">{idx + 1}</TableCell>
                 {columns.map((col) => {
-                  let value = (snapshot as any)[col];
+                  let value: unknown = (snapshot as any)[col];
                   if (col === "date" && value)
-                    value = format(new Date(value), "yy-MM-dd HH:mm:ss");
+                    value = format(
+                      new Date(value as string),
+                      "yy-MM-dd HH:mm:ss"
+                    );
+                  const isPretty =
+                    value != null &&
+                    (typeof value === "object" || Array.isArray(value)) &&
+                    prettyCols.includes(col);
                   return (
                     <TableCell
                       key={`${idx}-${col}`}
-                      className="align-top max-w-0"
+                      className="align-top whitespace-pre-wrap"
                     >
-                      <span className="text-sm break-all">
-                        {value === undefined ? "" : String(value)}
-                      </span>
+                      {isPretty ? (
+                        <pre className="text-xs leading-tight font-mono break-words whitespace-pre-wrap max-h-48 overflow-auto">
+                          {(() => {
+                            try {
+                              return JSON.stringify(value, null, 2);
+                            } catch {
+                              return String(value);
+                            }
+                          })()}
+                        </pre>
+                      ) : (
+                        <span className="text-sm break-words">{fmtCell(value)}</span>
+                      )}
                     </TableCell>
                   );
                 })}
@@ -123,31 +164,33 @@ function SnapshotTable({
 }
 
 export function DebugInfoCard(props: DebugInfoCardProps) {
+  // Existing mutations
   const queueBufferMutation = api.debug.queueHeapSnapshot.useMutation();
   const bufferMutation = api.debug.heapSnapshot.useMutation();
+  // NEW: heap sanity cross-check
+  const sanityMutation = api.debug.heapSanity.useMutation();
 
   const {
     queueHeapSnapshots,
     heapSnapshots,
-    // replace arrays
     setQueueHeapSnapshots,
     setHeapSnapshots,
-    // append single snapshot
     appendQueueHeapSnapshot,
     appendHeapSnapshot,
-    // clear helpers
     clearQueueHeapSnapshots,
     clearHeapSnapshots,
-    // optional global reset
-    reset,
   } = useDebugMutationStore();
+
+  // Local state for sanity snapshots to avoid changing your store shape
+  const [sanitySnapshots, setSanitySnapshots] = useState<
+    Record<string, unknown>[]
+  >([]);
 
   // Display options
   const [maxEntries, setMaxEntries] = useState<number | "all">("all");
   const [newestFirst, setNewestFirst] = useState(true);
 
-  // Save mutation results to zustand store
-
+  // Wire queue snapshot results → store
   useEffect(() => {
     const d = queueBufferMutation.data as
       | Record<string, unknown>[]
@@ -155,12 +198,11 @@ export function DebugInfoCard(props: DebugInfoCardProps) {
       | undefined;
     if (!d) return;
     if (Array.isArray(d)) {
-      // Add date to each snapshot in array
       setQueueHeapSnapshots(
         d.map((snap) => ({ ...snap, date: new Date().toISOString() }))
       );
     } else {
-      appendQueueHeapSnapshot(d);
+      appendQueueHeapSnapshot({ ...d, date: new Date().toISOString() });
     }
   }, [
     queueBufferMutation.data,
@@ -168,6 +210,7 @@ export function DebugInfoCard(props: DebugInfoCardProps) {
     appendQueueHeapSnapshot,
   ]);
 
+  // Wire heap snapshot results → store
   useEffect(() => {
     const d = bufferMutation.data as
       | Record<string, unknown>[]
@@ -179,31 +222,59 @@ export function DebugInfoCard(props: DebugInfoCardProps) {
         d.map((snap) => ({ ...snap, date: new Date().toISOString() }))
       );
     } else {
-      appendHeapSnapshot(d);
+      appendHeapSnapshot({ ...d, date: new Date().toISOString() });
     }
   }, [bufferMutation.data, setHeapSnapshots, appendHeapSnapshot]);
+
+  // Wire sanity results → local state
+  useEffect(() => {
+    const d = sanityMutation?.data as
+      | Record<string, unknown>[]
+      | Record<string, unknown>
+      | undefined;
+    if (!d) return;
+    if (Array.isArray(d)) {
+      setSanitySnapshots(
+        d.map((snap) => ({ ...snap, date: new Date().toISOString() }))
+      );
+    } else {
+      setSanitySnapshots((prev) => [
+        ...prev,
+        { ...d, date: new Date().toISOString() },
+      ]);
+    }
+  }, [sanityMutation?.data]);
 
   const handleClick = () => {
     queueBufferMutation.mutate();
     bufferMutation.mutate();
+    sanityMutation?.mutate?.();
   };
 
-  const limitArray = (arr: Snapshot[]) => {
+  const limitArray = (arr: Array<Record<string, unknown>>) => {
     const ordered = newestFirst ? [...arr].reverse() : arr;
     if (maxEntries === "all") return ordered;
     return ordered.slice(0, maxEntries);
   };
 
   const displayQueue = useMemo(
-    () => limitArray(queueHeapSnapshots),
+    () =>
+      limitArray(queueHeapSnapshots as unknown as Record<string, unknown>[]),
     [queueHeapSnapshots, maxEntries, newestFirst]
   );
   const displayHeap = useMemo(
-    () => limitArray(heapSnapshots),
+    () => limitArray(heapSnapshots as unknown as Record<string, unknown>[]),
     [heapSnapshots, maxEntries, newestFirst]
   );
+  const displaySanity = useMemo(
+    () => limitArray(sanitySnapshots),
+    [sanitySnapshots, maxEntries, newestFirst]
+  );
 
-  const isLoading = queueBufferMutation.isPending || bufferMutation.isPending;
+  const isLoading =
+    queueBufferMutation.isPending ||
+    bufferMutation.isPending ||
+    Boolean(sanityMutation?.isPending);
 
   return (
     <Card>
@@ -246,6 +317,7 @@ export function DebugInfoCard(props: DebugInfoCardProps) {
             onClick={() => {
               clearQueueHeapSnapshots();
               clearHeapSnapshots();
+              setSanitySnapshots([]);
             }}
           >
             Clear
@@ -303,6 +375,48 @@ export function DebugInfoCard(props: DebugInfoCardProps) {
             </div>
           </div>
           <SnapshotTable title="Heap Snapshots" snapshots={displayHeap} />
+        </section>
+
+        <section className="space-y-2">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold">Heap Sanity (V8 & OS Cross‑Check)</h3>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() =>
+                  downloadJson(
+                    `heap-sanity-${Date.now()}.json`,
+                    sanitySnapshots
+                  )
+                }
+              >
+                Download JSON
+              </Button>
+              <Button variant="ghost" onClick={() => setSanitySnapshots([])}>
+                Clear Only
+              </Button>
+              <Button
+                onClick={() => sanityMutation?.mutate?.()}
+                disabled={Boolean(sanityMutation?.isPending)}
+              >
+                {sanityMutation?.isPending
+                  ? "Capturing…"
+                  : "Take Sanity Snapshot"}
+              </Button>
+            </div>
+          </div>
+          <SnapshotTable
+            title="Heap Sanity"
+            snapshots={displaySanity}
+            prettyCols={[
+              "computed",
+              "processMemoryUsage",
+              "resourceUsage",
+              "v8HeapSpaces",
+              "v8HeapStatistics",
+              "versions",
+            ]}
+          />
         </section>
       </CardContent>
     </Card>

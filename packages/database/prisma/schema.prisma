@@ -89,10 +89,26 @@ model Verification {
     @@map("verification")
 }
 
+enum Language {
+    ENGLISH
+    GERMAN
+    CHINESE
+    FRENCH
+    SPANISH
+    KOREAN
+    ITALIAN
+    PORTUGUESE
+    JAPANESE
+    RUSSIAN
+    POLISH
+    DUTCH
+}
+
 model Speaker {
     id           String      @id @default(uuid())
     name         String
     displayName  String      @default("")
+    language     Language    @default(ENGLISH)
     order        Int?
     exampleAudio String?
     image        String?

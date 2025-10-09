@@ -4,7 +4,6 @@
 
 "use client";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { z } from "zod";
 
 import { api } from "@/trpc/react";
 import { Button } from "@workspace/ui/components/button";
@@ -31,19 +30,6 @@ import { ShareButton } from "./audio-share-button";
 export interface AudioClipProps {
   af: AudioFile;
 }
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Schemas (kept)
-// ──────────────────────────────────────────────────────────────────────────────
-const PaddingAllSchema = z.object({
-  paddingStartMs: z.coerce.number().min(0, "Must be ≥ 0"),
-  paddingEndMs: z.coerce.number().min(0, "Must be ≥ 0"),
-});
-
-const PaddingSchema = z.object({
-  paddingStartMs: z.coerce.number().min(0, "Must be ≥ 0"),
-  paddingEndMs: z.coerce.number().min(0, "Must be ≥ 0"),
-});
 
 // Playability clamp so we never land after the end
 const END_EPSILON = 1e-3;
