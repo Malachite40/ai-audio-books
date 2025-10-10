@@ -31,7 +31,7 @@ export const referralsRouter = createTRPCRouter({
       });
     }
     const base = env.NEXT_PUBLIC_BASE_URL;
-    const url = new URL(`/r/${link.code}`, base);
+    const url = new URL(`/api/r/${link.code}`, base);
 
     const totalBonusCredits = await ctx.db.creditTransaction.aggregate({
       where: { userId: ctx.user.id, reason: "referral_bonus" },

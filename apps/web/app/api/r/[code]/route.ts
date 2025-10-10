@@ -15,9 +15,9 @@ function hmacSign(payload: string) {
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { code: string } }
+  context: { params: Promise<{ code: string }> }
 ) {
-  const code = params.code;
+  const { code } = await context.params;
   if (!code)
     return NextResponse.redirect(new URL("/", env.NEXT_PUBLIC_BASE_URL));
 

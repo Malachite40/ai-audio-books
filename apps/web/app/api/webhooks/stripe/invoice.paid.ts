@@ -115,6 +115,8 @@ export async function handleInvoicePaid(event: Stripe.InvoicePaidEvent) {
     },
   });
 
+  await api.emails.subscribe({ email: user.email });
+
   // Referral award on first payment (idempotent server-side)
   try {
     await api.referrals.awardOnFirstPayment({ referredUserId: user.id });

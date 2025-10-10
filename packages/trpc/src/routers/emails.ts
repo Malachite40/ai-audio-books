@@ -1,8 +1,10 @@
-import { WelcomeEmail } from "@workspace/transactional";
+import {
+  SubscriptionActivatedEmail,
+  WelcomeEmail,
+} from "@workspace/transactional";
 import z from "zod";
 import { resend } from "../lib/resend";
 import { createTRPCRouter, publicProcedure } from "../trpc";
-
 export const emailsRouter = createTRPCRouter({
   join: publicProcedure
     .input(
@@ -49,5 +51,24 @@ export const emailsRouter = createTRPCRouter({
       return {
         subscribed: false,
       };
+    }),
+
+  subscribe: publicProcedure
+    .input(
+      z.object({
+        email: z.string().email(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        await resend.emails.send({
+          from: "Instant Audio Online <support@instantaudio.online>",
+          to: [input.email],
+          subject: "You're now subscribed!",
+          react: SubscriptionActivatedEmail({}),
+        });
+      } catch (e) {
+        console.error("Failed to send subscription activation email:", e);
+      }
     }),
 });
