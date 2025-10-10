@@ -6,13 +6,12 @@ import {
   Html,
   Img,
   Link,
-  Preview,
   Section,
   Text,
 } from "@react-email/components";
 import "dotenv/config";
 import * as React from "react";
-import { colors, components, dataDisplay, getEmailCss, layout, typography } from "./styles";
+import { colors, components, dataDisplay, layout, typography } from "./styles";
 
 interface EmailLayoutProps {
   preview: string;
@@ -23,12 +22,7 @@ export const EmailLayout = ({ preview, children }: EmailLayoutProps) => {
   const baseUrl = process.env.FRONTEND_URL || "https://instantaudio.online";
   return (
     <Html>
-      <Head>
-        <meta name="color-scheme" content="light dark" />
-        <meta name="supported-color-schemes" content="light dark" />
-        <style>{getEmailCss()}</style>
-      </Head>
-      {preview ? <Preview>{preview}</Preview> : null}
+      <Head />
       <Body style={layout.main}>
         <Container style={layout.container}>
           <Section style={layout.logoContainer}>

@@ -30,6 +30,7 @@ export const env = createEnv({
     ONE_M_CREDIT_PRICE: z.string(),
     OPENAI_API_KEY: z.string(),
     RESEND_API_KEY: z.string(),
+    REFERRAL_COOKIE_SECRET: z.string().min(16),
   },
 
   /**
@@ -78,6 +79,7 @@ export const env = createEnv({
     ONE_M_CREDIT_PRICE: process.env.ONE_M_CREDIT_PRICE,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
     RESEND_API_KEY: process.env.RESEND_API_KEY,
+    REFERRAL_COOKIE_SECRET: process.env.REFERRAL_COOKIE_SECRET,
   },
   /**
    * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially

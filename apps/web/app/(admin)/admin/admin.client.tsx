@@ -12,6 +12,7 @@ import { AdminKeyValueCard } from "./_components/admin-kv";
 import { DebugInfoCard } from "./_components/debug-info-card";
 import { ReStitchForm } from "./_components/re-stitch";
 import { SupportSubmissionsCard } from "./_components/support-submissions-card";
+import { CreditTransactionsCard } from "./_components/credit-transactions-card";
 
 export type AdminClientPageProps = {};
 
@@ -25,6 +26,7 @@ export function AdminClientPage(props: AdminClientPageProps) {
           <TabsTrigger value="kv">Key-Value</TabsTrigger>
           <TabsTrigger value="restitch">Re-Stitch Audio</TabsTrigger>
           <TabsTrigger value="support">Support Submissions</TabsTrigger>
+          <TabsTrigger value="credits">Credit Transactions</TabsTrigger>
           <TabsTrigger value="debug">Debug</TabsTrigger>
         </TabsList>
         <TabsContent value="speakers">
@@ -38,6 +40,9 @@ export function AdminClientPage(props: AdminClientPageProps) {
         </TabsContent>
         <TabsContent value="support">
           <SupportSubmissionsCard />
+        </TabsContent>
+        <TabsContent value="credits">
+          <CreditTransactionsCard />
         </TabsContent>
         <TabsContent value="debug">
           <DebugInfoCard />

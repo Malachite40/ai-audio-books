@@ -16,11 +16,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
-import { DollarSign, HelpCircleIcon, LogOut } from "lucide-react";
+import { DollarSign, HeartIcon, HelpCircleIcon, LogOut } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useState } from "react";
 import { AudioHistoryDrawer } from "./audio-history-drawer";
+import { ReferralDialog } from "./referrals/referral-dialog";
 
 export type HeaderProps = {};
 
@@ -29,6 +30,7 @@ export function Header(props: HeaderProps) {
   const [showPricing, setShowPricing] = useState(false);
   const { data: userData } = authClient.useSession();
   const { data: subscriptionData } = api.subscriptions.self.useQuery();
+  const [showReferral, setShowReferral] = useState(false);
 
   return (
     <>
@@ -38,6 +40,8 @@ export function Header(props: HeaderProps) {
         </div>
       )}
       <div className="h-12 z-1 flex w-full justify-center items-center border-b border-border top-0 sticky bg-background ">
+        <ReferralDialog open={showReferral} onOpenChange={setShowReferral} />
+
         <div className="flex w-full justify-between items-center px-3 md:px-4 ">
           <Link href={"/"} className="flex gap-3 justify-center items-center">
             <Logo className="size-8 fill-foreground" />
@@ -91,6 +95,14 @@ export function Header(props: HeaderProps) {
                     </Avatar>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent className="" align="end">
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        setTimeout(() => setShowReferral(true), 0);
+                      }}
+                    >
+                      <HeartIcon className="size-4" />
+                      <span>Refer & Earn</span>
+                    </DropdownMenuItem>
                     {subscriptionData?.subscription?.plan !== "FREE" && (
                       <Link href={"/billing"}>
                         <DropdownMenuItem>

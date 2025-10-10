@@ -1,4 +1,5 @@
 import { env } from "@/env";
+import { api } from "@/trpc/server";
 import { prisma, SubscriptionPlans } from "@workspace/database";
 import Stripe from "stripe";
 
@@ -104,4 +105,20 @@ export async function handleInvoicePaid(event: Stripe.InvoicePaidEvent) {
       },
     },
   });
+
+  await prisma.creditTransaction.create({
+    data: {
+      userId: user.id,
+      amount: planData[plan].credits,
+      description: `Subscription payment - ${plan} plan`,
+      reason: "subscription_payment",
+    },
+  });
+
+  // Referral award on first payment (idempotent server-side)
+  try {
+    await api.referrals.awardOnFirstPayment({ referredUserId: user.id });
+  } catch (e) {
+    console.error("Failed to award referral bonus:", e);
+  }
 }

@@ -38,6 +38,14 @@ export async function handleCheckoutSessionCompleted(
           update: { amount: { increment: quantity * 1_000_000 } },
           create: { userId: user.id, amount: quantity * 1_000_000 },
         });
+        prisma.creditTransaction.create({
+          data: {
+            userId: user.id,
+            amount: quantity * 1_000_000,
+            description: "Purchased 1M credits",
+            reason: "top-up",
+          },
+        });
         break;
     }
   }

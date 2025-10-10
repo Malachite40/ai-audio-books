@@ -11,6 +11,8 @@ import { WelcomeEmail } from "@workspace/transactional";
 import { auth } from "./lib/auth";
 import { resend } from "./lib/resend";
 import { CreateStripeAccount } from "./lib/stripe/create-customer";
+import { env } from "./env";
+import crypto from "crypto";
 
 export type BaseContext = {
   db: PrismaClient;
@@ -93,6 +95,41 @@ export const createNextTRPCContext = async (opts: { headers: Headers }) => {
         message: "Failed to find stripe customer id.",
       });
     }
+
+    // Attribution: if referral cookie present, record signup once (idempotent)
+    try {
+      const cookies = opts.headers.get("cookie") || "";
+      const match = cookies.match(/(?:^|;\s*)ref=([^;]+)/);
+      if (match && user) {
+        const raw = match[1] ?? "";
+        if (raw) {
+          const normalizeBase64Url = (s: string) => {
+            let b64 = s.replace(/-/g, "+").replace(/_/g, "/");
+            const pad = b64.length % 4;
+            if (pad) b64 = b64 + "=".repeat(4 - pad);
+            return b64;
+          };
+          const decodedStr = Buffer.from(normalizeBase64Url(raw), "base64").toString("utf8");
+          const decoded = JSON.parse(decodedStr) as { code?: string; ts?: number; sig?: string };
+          if (decoded?.code && typeof decoded.ts === "number" && decoded.sig) {
+            const payload = JSON.stringify({ code: decoded.code, ts: decoded.ts });
+            const sig = crypto.createHmac("sha256", env.REFERRAL_COOKIE_SECRET).update(payload).digest("hex");
+            if (sig === decoded.sig) {
+              const link = await prisma.referralLink.findUnique({ where: { code: decoded.code } });
+              if (link && link.userId !== user.id) {
+                const exists = await prisma.referralEvent.findFirst({ where: { referredUserId: user.id, type: "SIGNUP" } });
+                if (!exists) {
+                  await prisma.$transaction([
+                    prisma.referralEvent.create({ data: { referralLinkId: link.id, type: "SIGNUP", referredUserId: user.id } }),
+                    prisma.referralLink.update({ where: { id: link.id }, data: { signupCount: { increment: 1 } } }),
+                  ]);
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch {}
   }
 
   return {

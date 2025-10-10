@@ -1,10 +1,12 @@
 import { z } from "zod";
 import { env } from "../env";
+import type { Prisma } from "@workspace/database";
 import { stripe } from "../lib/stripe";
 import {
   authenticatedProcedure,
   createTRPCRouter,
   publicProcedure,
+  adminProcedure,
 } from "../trpc";
 
 export type StripeCheckoutMetadata_Credits = {
@@ -54,5 +56,69 @@ export const creditsRouter = createTRPCRouter({
       });
 
       return { url: session.url };
+    }),
+
+  // Admin: list all credit transactions (paginated)
+  listTransactions: adminProcedure
+    .input(
+      z.object({
+        page: z.number().int().min(1).default(1),
+        pageSize: z.number().int().min(1).max(100).default(20),
+        search: z.string().max(200).optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { page, pageSize, search } = input;
+      const where: Prisma.CreditTransactionWhereInput | undefined = search
+        ? {
+            OR: [
+              {
+                description: {
+                  contains: search,
+                  mode: "insensitive" as const,
+                },
+              },
+              {
+                reason: {
+                  contains: search,
+                  mode: "insensitive" as const,
+                },
+              },
+              {
+                user: {
+                  email: { contains: search, mode: "insensitive" as const },
+                },
+              },
+            ],
+          }
+        : undefined;
+
+      const [total, items] = await Promise.all([
+        ctx.db.creditTransaction.count({ where }),
+        ctx.db.creditTransaction.findMany({
+          where,
+          orderBy: { createdAt: "desc" },
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+          include: {
+            user: { select: { id: true, email: true, name: true } },
+          },
+        }),
+      ]);
+
+      return {
+        total,
+        page,
+        pageSize,
+        items: items.map((t) => ({
+          id: t.id,
+          userId: t.userId,
+          amount: t.amount,
+          reason: t.reason,
+          description: t.description,
+          createdAt: t.createdAt,
+          user: t.user,
+        })),
+      };
     }),
 });

@@ -26,7 +26,7 @@ export function SupportSubmissionsCard() {
           {submissions.map((submission) => (
             <div key={submission.id} className="border rounded p-3">
               <div className="font-bold">{submission.name}</div>
-              <div className="text-gray-700 mb-1">{submission.description}</div>
+              <div className=" mb-1">{submission.description}</div>
               <div className="text-xs text-gray-400">
                 {new Date(submission.createdAt).toLocaleString()}
               </div>

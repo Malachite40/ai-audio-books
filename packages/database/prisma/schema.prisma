@@ -36,6 +36,8 @@ model User {
     Subscription      Subscriptions?
     AudioFileSettings AudioFileSettings[]
     UserAudioFile     UserAudioFile[]
+    ReferralLink      ReferralLink?
+    CreditTransaction CreditTransaction[]
 
     @@unique([email])
     @@index([stripeCustomerId])
@@ -232,4 +234,50 @@ model Emails {
     updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz
 
     @@id([email, group])
+}
+
+enum ReferralEventType {
+    CLICK
+    SIGNUP
+    PAID
+}
+
+model ReferralLink {
+    id          String          @id @default(uuid())
+    userId      String          @unique
+    code        String          @unique
+    createdAt   DateTime        @default(now()) @db.Timestamptz()
+    clicks      Int             @default(0)
+    signupCount Int             @default(0)
+    paidCount   Int             @default(0)
+    user        User            @relation(fields: [userId], references: [id])
+    events      ReferralEvent[]
+}
+
+model ReferralEvent {
+    id             String            @id @default(uuid())
+    referralLinkId String
+    type           ReferralEventType
+    ipHash         String?
+    userAgent      String?
+    referredUserId String?
+    createdAt      DateTime          @default(now()) @db.Timestamptz()
+
+    referralLink ReferralLink @relation(fields: [referralLinkId], references: [id])
+
+    @@index([referralLinkId, type])
+    @@index([referredUserId])
+}
+
+model CreditTransaction {
+    id          String   @id @default(uuid())
+    userId      String
+    amount      Int
+    reason      String
+    description String
+    createdAt   DateTime @default(now()) @db.Timestamptz()
+
+    user User @relation(fields: [userId], references: [id])
+
+    @@index([userId, createdAt])
 }
