@@ -1,11 +1,7 @@
 "use client";
 
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@workspace/ui/components/tabs";
+import { useSearchParams } from "next/navigation";
+import { Tabs, TabsContent } from "@workspace/ui/components/tabs";
 // ...existing code...
 import { AdminSpeakersCard } from "./_components/admin-speakers";
 import { AdminKeyValueCard } from "./_components/admin-kv";
@@ -17,18 +13,18 @@ import { CreditTransactionsCard } from "./_components/credit-transactions-card";
 export type AdminClientPageProps = {};
 
 export function AdminClientPage(props: AdminClientPageProps) {
+  const searchParams = useSearchParams();
+  const tab = (searchParams.get("tab") ?? "speakers") as
+    | "speakers"
+    | "kv"
+    | "restitch"
+    | "support"
+    | "credits"
+    | "debug";
+
   return (
     <div className="container mx-auto p-4">
-      <h1 className="text-2xl font-bold mb-4">Admin Panel</h1>
-      <Tabs defaultValue="speakers" className="w-full">
-        <TabsList>
-          <TabsTrigger value="speakers">Speakers</TabsTrigger>
-          <TabsTrigger value="kv">Key-Value</TabsTrigger>
-          <TabsTrigger value="restitch">Re-Stitch Audio</TabsTrigger>
-          <TabsTrigger value="support">Support Submissions</TabsTrigger>
-          <TabsTrigger value="credits">Credit Transactions</TabsTrigger>
-          <TabsTrigger value="debug">Debug</TabsTrigger>
-        </TabsList>
+      <Tabs value={tab} className="w-full">
         <TabsContent value="speakers">
           <AdminSpeakersCard />
         </TabsContent>

@@ -1,5 +1,5 @@
-import { AdminClientPage } from "./admin.client";
+import { redirect } from "next/navigation";
 
 export default function AdminPage() {
-  return <AdminClientPage />;
+  redirect("/admin/speakers");
 }
