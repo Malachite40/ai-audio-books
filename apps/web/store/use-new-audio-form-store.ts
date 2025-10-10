@@ -29,9 +29,7 @@ export const useNewAudioFormStore = create<NewAudioFormState>()(
       speakerId: undefined,
       setSpeakerId: (id) =>
         set((s) => {
-          console.log("Setting speaker ID to", id);
           if (!id) return s;
-          console.log("Set speaker ID to", id);
           return { ...s, speakerId: id };
         }),
       durationMinutes: 5,
@@ -47,7 +45,6 @@ export const useNewAudioFormStore = create<NewAudioFormState>()(
           speakerId: undefined,
           durationMinutes: 5,
           name: "",
-          // Intentionally do not clear language on reset so it persists
         }),
     }),
     {

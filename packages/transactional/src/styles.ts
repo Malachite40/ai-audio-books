@@ -3,31 +3,30 @@
 // Color palette (aligned with packages/ui/src/styles/globals.css light theme)
 export const colors = {
   // Core brand tokens
-  primary: "oklch(0.7120 0.1795 53.5447)",
-  secondary: "oklch(0.4217 0.1569 259.9133)",
+  primary: "#fb8c01",
+  secondary: "#4655b1",
 
-  // Status tokens (mapped where available in globals.css)
-  success: "#28a745", // No explicit success token in globals.css
-  error: "oklch(0.5680 0.2002 26.4057)", // maps to --destructive
-  warning: "#ffc107", // No explicit warning token in globals.css
-  info: "#17a2b8", // No explicit info token in globals.css
+  // Status tokens
+  success: "#28a745", // unchanged
+  error: "#d65f44",
+  warning: "#ffc107", // unchanged
+  info: "#17a2b8", // unchanged
 
   // Text tokens
   text: {
-    primary: "oklch(0.2101 0.0318 264.6645)", // --foreground
-    secondary: "oklch(0.5544 0.0407 257.4166)", // --muted-foreground
-    muted: "oklch(0.5544 0.0407 257.4166)", // --muted-foreground
-    light: "oklch(0.5544 0.0407 257.4166)", // closest available token
+    primary: "#1d1b26",
+    secondary: "#7a7ea8",
+    muted: "#7a7ea8",
+    light: "#7a7ea8",
     white: "#ffffff",
   },
 
   // Background tokens
   background: {
-    main: "oklch(0.9816 0.0017 247.8390)", // --background
-    white: "oklch(1.0000 0 0)", // --card (pure white)
-    gray: "oklch(0.9683 0.0069 247.8956)", // --muted
-    light: "oklch(0.9532 0.0218 239.4275)", // --accent
-    // The following have no direct tokens; retain sensible defaults
+    main: "#faf9fc",
+    white: "#ffffff",
+    gray: "#f7f6fa",
+    light: "#f3f2fa",
     info: "#f0f8ff",
     warning: "#f0f7ff",
     success: "#f0fff4",
@@ -36,8 +35,8 @@ export const colors = {
 
   // Border tokens
   border: {
-    default: "oklch(0.9288 0.0126 255.5078)", // --border
-    light: "oklch(0.9288 0.0126 255.5078)", // closest available token
+    default: "#ececf5",
+    light: "#ececf5",
   },
 };
 
@@ -107,6 +106,7 @@ export const layout = {
   main: {
     backgroundColor: colors.background.main,
     padding: "10px 0",
+    maxWidth: "672px",
   },
   container: {
     backgroundColor: colors.background.white,
@@ -115,6 +115,7 @@ export const layout = {
     margin: "0 auto",
     padding: "20px 40px",
     width: "580px",
+    maxWidth: "580px",
   },
   section: {
     margin: "30px 0",
@@ -324,3 +325,102 @@ export const utils = {
 // Default placeholder image for examples
 export const PLACEHOLDER_IMAGE =
   "https://ord.satflow.com/content/6984b0505cd1be7b958f2e4c862bd60bdf3885ab79e68a1591bcc68e940f9f46i0";
+
+// Returns a CSS string with email-safe variables and utility classes.
+// This is injected into <Head> as a <style> tag for all emails.
+export const getEmailCss = () => {
+  // Map token colors to CSS custom properties. Default/root acts as a dark-safe baseline,
+  // with light/dark overrides via prefers-color-scheme for clients that support it.
+  return `
+    :root {
+      --background: ${colors.background.main};
+      --foreground: ${colors.text.primary};
+      --card: ${colors.background.white};
+      --card-foreground: ${colors.text.primary};
+      --popover: ${colors.background.white};
+      --popover-foreground: ${colors.text.primary};
+      --primary: ${colors.primary};
+      --primary-foreground: ${colors.text.white};
+      --secondary: ${colors.secondary};
+      --secondary-foreground: ${colors.text.white};
+      --muted: ${colors.background.gray};
+      --muted-foreground: ${colors.text.muted};
+      --accent: ${colors.background.light};
+      --accent-foreground: ${colors.text.primary};
+      --destructive: ${colors.error};
+      --destructive-foreground: ${colors.text.white};
+      --border: ${colors.border.default};
+      --ring: ${colors.primary};
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root {
+        --background: ${colors.background.main};
+        --foreground: ${colors.text.primary};
+        --card: ${colors.background.white};
+        --card-foreground: ${colors.text.primary};
+        --popover: ${colors.background.white};
+        --popover-foreground: ${colors.text.primary};
+        --primary: ${colors.primary};
+        --primary-foreground: ${colors.text.white};
+        --secondary: ${colors.secondary};
+        --secondary-foreground: ${colors.text.white};
+        --muted: ${colors.background.gray};
+        --muted-foreground: ${colors.text.muted};
+        --accent: ${colors.background.light};
+        --accent-foreground: ${colors.text.primary};
+        --destructive: ${colors.error};
+        --destructive-foreground: ${colors.text.white};
+        --border: ${colors.border.default};
+        --ring: ${colors.primary};
+      }
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --background: #111827;
+        --foreground: #F3F4F6;
+        --card: #192339;
+        --card-foreground: #F3F4F6;
+        --popover: #1E2537;
+        --popover-foreground: #F3F4F6;
+        --primary: linear-gradient(90deg, #60A5FA 0%, #A78BFA 100%);
+        --primary-foreground: #60A5FA;
+        --secondary: #1E293B;
+        --secondary-foreground: #F3F4F6;
+        --muted: #27324a;
+        --muted-foreground: #A1A1AA;
+        --accent: #334155;
+        --accent-foreground: #F3F4F6;
+        --destructive: #F87171;
+        --destructive-foreground: #F3F4F6;
+        --border: #334155;
+        --ring: #60A5FA;
+      }
+      body { background-color: var(--background) !important; color: var(--foreground) !important; }
+    }
+
+    /* Utility classes commonly useful in emails */
+    .gradient-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.10);
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+    .gradient-title {
+      background: var(--primary);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      font-weight: 700;
+    }
+    .muted-foreground { color: var(--muted-foreground) !important; }
+    .foreground { color: var(--foreground) !important; }
+    a { color: ${colors.primary}; text-decoration: underline; }
+  `;
+};

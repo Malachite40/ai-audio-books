@@ -1,4 +1,4 @@
-import { Heading, Hr, Preview, Section, Text } from "@react-email/components";
+import { Heading, Hr, Section, Text } from "@react-email/components";
 import * as React from "react";
 import { EmailButton, EmailLayout, InfoBox } from "../src/components";
 import { colors, components, typography, utils } from "../src/styles";
@@ -13,9 +13,6 @@ export const WelcomeEmail = ({ username = "there" }: WelcomeEmailProps) => {
   return (
     <>
       <EmailLayout preview="Welcome to InstantAudio.online - Your AI Audiobook Platform">
-        <Preview>
-          Welcome to InstantAudio.online - Your AI Audiobook Platform
-        </Preview>
 
         <Heading style={typography.h1}>Welcome to InstantAudio.online!</Heading>
         <Text style={typography.heroText}>
