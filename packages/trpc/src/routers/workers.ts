@@ -720,9 +720,19 @@ export const workersRouter = createTRPCRouter({
       ]);
 
       if (audioFile.ownerId) {
-        await ctx.db.credits.update({
-          where: { userId: audioFile.ownerId },
-          data: { amount: { decrement: audioFile.text.length } },
+        await ctx.db.$transaction(async (tx) => {
+          await tx.creditTransaction.create({
+            data: {
+              userId: audioFile.ownerId!,
+              amount: -audioFile.text.length,
+              reason: "tts_usage",
+              description: `TTS usage for audio file ${audioFile.id} (${audioFile.name || "untitled"}) - ${audioFile.text.length} characters`,
+            },
+          });
+          await tx.credits.update({
+            where: { userId: audioFile.ownerId! },
+            data: { amount: { decrement: audioFile.text.length } },
+          });
         });
       }
       return {};
