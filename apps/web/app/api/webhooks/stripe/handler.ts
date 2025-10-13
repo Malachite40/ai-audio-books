@@ -1,9 +1,10 @@
 import Stripe from "stripe";
+import { handleChargeRefunded } from "./charge.refunded";
 import { handleCheckoutSessionCompleted } from "./checkout.session.completed";
+import { handleCustomerSubscriptionCreated } from "./customer.subscription.created";
 import { handleCustomerSubscriptionDelete } from "./customer.subscription.deleted";
 import { handleInvoicePaid } from "./invoice.paid";
 import { handlePaymentIntentSucceeded } from "./payment_intent.succeeded";
-import { handleChargeRefunded } from "./charge.refunded";
 
 export async function handleStripeEvent(event: Stripe.Event) {
   console.log(`Received event: ${event.type}`);
@@ -24,6 +25,8 @@ export async function handleStripeEvent(event: Stripe.Event) {
     case "charge.refunded":
       await handleChargeRefunded(event);
       break;
+    case "customer.subscription.created":
+      await handleCustomerSubscriptionCreated(event);
     default:
       // Unexpected event type
       console.log(`Unhandled event type ${event.type}.`);
