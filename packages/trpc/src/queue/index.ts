@@ -14,6 +14,7 @@ const TASK_NAMES = {
     createAudioFileTest: "tasks.test.createAudioFileTest",
     processTestAudioFile: "tasks.test.processTestAudioFile",
     heapSnapShot: "tasks.test.heapSnapShot",
+    garbageCleanup: "tasks.test.garbageCleanup",
   },
 } as const;
 

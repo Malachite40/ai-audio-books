@@ -23,6 +23,7 @@ worker.register(
   api.workers.test.processTestAudioFile
 );
 worker.register(TASK_NAMES.test.heapSnapShot, api.debug.heapSnapshot);
+worker.register(TASK_NAMES.test.garbageCleanup, api.debug.garbageCleanup);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Register Main Worker Tasks

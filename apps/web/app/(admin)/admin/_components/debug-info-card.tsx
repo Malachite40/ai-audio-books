@@ -169,6 +169,8 @@ export function DebugInfoCard(props: DebugInfoCardProps) {
   const bufferMutation = api.debug.heapSnapshot.useMutation();
   // NEW: heap sanity cross-check
   const sanityMutation = api.debug.heapSanity.useMutation();
+  // NEW: trigger GC via queue
+  const gcQueueMutation = api.debug.queueGarbageCleanup.useMutation();
 
   const {
     queueHeapSnapshots,
@@ -321,6 +323,13 @@ export function DebugInfoCard(props: DebugInfoCardProps) {
             }}
           >
             Clear
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => gcQueueMutation.mutate()}
+            disabled={gcQueueMutation.isPending}
+          >
+            {gcQueueMutation.isPending ? "Cleaning…" : "Garbage Cleanup"}
           </Button>
           <Button onClick={handleClick} disabled={isLoading}>
             {isLoading ? "Capturing…" : "Take Heap Snapshot"}

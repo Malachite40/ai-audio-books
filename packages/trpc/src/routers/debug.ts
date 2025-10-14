@@ -2,7 +2,12 @@ import { readFile } from "node:fs/promises";
 import * as v8 from "v8";
 import { TASK_NAMES } from "../queue";
 import { client } from "../queue/client";
-import { adminProcedure, createTRPCRouter, publicProcedure } from "../trpc";
+import {
+  adminProcedure,
+  createTRPCRouter,
+  publicProcedure,
+  queueProcedure,
+} from "../trpc";
 
 async function readProc(path: string) {
   try {
@@ -18,6 +23,12 @@ export const debugRouter = createTRPCRouter({
     const value = await result.get();
     return value;
   }),
+  queueGarbageCleanup: adminProcedure.mutation(async () => {
+    const task = client.createTask(TASK_NAMES.test.garbageCleanup);
+    const result = task.applyAsync([]);
+    const value = await result.get();
+    return value;
+  }),
   heapSnapshot: publicProcedure.mutation(async () => {
     const m = process.memoryUsage();
     console.log(m);
@@ -29,6 +40,66 @@ export const debugRouter = createTRPCRouter({
       externalMB: (m.external / 1e6).toFixed(1),
       arrayBuffersMB: (m.arrayBuffers / 1e6).toFixed(1),
       raw: m, // optional: include the raw Node.js values (bytes)
+    };
+  }),
+  // Worker-only task to trigger a GC cycle and report memory stats
+  garbageCleanup: queueProcedure.mutation(async () => {
+    const before = process.memoryUsage();
+
+    // Best-effort GC across runtimes (Node with --expose-gc or Bun)
+    let gcExposed = false;
+    try {
+      const anyGlobal: any = globalThis as any;
+      if (typeof anyGlobal.gc === "function") {
+        anyGlobal.gc();
+        gcExposed = true;
+      } else if (anyGlobal.Bun && typeof anyGlobal.Bun.gc === "function") {
+        // Bun exposes Bun.gc(); pass true for aggressive collection when available
+        try {
+          anyGlobal.Bun.gc(true);
+        } catch {
+          anyGlobal.Bun.gc();
+        }
+        gcExposed = true;
+      }
+    } catch (err) {
+      // Swallow to avoid crashing the worker if GC call fails
+      console.warn("GC invocation failed:", err);
+    }
+
+    const after = process.memoryUsage();
+
+    const toMB = (n: number) => +(n / 1e6).toFixed(2);
+    const deltas = {
+      rssDeltaMB: toMB(after.rss - before.rss),
+      heapUsedDeltaMB: toMB(after.heapUsed - before.heapUsed),
+      heapTotalDeltaMB: toMB(after.heapTotal - before.heapTotal),
+      externalDeltaMB: toMB(after.external - before.external),
+      arrayBuffersDeltaMB: toMB(after.arrayBuffers - before.arrayBuffers),
+    };
+
+    return {
+      timestamp: new Date().toISOString(),
+      runtime: process.release?.name ?? "unknown",
+      pid: process.pid,
+      gcExposed,
+      before: {
+        rssMB: toMB(before.rss),
+        heapUsedMB: toMB(before.heapUsed),
+        heapTotalMB: toMB(before.heapTotal),
+        externalMB: toMB(before.external),
+        arrayBuffersMB: toMB(before.arrayBuffers),
+        raw: before,
+      },
+      after: {
+        rssMB: toMB(after.rss),
+        heapUsedMB: toMB(after.heapUsed),
+        heapTotalMB: toMB(after.heapTotal),
+        externalMB: toMB(after.external),
+        arrayBuffersMB: toMB(after.arrayBuffers),
+        raw: after,
+      },
+      deltas,
     };
   }),
   heapSanity: publicProcedure.mutation(async () => {
