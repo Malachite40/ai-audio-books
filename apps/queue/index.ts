@@ -24,6 +24,7 @@ worker.register(
 );
 worker.register(TASK_NAMES.test.heapSnapShot, api.debug.heapSnapshot);
 worker.register(TASK_NAMES.test.garbageCleanup, api.debug.garbageCleanup);
+worker.register(TASK_NAMES.test.memoryHogAlloc, api.debug.memoryHogAlloc);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Register Main Worker Tasks

@@ -15,6 +15,8 @@ const TASK_NAMES = {
     processTestAudioFile: "tasks.test.processTestAudioFile",
     heapSnapShot: "tasks.test.heapSnapShot",
     garbageCleanup: "tasks.test.garbageCleanup",
+    memoryHogAlloc: "tasks.test.memoryHogAlloc",
+    memoryHogFree: "tasks.test.memoryHogFree",
   },
 } as const;
 

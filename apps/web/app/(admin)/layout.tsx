@@ -1,8 +1,5 @@
-"use client"
+"use client";
 
-import Link from "next/link"
-import { usePathname } from "next/navigation"
-import type { Route } from "next"
 import {
   Sidebar,
   SidebarContent,
@@ -15,25 +12,27 @@ import {
   SidebarMenuItem,
   SidebarProvider,
   SidebarTrigger,
-} from "@workspace/ui/components/sidebar"
+} from "@workspace/ui/components/sidebar";
+import type { Route } from "next";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 type AdminLayoutProps = {
-  children: React.ReactNode
-}
+  children: React.ReactNode;
+};
 
 const items = [
   { title: "Stats", href: "/admin/stats" },
   { title: "Speakers", href: "/admin/speakers" },
   { title: "Audio Files", href: "/admin/audio" },
   { title: "Key-Value", href: "/admin/kv" },
-  { title: "Re-Stitch Audio", href: "/admin/restitch" },
   { title: "Support Submissions", href: "/admin/support" },
   { title: "Credit Transactions", href: "/admin/credits" },
   { title: "Debug", href: "/admin/debug" },
-] as const satisfies ReadonlyArray<{ title: string; href: Route }>
+] as const satisfies ReadonlyArray<{ title: string; href: Route }>;
 
 export default function AdminLayout({ children }: AdminLayoutProps) {
-  const pathname = usePathname()
+  const pathname = usePathname();
 
   return (
     <SidebarProvider>
@@ -68,5 +67,5 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         <div className="flex flex-1 flex-col gap-4 p-4 pt-0">{children}</div>
       </SidebarInset>
     </SidebarProvider>
-  )
+  );
 }
