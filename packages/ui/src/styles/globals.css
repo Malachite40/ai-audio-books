@@ -192,3 +192,9 @@
     @apply bg-background text-foreground;
   }
 }
+
+[data-radix-scroll-area-viewport] > div {
+  display: block !important;
+  min-width: 0 !important;
+  width: 100% !important;
+}

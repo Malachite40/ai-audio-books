@@ -563,6 +563,14 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
                     "Paste a RoyalRoad chapter URL to generate audio from it.",
                   Icon: BookOpen,
                 },
+                // {
+                //   key: "advanced",
+                //   mode: "advanced",
+                //   label: "Advanced",
+                //   description:
+                //     "Add titles and chapter headings. Control pauses and more.",
+                //   Icon: AudioLinesIcon,
+                // },
               ].map((option) => (
                 <Card
                   key={option.key}
@@ -595,7 +603,7 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
         )}
 
         {/* STEP 2 (both modes): Create new audio file form */}
-        {mode && (
+        {mode && mode !== "advanced" && (
           <Form {...form}>
             <form
               className={cn(selectedAudioFileId.length > 0 ? "hidden" : "")}
@@ -952,6 +960,10 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
             </form>
           </Form>
         )}
+
+        {/* {mode && mode === "advanced" && (
+          <AdvancedAudioForm speakers={speakers} />
+        )} */}
       </div>
     </>
   );

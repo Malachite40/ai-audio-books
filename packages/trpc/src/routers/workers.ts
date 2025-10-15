@@ -57,7 +57,11 @@ export const workersRouter = createTRPCRouter({
       // 1) Load file + chunks
       const audioFile = await ctx.db.audioFile.findUnique({
         where: { id: input.id },
-        include: { AudioChunks: { orderBy: { sequence: "asc" } } },
+        select: {
+          id: true,
+          durationMs: true,
+          AudioChunks: { orderBy: { sequence: "asc" } },
+        },
       });
       if (!audioFile) {
         throw new TRPCError({
@@ -405,7 +409,7 @@ export const workersRouter = createTRPCRouter({
         where: { id: input.id },
         include: {
           audioFile: {
-            include: {
+            select: {
               _count: { select: { AudioChunks: true } },
               speaker: true,
             },
@@ -603,6 +607,7 @@ export const workersRouter = createTRPCRouter({
       const chunks = await ctx.db.audioChunk.findMany({
         where: { audioFileId: input.id },
         orderBy: { sequence: "asc" },
+        select: { id: true },
       });
 
       const BATCH_SIZE = 15;
@@ -629,6 +634,7 @@ export const workersRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const audioFile = await ctx.db.audioFile.findUniqueOrThrow({
         where: { id: input.audioFileId },
+        include: { speaker: true },
       });
 
       const splitIntoSentences = (raw: string): string[] => {
@@ -693,6 +699,16 @@ export const workersRouter = createTRPCRouter({
         return chunks;
       };
 
+      // Create title chunk
+      await ctx.db.audioChunk.create({
+        data: {
+          audioFileId: audioFile.id,
+          text: `${audioFile.name}, narrated by ${audioFile.speaker.displayName}.`,
+          sequence: 0,
+          paddingEndMs: 2000,
+        },
+      });
+
       const sentences = splitIntoSentences(audioFile.text);
       const chunkTexts = buildChunks(sentences, input.chunkSize);
 
@@ -701,16 +717,16 @@ export const workersRouter = createTRPCRouter({
       for (let i = 0; i < filtered.length; i += batchSize) {
         const batch = filtered.slice(i, i + batchSize);
         await Promise.all(
-          batch.map((c, j) =>
-            ctx.db.audioChunk.create({
+          batch.map((c, j) => {
+            return ctx.db.audioChunk.create({
               data: {
                 audioFileId: audioFile.id,
                 text: c,
-                sequence: i + j,
+                sequence: i + j + 1,
                 paddingEndMs: 550,
               },
-            })
-          )
+            });
+          })
         );
       }
 
