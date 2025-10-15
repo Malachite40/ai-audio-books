@@ -58,6 +58,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
+import { AdvancedAudioForm } from "../_components/advanced-audio-form";
 // ------------------------------
 // Helpers for duration UX
 // ------------------------------
@@ -961,9 +962,9 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
           </Form>
         )}
 
-        {/* {mode && mode === "advanced" && (
+        {mode && mode === "advanced" && (
           <AdvancedAudioForm speakers={speakers} />
-        )} */}
+        )}
       </div>
     </>
   );
