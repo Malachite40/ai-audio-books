@@ -2,6 +2,7 @@ import { api } from "@/trpc/server";
 import { Card } from "@workspace/ui/components/card";
 import { Badge } from "@workspace/ui/components/badge";
 import { AdminAudioFileActions } from "../../_components/admin-audio-file-actions";
+import type { Route } from "next";
 import { AudioChunksTable } from "./_components/audio-chunks-table";
 
 type tParams = Promise<{ id: string }>; 
@@ -42,7 +43,7 @@ export default async function AdminAudioDetailPage({
               audioFileId={audioFile.id}
               isPublic={!!audioFile.public}
               disabled={false}
-              viewHref={`/admin/audio/${audioFile.id}`}
+              viewHref={`/admin/audio/${audioFile.id}` as Route}
             />
           </div>
         </div>

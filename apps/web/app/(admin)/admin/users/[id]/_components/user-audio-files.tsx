@@ -8,6 +8,7 @@ import { PaginationBar } from "@/components/pagination-bar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@workspace/ui/components/select";
 import Link from "next/link";
 import { AdminAudioFileActions } from "../../../_components/admin-audio-file-actions";
+import type { Route } from "next";
 
 const PAGE_SIZE = 20;
 const STATUSES = ["PENDING", "GENERATING_STORY", "PROCESSING", "PROCESSED", "ERROR"] as const;
@@ -95,7 +96,7 @@ export default function UserAudioFiles({ userId }: { userId: string }) {
                   <AdminAudioFileActions
                     audioFileId={af.id}
                     isPublic={af.public}
-                    viewHref={`/admin/audio/${af.id}`}
+                    viewHref={`/admin/audio/${af.id}` as Route}
                     onAfterAction={onChanged}
                   />
                 </TableCell>

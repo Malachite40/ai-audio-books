@@ -11,18 +11,19 @@ import {
 } from "@workspace/ui/components/dropdown-menu";
 import { MoreHorizontal } from "lucide-react";
 import Link from "next/link";
+import type { Route } from "next";
 
 export function AdminAudioFileActions({
   audioFileId,
   isPublic,
   disabled,
-  viewHref = `/admin/audio/${audioFileId}`,
+  viewHref = `/admin/audio/${audioFileId}` as Route,
   onAfterAction,
 }: {
   audioFileId: string;
   isPublic: boolean;
   disabled?: boolean;
-  viewHref?: string;
+  viewHref?: Route;
   onAfterAction?: () => void | Promise<void>;
 }) {
   const utils = api.useUtils();

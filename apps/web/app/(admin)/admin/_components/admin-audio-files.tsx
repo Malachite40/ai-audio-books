@@ -22,6 +22,7 @@ import {
 } from "@workspace/ui/components/table";
 import { Loader, RefreshCcw } from "lucide-react";
 import Link from "next/link";
+import type { Route } from "next";
 import { useMemo, useState } from "react";
 import { AdminAudioFileActions } from "./admin-audio-file-actions";
  
@@ -168,7 +169,7 @@ export function AdminAudioFilesCard() {
                     audioFileId={af.id}
                     isPublic={!!af.public}
                     disabled={isFetching || isLoading}
-                    viewHref={`/admin/audio/${af.id}`}
+                    viewHref={`/admin/audio/${af.id}` as Route}
                   />
                   
                 </div>
