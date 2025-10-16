@@ -19,6 +19,24 @@ import { inworldRouter } from "./inworld";
 import { concatAudioFileInput } from "./workers";
 
 export const audioRouter = createTRPCRouter({
+  // Admin: fetch a single audio file with speaker and owner
+  adminFetchById: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const audioFile = await ctx.db.audioFile.findUnique({
+        where: { id: input.id },
+        include: {
+          speaker: true,
+          owner: { select: { id: true, name: true, email: true } },
+        },
+      });
+      if (!audioFile) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Audio file not found" });
+      }
+
+      return { audioFile };
+    }),
+
   // Admin: fetch all audio files with pagination (page/pageSize) and optional filters
   fetchAllAdmin: adminProcedure
     .input(
@@ -75,13 +93,95 @@ export const audioRouter = createTRPCRouter({
             updatedAt: true,
             deletedAt: true,
             speaker: true,
-            owner: { select: { id: true, name: true, email: true } },
+            owner: { select: { id: true, name: true, email: true, role: true, banned: true } },
           },
         }),
         ctx.db.audioFile.count({ where }),
       ]);
 
       return { audioFiles, total };
+    }),
+
+  // Admin: list audio files for a specific user (paginated)
+  adminListByUser: adminProcedure
+    .input(
+      z.object({
+        userId: z.string(),
+        page: z.number().min(1).default(1),
+        pageSize: z.number().min(1).max(100).default(20),
+        status: z
+          .enum(["PENDING", "GENERATING_STORY", "PROCESSING", "PROCESSED", "ERROR"]).optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const where: any = {
+        deletedAt: null,
+        ownerId: input.userId,
+      };
+      if (input.status) where.status = input.status;
+
+      const [audioFiles, total] = await Promise.all([
+        ctx.db.audioFile.findMany({
+          skip: (input.page - 1) * input.pageSize,
+          take: input.pageSize,
+          where,
+          orderBy: { createdAt: "desc" },
+          select: {
+            id: true,
+            ownerId: true,
+            name: true,
+            imageUrl: true,
+            status: true,
+            speakerId: true,
+            durationMs: true,
+            public: true,
+            lang: true,
+            createdAt: true,
+            updatedAt: true,
+            speaker: true,
+          },
+        }),
+        ctx.db.audioFile.count({ where }),
+      ]);
+
+      return { audioFiles, total };
+    }),
+  // Admin: list audio chunks for a file (paginated)
+  adminListChunks: adminProcedure
+    .input(
+      z.object({
+        audioFileId: z.string().uuid(),
+        page: z.number().min(1).default(1),
+        pageSize: z.number().min(1).max(200).default(50),
+        status: z.enum(["PENDING", "PROCESSING", "PROCESSED", "ERROR"]).optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const where: any = { audioFileId: input.audioFileId };
+      if (input.status) where.status = input.status;
+
+      const [items, total] = await Promise.all([
+        ctx.db.audioChunk.findMany({
+          skip: (input.page - 1) * input.pageSize,
+          take: input.pageSize,
+          where,
+          orderBy: { sequence: "asc" },
+          select: {
+            id: true,
+            sequence: true,
+            status: true,
+            url: true,
+            text: true,
+            durationMs: true,
+            paddingStartMs: true,
+            paddingEndMs: true,
+            createdAt: true,
+          },
+        }),
+        ctx.db.audioChunk.count({ where }),
+      ]);
+
+      return { items, total };
     }),
   /**
    * Returns the count of audio chunks for a given audioFileId, grouped by status.

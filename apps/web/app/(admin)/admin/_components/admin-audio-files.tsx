@@ -5,13 +5,6 @@ import { api } from "@/trpc/react";
 import { Button } from "@workspace/ui/components/button";
 import { Card } from "@workspace/ui/components/card";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@workspace/ui/components/dropdown-menu";
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -27,9 +20,11 @@ import {
   TableHeader,
   TableRow,
 } from "@workspace/ui/components/table";
-import { Loader, MoreHorizontal, RefreshCcw } from "lucide-react";
+import { Loader, RefreshCcw } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { AdminAudioFileActions } from "./admin-audio-file-actions";
+ 
 
 const PAGE_SIZE = 20;
 const AUDIO_STATUSES = [
@@ -136,13 +131,30 @@ export function AdminAudioFilesCard() {
           {rows.map((af) => (
             <TableRow key={af.id}>
               <TableCell className="max-w-[280px] whitespace-nowrap overflow-hidden text-ellipsis">
-                {af.name || af.id}
+                <Link
+                  href={`/admin/audio/${af.id}`}
+                  className="hover:underline"
+                >
+                  {af.name || af.id}
+                </Link>
               </TableCell>
               <TableCell>{af.status}</TableCell>
               <TableCell>
                 {af.speaker?.displayName || af.speaker?.name}
               </TableCell>
-              <TableCell>{af.owner?.name || af.owner?.email || "—"}</TableCell>
+              <TableCell>
+                <div className="flex items-center gap-2 max-w-[280px] whitespace-nowrap overflow-hidden text-ellipsis">
+                  <span title={af.owner?.email || undefined}>
+                    {af.owner?.name || af.owner?.email || "—"}
+                  </span>
+                  {af.owner?.role === "admin" && (
+                    <span className="text-xs text-muted-foreground">(admin)</span>
+                  )}
+                  {af.owner?.banned && (
+                    <span className="text-xs text-red-600">(banned)</span>
+                  )}
+                </div>
+              </TableCell>
               <TableCell>{af.public ? "Yes" : "No"}</TableCell>
               <TableCell>{Math.round((af.durationMs ?? 0) / 1000)}s</TableCell>
               <TableCell>
@@ -152,11 +164,13 @@ export function AdminAudioFilesCard() {
               </TableCell>
               <TableCell className="text-right">
                 <div className="flex gap-2 justify-end">
-                  <RowActions
+                  <AdminAudioFileActions
                     audioFileId={af.id}
                     isPublic={!!af.public}
                     disabled={isFetching || isLoading}
+                    viewHref={`/admin/audio/${af.id}`}
                   />
+                  
                 </div>
               </TableCell>
             </TableRow>
@@ -181,139 +195,5 @@ export function AdminAudioFilesCard() {
         />
       </div>
     </Card>
-  );
-}
-
-function RowActions({
-  audioFileId,
-  isPublic,
-  disabled,
-}: {
-  audioFileId: string;
-  isPublic: boolean;
-  disabled?: boolean;
-}) {
-  const utils = api.useUtils();
-  const requeue = api.audio.requeue.useMutation({
-    onSuccess: () => utils.audio.fetchAllAdmin.invalidate(),
-  });
-  const del = api.audio.adminDelete.useMutation({
-    onSuccess: () => utils.audio.fetchAllAdmin.invalidate(),
-  });
-  const concat = api.audio.queueConcatAudioFile.useMutation({
-    onSuccess: () => utils.audio.fetchAllAdmin.invalidate(),
-  });
-  const togglePublic = api.audio.togglePublic.useMutation({
-    onSuccess: () => utils.audio.fetchAllAdmin.invalidate(),
-  });
-
-  const busy = requeue.isPending || del.isPending || concat.isPending;
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          size="sm"
-          variant="ghost"
-          aria-label="More actions"
-          disabled={disabled || busy}
-        >
-          <MoreHorizontal className="size-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem asChild>
-          <Link href={`/audio-file/${audioFileId}`}>View</Link>
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onSelect={async (e) => {
-            e.preventDefault();
-            await requeue
-              .mutateAsync({ audioFileId, mode: "failed" })
-              .catch((err) => {
-                console.error(err);
-              });
-          }}
-        >
-          Re-queue failed chunks
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onSelect={async (e) => {
-            e.preventDefault();
-            if (
-              !window.confirm(
-                "Rebuild from text (drop all chunks) and reprocess?"
-              )
-            )
-              return;
-            await requeue
-              .mutateAsync({ audioFileId, mode: "full" })
-              .catch((err) => {
-                console.error(err);
-              });
-          }}
-        >
-          Rebuild from text
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onSelect={async (e) => {
-            e.preventDefault();
-            await togglePublic.mutateAsync({ audioFileId }).catch((err) => {
-              console.error(err);
-            });
-          }}
-        >
-          {isPublic ? "Make Private" : "Make Public"}
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onSelect={async (e) => {
-            e.preventDefault();
-            await concat.mutateAsync({ audioFileId }).catch((err) => {
-              alert(
-                err?.message ??
-                  "Unable to queue concat. Ensure all chunks are PROCESSED."
-              );
-            });
-          }}
-        >
-          Re-stitch final MP3
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onSelect={async (e) => {
-            e.preventDefault();
-            if (
-              !window.confirm(
-                "Soft delete this audio file? You can restore via DB."
-              )
-            )
-              return;
-            await del
-              .mutateAsync({ audioFileId, type: "soft" })
-              .catch(console.error);
-          }}
-        >
-          Soft delete
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          className="text-destructive focus:text-destructive"
-          onSelect={async (e) => {
-            e.preventDefault();
-            if (
-              !window.confirm(
-                "Hard delete this audio file and purge assets? This cannot be undone."
-              )
-            )
-              return;
-            await del
-              .mutateAsync({ audioFileId, type: "hard", purgeAssets: true })
-              .catch(console.error);
-          }}
-        >
-          Hard delete + purge assets
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }

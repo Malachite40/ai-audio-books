@@ -24,6 +24,7 @@ type AdminLayoutProps = {
 const items = [
   { title: "Stats", href: "/admin/stats" },
   { title: "Speakers", href: "/admin/speakers" },
+  { title: "Users", href: "/admin/users" },
   { title: "Audio Files", href: "/admin/audio" },
   { title: "Key-Value", href: "/admin/kv" },
   { title: "Support Submissions", href: "/admin/support" },

@@ -206,6 +206,51 @@ const save = api.support.submit.useMutation();
 </Form>;
 ```
 
+## Responsive Modal (Dialog/Drawer)
+
+Use the responsive modal to render a desktop Dialog and a mobile Drawer with a single API. The component lives at `apps/web/components/resonpsive-modal.tsx`.
+
+- Props: `open: boolean`, `onOpenChange: (v: boolean) => void`, `title: string`, `description?: string`, `children?: React.ReactNode`
+- Behavior: switches between `Dialog` (≥ `MEDIA_QUERY.MD`) and `Drawer` (< `MEDIA_QUERY.MD`).
+- Import locally from sibling components as shown below.
+
+Example:
+
+```tsx
+"use client";
+import { useState } from "react";
+import { Button } from "@workspace/ui/components/button";
+import { ResponsiveModal } from "./resonpsive-modal";
+
+export function ExampleModalTrigger() {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <Button onClick={() => setOpen(true)}>Open modal</Button>
+      <ResponsiveModal
+        open={open}
+        onOpenChange={setOpen}
+        title="Example Title"
+        description="Optional description goes here."
+      >
+        <div className="space-y-3 text-sm">
+          <p>Any React content as children.</p>
+          <div className="flex gap-2">
+            <Button variant="outline" className="flex-1" onClick={() => setOpen(false)}>
+              Close
+            </Button>
+            <Button className="flex-1" onClick={() => {/* do something */}}>
+              Confirm
+            </Button>
+          </div>
+        </div>
+      </ResponsiveModal>
+    </>
+  );
+}
+```
+
 ## Pagination Pattern (Frontend + tRPC + DB)
 
 - Server: use cursor pagination with `take = limit + 1` + optional `cursor`; if more than `limit`, pop and set `nextCursor`.

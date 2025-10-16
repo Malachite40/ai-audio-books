@@ -121,4 +121,41 @@ export const creditsRouter = createTRPCRouter({
         })),
       };
     }),
+
+  // Admin: list credit transactions for a specific user (paginated)
+  adminListByUser: adminProcedure
+    .input(
+      z.object({
+        userId: z.string(),
+        page: z.number().int().min(1).default(1),
+        pageSize: z.number().int().min(1).max(100).default(20),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { userId, page, pageSize } = input;
+
+      const [total, items] = await Promise.all([
+        ctx.db.creditTransaction.count({ where: { userId } }),
+        ctx.db.creditTransaction.findMany({
+          where: { userId },
+          orderBy: { createdAt: "desc" },
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+        }),
+      ]);
+
+      return {
+        total,
+        page,
+        pageSize,
+        items: items.map((t) => ({
+          id: t.id,
+          userId: t.userId,
+          amount: t.amount,
+          reason: t.reason,
+          description: t.description,
+          createdAt: t.createdAt,
+        })),
+      };
+    }),
 });

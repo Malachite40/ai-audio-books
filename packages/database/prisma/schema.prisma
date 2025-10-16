@@ -5,9 +5,16 @@ generator client {
 
 model SupportSubmission {
     id          String   @id @default(uuid())
+    // Optional association to a user if known at submission time
+    userId      String?
+    user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+    // Best-effort contact info captured when available
+    email       String?
     name        String
     description String
     createdAt   DateTime @default(now()) @db.Timestamptz()
+
+    @@index([userId, createdAt])
 }
 
 datasource db {
@@ -38,6 +45,7 @@ model User {
     UserAudioFile     UserAudioFile[]
     ReferralLink      ReferralLink?
     CreditTransaction CreditTransaction[]
+    SupportSubmission SupportSubmission[]
 
     @@unique([email])
     @@index([stripeCustomerId])
