@@ -39,6 +39,10 @@ worker.register(
   TASK_NAMES.createAudioFileChunks,
   api.workers.createAudioFileChunks
 );
+worker.register(
+  TASK_NAMES.createAudioFileChunksFromChapters,
+  api.workers.createAudioFileChunksFromChapters
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Register AI Worker Tasks

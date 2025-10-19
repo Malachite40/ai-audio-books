@@ -21,9 +21,13 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import type { ReadableStream as NodeWebReadableStream } from "node:stream/web";
 import pLimit from "p-limit";
-/* ─────────────────────────────────────────────────────────────────────────────
-   Schemas
-   ──────────────────────────────────────────────────────────────────────────── */
+import { detectMime, getAudioDurationMs } from "../lib/utils/audio";
+import {
+  buildChunks,
+  createChunksFromChapters,
+  sectionType,
+  splitIntoSentences,
+} from "../lib/utils/chunking";
 
 export const audioChunkInput = z.object({ id: z.string().uuid() });
 export const processAudioFileInput = z.object({ id: z.string().uuid() });
@@ -35,20 +39,21 @@ export const createAudioFileChunksInput = z.object({
   audioFileId: z.string().uuid(),
   chunkSize: z.number().min(1).max(2000),
 });
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   Router
-   ──────────────────────────────────────────────────────────────────────────── */
+export const createAudioFileChunksFromChaptersInput = z.object({
+  audioFileId: z.string().uuid(),
+  chapters: z.array(
+    z.object({
+      title: z.string(),
+      type: sectionType,
+      text: z.string(),
+    })
+  ),
+});
 
 export const workersRouter = createTRPCRouter({
   ai: aiWorkerRouter,
   test: testWorkersRouter,
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // Concat via demuxer (single input) after transcoding all chunks to WAV.
-  // Silence padding generated as WAV -> concat -> encode MP3.
-  // Uses streaming IO and conservative multipart to avoid OOM/SIGKILL.
-  // ────────────────────────────────────────────────────────────────────────────
   concatAudioFile: queueProcedure
     .input(concatAudioFileInput)
     .mutation(async ({ ctx, input }) => {
@@ -399,9 +404,6 @@ export const workersRouter = createTRPCRouter({
       return { key: finalKey, url: finalUrl };
     }),
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // (unchanged) processAudioChunkWithInworld / processAudioFile / createAudioFileChunks
-  // ────────────────────────────────────────────────────────────────────────────
   processAudioChunkWithInworld: queueProcedure
     .input(audioChunkInput)
     .mutation(async ({ ctx, input }) => {
@@ -637,68 +639,6 @@ export const workersRouter = createTRPCRouter({
         include: { speaker: true },
       });
 
-      const splitIntoSentences = (raw: string): string[] => {
-        const text = raw.replace(/\s+/g, " ").trim();
-        if (!text) return [];
-        try {
-          if (typeof Intl !== "undefined" && (Intl as any).Segmenter) {
-            const seg = new (Intl as any).Segmenter("en", {
-              granularity: "sentence",
-            });
-            const out: string[] = [];
-            for (const { segment } of seg.segment(text)) {
-              const s = String(segment).trim();
-              if (s) out.push(s);
-            }
-            if (out.length) return out;
-          }
-        } catch {}
-        const rx = /[^.!?…]+(?:\.\.\.|[.!?]|…)+(?=\s+|$)|[^.!?…]+$/g;
-        const matches = text.match(rx) ?? [];
-        return matches.map((s) => s.trim());
-      };
-
-      const softWrap = (sentence: string, limit: number): string[] => {
-        if (sentence.length <= limit) return [sentence];
-        const words = sentence.split(/\s+/);
-        const out: string[] = [];
-        let buf = "";
-        for (const w of words) {
-          const next = buf ? `${buf} ${w}` : w;
-          if (next.length > limit && buf) {
-            out.push(buf);
-            buf = w;
-          } else {
-            buf = next;
-          }
-        }
-        if (buf) out.push(buf);
-        return out;
-      };
-
-      const buildChunks = (sentences: string[], limit: number): string[] => {
-        const chunks: string[] = [];
-        let buf = "";
-        const flush = () => {
-          if (buf.trim()) chunks.push(buf.trim());
-          buf = "";
-        };
-        for (const s0 of sentences) {
-          const pieces = softWrap(s0, limit);
-          for (const s of pieces) {
-            const candidate = buf ? `${buf} ${s}` : s;
-            if (candidate.length > limit && buf) {
-              flush();
-              buf = s;
-            } else {
-              buf = candidate;
-            }
-          }
-        }
-        flush();
-        return chunks;
-      };
-
       // Create title chunk
       await ctx.db.audioChunk.create({
         data: {
@@ -753,227 +693,65 @@ export const workersRouter = createTRPCRouter({
       }
       return {};
     }),
+
+  createAudioFileChunksFromChapters: queueProcedure
+    .input(createAudioFileChunksFromChaptersInput)
+    .mutation(async ({ ctx, input }) => {
+      const audioFile = await ctx.db.audioFile.findUniqueOrThrow({
+        where: { id: input.audioFileId },
+        include: { speaker: true },
+      });
+
+      // Create title chunk
+      await ctx.db.audioChunk.create({
+        data: {
+          audioFileId: audioFile.id,
+          text: `${audioFile.name}, narrated by ${audioFile.speaker.displayName}.`,
+          sequence: 0,
+          paddingEndMs: 2000,
+        },
+      });
+
+      const chunks = createChunksFromChapters({ chapters: input.chapters });
+
+      const batchSize = 50;
+      for (let i = 0; i < chunks.length; i += batchSize) {
+        const batch = chunks.slice(i, i + batchSize);
+        await Promise.all(
+          batch.map((c, j) => {
+            return ctx.db.audioChunk.create({
+              data: {
+                audioFileId: audioFile.id,
+                text: c.text,
+                sequence: c.sequence + 1,
+                paddingEndMs: c.paddingEndMs,
+              },
+            });
+          })
+        );
+      }
+
+      const task = client.createTask(TASK_NAMES.processAudioFile);
+      task.applyAsync([
+        { id: audioFile.id } satisfies z.infer<typeof processAudioFileInput>,
+      ]);
+
+      if (audioFile.ownerId) {
+        await ctx.db.$transaction(async (tx) => {
+          await tx.creditTransaction.create({
+            data: {
+              userId: audioFile.ownerId!,
+              amount: -audioFile.text.length,
+              reason: "tts_usage",
+              description: `TTS usage for audio file ${audioFile.id} (${audioFile.name || "untitled"}) - ${audioFile.text.length} characters`,
+            },
+          });
+          await tx.credits.update({
+            where: { userId: audioFile.ownerId! },
+            data: { amount: { decrement: audioFile.text.length } },
+          });
+        });
+      }
+      return {};
+    }),
 });
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   Helper Functions
-   ──────────────────────────────────────────────────────────────────────────── */
-
-function detectMime(buf: Buffer): "audio/mpeg" | "audio/wav" {
-  if (
-    buf.slice(0, 4).toString("ascii") === "RIFF" &&
-    buf.slice(8, 12).toString("ascii") === "WAVE"
-  ) {
-    return "audio/wav";
-  }
-  if (
-    buf.slice(0, 3).toString("ascii") === "ID3" ||
-    (buf[0] === 0xff && (buf[1]! & 0xe0) === 0xe0)
-  ) {
-    return "audio/mpeg";
-  }
-  return "audio/mpeg";
-}
-
-function wavDurationMs(wav: Buffer): number {
-  if (
-    wav.slice(0, 4).toString("ascii") !== "RIFF" ||
-    wav.slice(8, 12).toString("ascii") !== "WAVE"
-  ) {
-    throw new Error("Not a WAV file");
-  }
-  const numChannels = wav.readUInt16LE(22);
-  const sampleRate = wav.readUInt32LE(24);
-  const bitsPerSample = wav.readUInt16LE(34);
-  const byteRate = (sampleRate * numChannels * bitsPerSample) / 8;
-
-  let offset = 12;
-  while (offset + 8 <= wav.length) {
-    const id = wav.toString("ascii", offset, offset + 4);
-    const size = wav.readUInt32LE(offset + 4);
-    if (id === "data") {
-      const seconds = size / byteRate;
-      return Math.round(seconds * 1000);
-    }
-    offset += 8 + size + (size % 2);
-  }
-  throw new Error("No data chunk in WAV");
-}
-
-function readUInt32BE(buf: Buffer, off: number): number {
-  return (
-    ((buf[off]! << 24) |
-      (buf[off + 1]! << 16) |
-      (buf[off + 2]! << 8) |
-      buf[off + 3]!) >>>
-    0
-  );
-}
-
-function skipID3v2(buf: Buffer): number {
-  if (buf.length >= 10 && buf.slice(0, 3).toString("ascii") === "ID3") {
-    const size =
-      ((buf[6]! & 0x7f) << 21) |
-      ((buf[7]! & 0x7f) << 14) |
-      ((buf[8]! & 0x7f) << 7) |
-      (buf[9]! & 0x7f);
-    return 10 + size;
-  }
-  return 0;
-}
-
-type MpegHeader = {
-  version: 1 | 2 | 25;
-  layer: 1 | 2 | 3;
-  bitrateKbps: number;
-  sampleRate: number;
-  padding: 0 | 1;
-  channels: 1 | 2;
-  samplesPerFrame: number;
-  frameLengthBytes: number;
-};
-
-function parseMpegHeaderAt(buf: Buffer, i: number): MpegHeader | null {
-  if (i + 4 > buf.length) return null;
-  const b1 = buf[i]!,
-    b2 = buf[i + 1]!,
-    b3 = buf[i + 2]!,
-    b4 = buf[i + 3]!;
-  if (b1 !== 0xff || (b2 & 0xe0) !== 0xe0) return null;
-
-  const verBits = (b2 >> 3) & 0x03;
-  const layerBits = (b2 >> 1) & 0x03;
-  if (verBits === 1 || layerBits === 0) return null;
-
-  const version = verBits === 3 ? 1 : verBits === 2 ? 2 : 25;
-  const layer = layerBits === 3 ? 1 : layerBits === 2 ? 2 : 3;
-
-  const bitrateIdx = (b3 >> 4) & 0x0f;
-  const sampleIdx = (b3 >> 2) & 0x03;
-  const padding = ((b3 >> 1) & 0x01) as 0 | 1;
-
-  const chanMode = (b4 >> 6) & 0x03;
-  const channels = chanMode === 3 ? 1 : 2;
-
-  const baseRates = [44100, 48000, 32000] as const;
-  if (sampleIdx === 3) return null;
-  let sampleRate = baseRates[sampleIdx]!;
-  if (version === 2) sampleRate >>= 1;
-  if (version === 25) sampleRate >>= 2;
-
-  const br = {
-    1: {
-      1: [
-        0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448, 0,
-      ],
-      2: [0, 32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384, 0],
-      3: [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0],
-    },
-    2: {
-      1: [0, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256, 0],
-      2: [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0],
-      3: [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0],
-    },
-    25: {
-      1: [0, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256, 0],
-      2: [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0],
-      3: [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0],
-    },
-  } as const;
-
-  const bitrateKbps = br[version][layer][bitrateIdx]!;
-  if (!bitrateKbps) return null;
-
-  let samplesPerFrame: number;
-  if (layer === 1) samplesPerFrame = 384;
-  else if (layer === 2) samplesPerFrame = 1152;
-  else samplesPerFrame = version === 1 ? 1152 : 576;
-
-  let frameLengthBytes: number;
-  if (layer === 1) {
-    frameLengthBytes = Math.floor(
-      ((12 * bitrateKbps * 1000) / sampleRate + padding) * 4
-    );
-  } else {
-    const coef = version === 1 ? 144 : 72;
-    frameLengthBytes = Math.floor(
-      (coef * bitrateKbps * 1000) / sampleRate + padding
-    );
-  }
-
-  if (frameLengthBytes < 24) return null;
-
-  return {
-    version,
-    layer,
-    bitrateKbps,
-    sampleRate,
-    padding,
-    channels,
-    samplesPerFrame,
-    frameLengthBytes,
-  };
-}
-
-function tryXingVBRI(buf: Buffer, start: number, h: MpegHeader): number | null {
-  let sideInfoLen = 0;
-  if (h.layer === 3) {
-    if (h.version === 1) sideInfoLen = h.channels === 1 ? 17 : 32;
-    else sideInfoLen = h.channels === 1 ? 9 : 17;
-  }
-
-  const xingOff = start + 4 + sideInfoLen;
-  if (xingOff + 16 <= buf.length) {
-    const tag = buf.slice(xingOff, xingOff + 4).toString("ascii");
-    if (tag === "Xing" || "Info") {
-      const flags = readUInt32BE(buf, xingOff + 4);
-      if (flags & 0x0001) {
-        const frames = readUInt32BE(buf, xingOff + 8);
-        const seconds = (frames * h.samplesPerFrame) / h.sampleRate;
-        return Math.round(seconds * 1000);
-      }
-    }
-  }
-
-  const vbriOff = start + 4 + 32;
-  if (
-    vbriOff + 26 <= buf.length &&
-    buf.slice(vbriOff, vbriOff + 4).toString("ascii") === "VBRI"
-  ) {
-    const frames = readUInt32BE(buf, vbriOff + 14);
-    const seconds = (frames * h.samplesPerFrame) / h.sampleRate;
-    return Math.round(seconds * 1000);
-  }
-  return null;
-}
-
-function mp3DurationMs(buf: Buffer): number {
-  let i = skipID3v2(buf);
-  while (i + 4 < buf.length) {
-    const h = parseMpegHeaderAt(buf, i);
-    if (h) {
-      const vbrMs = tryXingVBRI(buf, i, h);
-      if (vbrMs != null) return vbrMs;
-
-      let totalSamples = 0,
-        pos = i,
-        safety = 0;
-      while (pos + 4 <= buf.length && safety < 2_000_000) {
-        const hh = parseMpegHeaderAt(buf, pos);
-        if (!hh) break;
-        totalSamples += hh.samplesPerFrame;
-        pos += hh.frameLengthBytes;
-        safety += 1;
-      }
-      const seconds = totalSamples / h.sampleRate;
-      return Math.max(0, Math.round(seconds * 1000));
-    }
-    i++;
-  }
-  throw new Error("No MPEG frame found");
-}
-
-async function getAudioDurationMs(buf: Buffer, mime?: string): Promise<number> {
-  if (mime === "audio/mpeg") return mp3DurationMs(buf);
-  return wavDurationMs(buf);
-}

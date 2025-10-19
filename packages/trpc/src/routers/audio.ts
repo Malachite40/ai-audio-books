@@ -31,7 +31,10 @@ export const audioRouter = createTRPCRouter({
         },
       });
       if (!audioFile) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Audio file not found" });
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Audio file not found",
+        });
       }
 
       return { audioFile };
@@ -93,7 +96,15 @@ export const audioRouter = createTRPCRouter({
             updatedAt: true,
             deletedAt: true,
             speaker: true,
-            owner: { select: { id: true, name: true, email: true, role: true, banned: true } },
+            owner: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                role: true,
+                banned: true,
+              },
+            },
           },
         }),
         ctx.db.audioFile.count({ where }),
@@ -110,7 +121,14 @@ export const audioRouter = createTRPCRouter({
         page: z.number().min(1).default(1),
         pageSize: z.number().min(1).max(100).default(20),
         status: z
-          .enum(["PENDING", "GENERATING_STORY", "PROCESSING", "PROCESSED", "ERROR"]).optional(),
+          .enum([
+            "PENDING",
+            "GENERATING_STORY",
+            "PROCESSING",
+            "PROCESSED",
+            "ERROR",
+          ])
+          .optional(),
       })
     )
     .query(async ({ ctx, input }) => {
@@ -153,7 +171,9 @@ export const audioRouter = createTRPCRouter({
         audioFileId: z.string().uuid(),
         page: z.number().min(1).default(1),
         pageSize: z.number().min(1).max(200).default(50),
-        status: z.enum(["PENDING", "PROCESSING", "PROCESSED", "ERROR"]).optional(),
+        status: z
+          .enum(["PENDING", "PROCESSING", "PROCESSED", "ERROR"])
+          .optional(),
       })
     )
     .query(async ({ ctx, input }) => {
@@ -223,7 +243,7 @@ export const audioRouter = createTRPCRouter({
       }
 
       const task = client.createTask(TASK_NAMES.concatAudioFile);
-      await task.applyAsync([
+      task.applyAsync([
         { id: input.audioFileId, overwrite: true } as z.infer<
           typeof concatAudioFileInput
         >,
@@ -276,7 +296,7 @@ export const audioRouter = createTRPCRouter({
           where: { audioFileId: input.audioFileId },
         });
         const task = client.createTask(TASK_NAMES.createAudioFileChunks);
-        await task.applyAsync([
+        task.applyAsync([
           { audioFileId: input.audioFileId, chunkSize: input.chunkSize ?? 300 },
         ]);
         await ctx.db.audioFile.update({
@@ -300,7 +320,7 @@ export const audioRouter = createTRPCRouter({
         });
       }
       const task = client.createTask(TASK_NAMES.concatAudioFile);
-      await task.applyAsync([
+      task.applyAsync([
         { id: input.audioFileId, overwrite: true } as z.infer<
           typeof concatAudioFileInput
         >,
@@ -385,10 +405,16 @@ export const audioRouter = createTRPCRouter({
         select: { public: true, deletedAt: true },
       });
       if (!existing) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Audio file not found" });
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Audio file not found",
+        });
       }
       if (existing.deletedAt) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot toggle a deleted audio file" });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Cannot toggle a deleted audio file",
+        });
       }
       const updated = await ctx.db.audioFile.update({
         where: { id: input.audioFileId },
@@ -453,6 +479,36 @@ export const audioRouter = createTRPCRouter({
         },
       });
     }),
+  fetchPartial: publicProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const audioFile = await ctx.db.audioFile.findFirst({
+        where: {
+          id: input.id,
+          deletedAt: null,
+          OR: [
+            { public: true },
+            ...(ctx.user ? [{ ownerId: ctx.user.id }] : []),
+          ],
+        },
+        select: {
+          id: true,
+          name: true,
+          status: true,
+          public: true,
+          imageUrl: true,
+          speaker: true,
+          AudioFileSettings: ctx.user
+            ? {
+                where: {
+                  userId: ctx.user.id,
+                },
+              }
+            : false,
+        },
+      });
+      return { audioFile };
+    }),
   fetch: publicProcedure
     .input(z.object({ id: z.string() }))
     .query(async ({ ctx, input }) => {
@@ -474,6 +530,25 @@ export const audioRouter = createTRPCRouter({
                 },
               }
             : false,
+        },
+      });
+      return { audioFile };
+    }),
+  fetchText: publicProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const audioFile = await ctx.db.audioFile.findFirst({
+        where: {
+          id: input.id,
+          deletedAt: null,
+          OR: [
+            { public: true },
+            ...(ctx.user ? [{ ownerId: ctx.user.id }] : []),
+          ],
+        },
+        select: {
+          id: true,
+          text: true,
         },
       });
       return { audioFile };

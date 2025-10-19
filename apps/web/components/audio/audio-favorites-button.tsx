@@ -6,7 +6,6 @@ import { Button } from "@workspace/ui/components/button";
 // Forms
 import { Loader2, StarIcon } from "lucide-react/icons";
 
-import { AudioFile } from "@workspace/database";
 import {
   Tooltip,
   TooltipContent,
@@ -14,9 +13,9 @@ import {
 } from "@workspace/ui/components/tooltip";
 import { toast } from "sonner";
 
-export function FavoriteButton({ af }: { af: AudioFile }) {
+export function FavoriteButton({ audioFileId }: { audioFileId: string }) {
   const isFavoriteQuery = api.audio.favorites.fetch.useQuery({
-    audioFileId: af.id,
+    audioFileId,
   });
 
   const addFavoriteMutation = api.audio.favorites.add.useMutation({
@@ -56,9 +55,9 @@ export function FavoriteButton({ af }: { af: AudioFile }) {
           variant="ghost"
           onClick={() => {
             if (isFavorite) {
-              removeFavoriteMutation.mutate({ audioFileId: af.id });
+              removeFavoriteMutation.mutate({ audioFileId });
             } else {
-              addFavoriteMutation.mutate({ audioFileId: af.id });
+              addFavoriteMutation.mutate({ audioFileId });
             }
           }}
         >

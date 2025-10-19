@@ -118,7 +118,7 @@ const AudioClip = memo(function AudioClip({ af }: AudioClipProps) {
   // Persist & restore position
   // ──────────────────────────
   const upsertSettings = api.audio.settings.upsert.useMutation();
-  const audioFileQuery = api.audio.fetch.useQuery(
+  const audioFileQuery = api.audio.fetchPartial.useQuery(
     { id: af.id },
     {
       refetchOnWindowFocus: false,
@@ -137,6 +137,12 @@ const AudioClip = memo(function AudioClip({ af }: AudioClipProps) {
             return false;
         }
       },
+    }
+  );
+  const audioFileText = api.audio.fetchText.useQuery(
+    { id: af.id },
+    {
+      refetchOnWindowFocus: false,
     }
   );
 
@@ -554,10 +560,10 @@ const AudioClip = memo(function AudioClip({ af }: AudioClipProps) {
         </div>
 
         <div className="flex justify-between gap-2 items-center">
-          {audioFile.text && (
+          {audioFileText.data?.audioFile?.text && (
             <span className="text-xs text-muted-foreground md:flex hidden">
               {(() => {
-                const charCount = audioFile.text.length;
+                const charCount = audioFileText.data?.audioFile.text.length;
                 const cost = ((charCount * 10) / 1_000_000).toFixed(4);
                 return `${charCount} chars - $${cost}`;
               })()}
@@ -565,12 +571,12 @@ const AudioClip = memo(function AudioClip({ af }: AudioClipProps) {
           )}
           <div className="flex gap-2 items-center">
             <div className="hidden md:block">
-              <FavoriteButton af={audioFile} />
+              <FavoriteButton audioFileId={audioFile.id} />
             </div>
             <div className="hidden md:block">
               <CopyButton
                 info={"Copy transcript"}
-                text={audioFile.text ?? ""}
+                text={audioFileText.data?.audioFile?.text ?? ""}
               />
             </div>
             {audioFile.public && <ShareButton />}
@@ -591,7 +597,7 @@ const AudioClip = memo(function AudioClip({ af }: AudioClipProps) {
               </Tooltip>
             </div>
             <div className="md:hidden">
-              <FavoriteButton af={audioFile} />
+              <FavoriteButton audioFileId={audioFile.id} />
             </div>
           </div>
         </div>
@@ -659,7 +665,7 @@ const AudioClip = memo(function AudioClip({ af }: AudioClipProps) {
       )}
 
       {/* Transcript snippet and retry are unavailable without chunk data */}
-      {audioFile.text && (
+      {audioFileText.data?.audioFile?.text && (
         <>
           <div className="w-full">
             <div
@@ -670,7 +676,7 @@ const AudioClip = memo(function AudioClip({ af }: AudioClipProps) {
               }
               style={{ wordBreak: "break-word" }}
             >
-              {audioFile.text}
+              {audioFileText.data.audioFile.text}
             </div>
             {!showFullText && (
               <button

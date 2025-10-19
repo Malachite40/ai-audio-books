@@ -5,8 +5,13 @@ import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
+import { ConfirmAudioVisibility } from "@/components/confirm-audio-visibility";
+import { LoginRequiredDialog } from "@/components/login-required-modal";
+import { NotEnoughCreditsDialog } from "@/components/not-enough-credits-modal";
+import { authClient } from "@/lib/auth-client";
+import { api } from "@/trpc/react";
 import { Speaker } from "@workspace/database";
-import { Languages } from "@workspace/trpc/client";
+import { Languages, sectionType } from "@workspace/trpc/client";
 import {
   Accordion,
   AccordionContent,
@@ -32,8 +37,11 @@ import {
   FormLabel,
   FormMessage,
 } from "@workspace/ui/components/form";
+import { Input } from "@workspace/ui/components/input";
 import {
   InputGroup,
+  InputGroupAddon,
+  InputGroupText,
   InputGroupTextarea,
 } from "@workspace/ui/components/input-group";
 import { ScrollArea } from "@workspace/ui/components/scroll-area";
@@ -44,7 +52,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@workspace/ui/components/select";
-import { Clipboard, Settings2, Wand2 } from "lucide-react";
+import { cn } from "@workspace/ui/lib/utils";
+import { Settings2, Wand2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 /* -----------------------------------------------------
    Types & Schema
@@ -54,6 +65,7 @@ export type AdvancedAudioFormProps = {
 };
 
 const Schema = z.object({
+  name: z.string().min(2).max(100),
   speakerId: z.string().uuid({ message: "Please select a speaker." }),
   text: z.string().min(1, "Please paste some text."),
 });
@@ -131,7 +143,8 @@ function normalizeForTTS(text: string, options?: NormalizeOptions) {
 
 type Chapter = {
   index: number;
-  header: string;
+  title: string;
+  type: z.infer<typeof sectionType>;
   startLine: number;
   endLine: number;
   preview: string;
@@ -147,10 +160,24 @@ function toTitleCaseSafe(s: string) {
 
 type HeaderHit = { ok: boolean; strength: number; normalized: string };
 
+function classifyHeaderType(header: string): Chapter["type"] {
+  const h = header.trim().toLowerCase();
+  if (/^chapter\b/.test(h)) return "chapter";
+  if (/^prolog(?:ue)?\b/.test(h)) return "prologue";
+  if (/^epilog(?:ue)?\b/.test(h)) return "epilogue";
+  if (/^preface\b/.test(h)) return "preface";
+  if (/^foreword\b/.test(h)) return "foreword";
+  if (/^part\b/.test(h)) return "part";
+  if (/^book\b/.test(h)) return "book";
+  if (/^scene break\b/.test(h)) return "scene";
+  if (/^\d+(?:\.\d+)+\b/.test(h)) return "section";
+  return "other";
+}
+
 const RE_CHAPTER_STRONG = [
   /^(?:chapter|cap[ií]tulo|kapitel|chapitre|capitolo)\s+[ivxlcdm\d]+\b(?:\s*[-–—:]\s*\S.*)?$/i,
   /^(?:part|book)\s+[ivxlcdm\d]+\b(?:\s*[-–—:]\s*\S.*)?$/i,
-  /^(?:prologue|epilogue|preface|foreword)\b(?:\s*[-–—:]\s*\S.*)?$/i,
+  /^(?:prologue|epilogue|preface|foreword|epilog)\b(?:\s*[-–—:]\s*\S.*)?$/i,
   /^\d+(?:\.\d+)+\s*[-–—:]?\s+\S.+$/,
 ];
 
@@ -243,7 +270,7 @@ function extractChapters(normalized: string): {
   }
 
   const chaptersBase: Array<
-    Pick<Chapter, "index" | "header" | "startLine" | "preview"> & {
+    Pick<Chapter, "index" | "title" | "type" | "startLine" | "preview"> & {
       headerLine: number; // original header line index; -1 if synthetic
     }
   > = [];
@@ -251,7 +278,8 @@ function extractChapters(normalized: string): {
     const firstNonEmpty = lines.find((l) => (l ?? "").trim())?.trim() ?? "";
     chaptersBase.push({
       index: 1,
-      header: "Chapter 1",
+      title: "Chapter 1",
+      type: "chapter",
       startLine: 0,
       preview: firstNonEmpty,
       headerLine: -1,
@@ -268,9 +296,11 @@ function extractChapters(normalized: string): {
         preview = t;
         break;
       }
+      const normalizedTitle = k.header.replace(/^(\*|#|\-)+$/g, "Scene Break");
       chaptersBase.push({
         index: n + 1,
-        header: k.header.replace(/^(\*|#|\-)+$/g, "Scene Break"),
+        title: normalizedTitle,
+        type: classifyHeaderType(normalizedTitle),
         startLine: k.i,
         preview,
         headerLine: k.h,
@@ -310,9 +340,9 @@ function extractChapters(normalized: string): {
   });
 
   const titleCandidate =
-    chapters[0]?.header &&
-    /chapter|prologue|part|book|scene/i.test(chapters[0]!.header)
-      ? chapters[0]!.header
+    chapters[0]?.title &&
+    /chapter|prologue|part|book|scene/i.test(chapters[0]!.title)
+      ? chapters[0]!.title
       : (lines[0]?.trim() ?? "Untitled Audio");
   const title = toTitleCaseSafe(titleCandidate);
   return { title, chapters };
@@ -324,40 +354,28 @@ function extractChapters(normalized: string): {
 const countWords = (s: string) => (s.trim() ? s.trim().split(/\s+/).length : 0);
 const estReadMin = (s: string) => Math.max(1, Math.round(countWords(s) / 200));
 
-function useLocalStorageState<T>(key: string, initial: T) {
-  const [state, setState] = useState<T>(() => {
-    if (typeof window === "undefined") return initial;
-    try {
-      const raw = window.localStorage.getItem(key);
-      return raw ? (JSON.parse(raw) as T) : initial;
-    } catch {
-      return initial;
-    }
-  });
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(key, JSON.stringify(state));
-    } catch {}
-  }, [key, state]);
-  return [state, setState] as const;
-}
-
 /* -----------------------------------------------------
    Component (Overhauled)
 ----------------------------------------------------- */
 export function AdvancedAudioForm({ speakers }: AdvancedAudioFormProps) {
+  const router = useRouter();
   const form = useForm<z.infer<typeof Schema>>({
     resolver: zodResolver(Schema),
     defaultValues: {
+      name: "",
       speakerId: speakers?.[0]?.id ?? "",
       text: "",
     },
     mode: "onChange",
   });
-
-  const [normOpts, setNormOpts] = useLocalStorageState<
-    Required<NormalizeOptions>
-  >("tts_norm_opts:v1", defaultNormalizeOptions);
+  const { data: userData } = authClient.useSession();
+  const isLoggedIn = !!userData?.session;
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [showLogin, setShowLogin] = useState(false);
+  const [showCredits, setShowCredits] = useState(false);
+  const [normOpts, setNormOpts] = useState<Required<NormalizeOptions>>(
+    defaultNormalizeOptions
+  );
 
   const rawText = form.watch("text") ?? "";
   const selectedSpeakerId = form.watch("speakerId") ?? "";
@@ -406,11 +424,7 @@ export function AdvancedAudioForm({ speakers }: AdvancedAudioFormProps) {
     return () => clearTimeout(id);
   }, [rawText, normOpts]);
 
-  const { title, chapters } = useMemo(
-    () => extractChapters(normalized),
-    [normalized]
-  );
-  const lines = useMemo(() => normalized.split("\n"), [normalized]);
+  const { chapters } = useMemo(() => extractChapters(normalized), [normalized]);
   const chapterBlocks = useMemo(
     () =>
       chapters.map((c) => {
@@ -437,19 +451,13 @@ export function AdvancedAudioForm({ speakers }: AdvancedAudioFormProps) {
     return () => window.removeEventListener("keydown", onKey);
   }, [normalized, chapters.length]);
 
-  const resetAll = () => {
-    form.reset({ speakerId: speakers?.[0]?.id ?? "", text: "" });
-  };
+  const creditsQuery = api.credits.fetch.useQuery();
 
-  const downloadTxt = () => {
-    const blob = new Blob([normalized], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${title || "normalized"}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+  const availableCredits = userData
+    ? (creditsQuery.data?.credits?.amount ?? 0)
+    : 9999999999;
+  const requiredCredits = form.watch("text").length;
+  const overCharacterLimit = requiredCredits > availableCredits;
 
   const stats = useMemo(
     () => ({
@@ -461,333 +469,440 @@ export function AdvancedAudioForm({ speakers }: AdvancedAudioFormProps) {
     [normalized, chapters.length]
   );
 
+  const createAudioFile = api.audio.inworld.createFromChapters.useMutation({
+    onSuccess: (data) => {
+      router.push(`/audio-file/${data.audioFile.id}`);
+    },
+    onError: (error) => {
+      console.error("Error creating audio file:", error);
+      toast("Error", {
+        description: error.message,
+        duration: 6000,
+      });
+    },
+  });
+
   /* -----------------------------------------------------
      UI
   ----------------------------------------------------- */
   return (
-    <div className="space-y-6">
-      {/* Toolbar */}
-      <div className="flex flex-col gap-2 rounded-xl border bg-background/80 p-2 supports-[backdrop-filter]:bg-background/60 backdrop-blur md:flex-row md:items-center">
-        <div className="min-w-0 flex items-center gap-2 text-xs sm:text-sm overflow-x-auto whitespace-nowrap pr-1">
-          <Wand2 className="h-4 w-4" />
-          <span className="font-medium">Advanced Tools</span>
-          <span className="mx-1 text-muted-foreground hidden sm:inline">•</span>
-          <span className="text-muted-foreground">
-            {stats.words.toLocaleString()} words
-          </span>
-          <span className="mx-1 text-muted-foreground hidden sm:inline">•</span>
-          <span className="text-muted-foreground">
-            ~{stats.readMin} min read
-          </span>
-          <span className="mx-1 text-muted-foreground hidden sm:inline">•</span>
-          <span className="text-muted-foreground">
-            {stats.chapters} chapters
-          </span>
+    <>
+      {/* Popups */}
+      <LoginRequiredDialog open={showLogin} onOpenChange={setShowLogin} />
+      <NotEnoughCreditsDialog
+        open={showCredits}
+        onOpenChange={setShowCredits}
+        needed={requiredCredits}
+        available={availableCredits}
+      />
+      {/* Visibility confirmation */}
+      <ConfirmAudioVisibility
+        open={showConfirm}
+        onOpenChange={setShowConfirm}
+        onCancel={async () => {}}
+        onConfirm={async ({ isPublic }) => {
+          const vals = form.getValues();
+          const finalName = (vals.name && vals.name.trim()) || "Untitled Audio";
+
+          createAudioFile.mutate({
+            ...vals,
+            name: finalName,
+            public: !!isPublic,
+            chapters: chapters.map((chapter) => ({
+              text: chapter.body,
+              type: chapter.type,
+              title: chapter.title,
+            })),
+            speakerId: vals.speakerId,
+            text: vals.text,
+          });
+        }}
+      />
+      <div className="space-y-6">
+        {/* Toolbar */}
+        <div className="flex flex-col gap-2 rounded-xl border bg-background/80 p-2 supports-[backdrop-filter]:bg-background/60 backdrop-blur md:flex-row md:items-center">
+          <div className="min-w-0 flex items-center gap-2 text-xs sm:text-sm overflow-x-auto whitespace-nowrap pr-1">
+            <Wand2 className="h-4 w-4" />
+            <span className="font-medium">Advanced Tools</span>
+            <span className="mx-1 text-muted-foreground hidden sm:inline">
+              •
+            </span>
+            <span className="text-muted-foreground">
+              {stats.words.toLocaleString()} words
+            </span>
+            <span className="mx-1 text-muted-foreground hidden sm:inline">
+              •
+            </span>
+            <span className="text-muted-foreground">
+              ~{stats.readMin} min read
+            </span>
+            <span className="mx-1 text-muted-foreground hidden sm:inline">
+              •
+            </span>
+            <span className="text-muted-foreground">
+              {stats.chapters} chapters
+            </span>
+          </div>
+          <div className="md:ml-auto flex flex-wrap gap-2 w-full md:w-auto justify-start md:justify-end">
+            <Button
+              onClick={() => {
+                setShowConfirm(true);
+              }}
+            >
+              Create
+            </Button>
+          </div>
         </div>
-        <div className="md:ml-auto flex flex-wrap gap-2 w-full md:w-auto justify-start md:justify-end">
-          <Button
-            type="button"
-            size="sm"
-            className="w-full md:w-auto"
-            disabled={!normalized}
-            onClick={() => {
-              try {
-                const json = JSON.stringify(chapters);
-                navigator.clipboard.writeText(json).catch(() => {});
-              } catch {
-                // Fallback: copy normalized text if something goes wrong
-                navigator.clipboard.writeText(normalized).catch(() => {});
-              }
+
+        {/* Input */}
+        <Form {...form}>
+          <form
+            className="grid grid-cols-1 gap-4 lg:grid-cols-12"
+            onSubmit={(e) => {
+              e.preventDefault();
             }}
           >
-            <Clipboard className="mr-2 h-4 w-4" /> Copy Parsed
-          </Button>
-        </div>
-      </div>
-
-      {/* Input */}
-      <Form {...form}>
-        <form
-          className="grid grid-cols-1 gap-4 lg:grid-cols-12"
-          onSubmit={(e) => e.preventDefault()}
-        >
-          {/* Left: Controls */}
-          <div className="space-y-4 lg:col-span-4">
-            {/* Language */}
-            <div className="flex flex-col gap-2">
-              <FormLabel>Language</FormLabel>
-              <Select
-                value={languageFilter}
-                onValueChange={(v) => {
-                  setLanguageFilter(v as (typeof Languages)[number]);
-                  const match = speakers.find((s) => s.language === v);
-                  if (match) {
-                    form.setValue("speakerId", match.id, {
-                      shouldDirty: true,
-                      shouldValidate: true,
-                    });
-                  }
-                }}
-              >
-                <SelectTrigger
+            {/* Left: Controls */}
+            <div className="space-y-4 lg:col-span-4">
+              {/* Language */}
+              <div className="flex flex-col gap-2">
+                <FormLabel>Language</FormLabel>
+                <Select
                   value={languageFilter}
-                  className="capitalize w-full"
+                  onValueChange={(v) => {
+                    setLanguageFilter(v as (typeof Languages)[number]);
+                    const match = speakers.find((s) => s.language === v);
+                    if (match) {
+                      form.setValue("speakerId", match.id, {
+                        shouldDirty: true,
+                        shouldValidate: true,
+                      });
+                    }
+                  }}
                 >
-                  <SelectValue placeholder="Select language" />
-                </SelectTrigger>
-                <SelectContent>
-                  {Languages.map((lang) => (
-                    <SelectItem className="capitalize" key={lang} value={lang}>
-                      {lang.toLocaleLowerCase()}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Speaker (filtered by language) */}
-            <FormField
-              control={form.control}
-              name="speakerId"
-              render={({ field, fieldState }) => (
-                <FormItem>
-                  <FormLabel>Speaker</FormLabel>
-                  <FormControl>
-                    <Select
-                      value={field.value ?? ""}
-                      onValueChange={(v) => field.onChange(v)}
-                      disabled={filteredSpeakers.length === 0}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue
-                          placeholder={
-                            filteredSpeakers.length === 0
-                              ? "No speakers in this language"
-                              : "Select a speaker"
-                          }
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {filteredSpeakers.map((s) => (
-                          <SelectItem key={s.id} value={s.id}>
-                            {(s as any).displayName ?? s.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </FormControl>
-                  {fieldState.error && <FormMessage />}
-                </FormItem>
-              )}
-            />
-
-            {/* Normalization (Dropdown) */}
-            <div className="rounded-xl border p-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-sm font-medium">
-                  <Settings2 className="h-4 w-4" /> Normalization
-                </div>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      aria-label="Normalization options"
-                      className="h-7 px-2 text-xs"
-                    >
-                      Options
-                      <Badge variant="secondary" className="ml-2 px-1.5 py-0">
-                        {Object.values(normOpts).filter(Boolean).length}
-                      </Badge>
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-64">
-                    <DropdownMenuCheckboxItem
-                      checked={normOpts.asciiQuotes}
-                      onCheckedChange={(v) =>
-                        setNormOpts({ ...normOpts, asciiQuotes: Boolean(v) })
-                      }
-                    >
-                      ASCII quotes
-                    </DropdownMenuCheckboxItem>
-
-                    <DropdownMenuCheckboxItem
-                      checked={normOpts.collapseDashes}
-                      onCheckedChange={(v) =>
-                        setNormOpts({ ...normOpts, collapseDashes: Boolean(v) })
-                      }
-                    >
-                      Collapse em/en dashes
-                    </DropdownMenuCheckboxItem>
-
-                    <DropdownMenuCheckboxItem
-                      checked={normOpts.normalizeEllipsis}
-                      onCheckedChange={(v) =>
-                        setNormOpts({
-                          ...normOpts,
-                          normalizeEllipsis: Boolean(v),
-                        })
-                      }
-                    >
-                      Normalize ellipsis
-                    </DropdownMenuCheckboxItem>
-
-                    <DropdownMenuCheckboxItem
-                      checked={
-                        normOpts.collapseSpaces && normOpts.collapseBlankLines
-                      }
-                      onCheckedChange={(v) =>
-                        setNormOpts({
-                          ...normOpts,
-                          collapseSpaces: Boolean(v),
-                          collapseBlankLines: Boolean(v),
-                        })
-                      }
-                    >
-                      Collapse spaces & blank lines
-                    </DropdownMenuCheckboxItem>
-
-                    <DropdownMenuCheckboxItem
-                      checked={normOpts.stripZeroWidth && normOpts.stripControl}
-                      onCheckedChange={(v) =>
-                        setNormOpts({
-                          ...normOpts,
-                          stripZeroWidth: Boolean(v),
-                          stripControl: Boolean(v),
-                        })
-                      }
-                    >
-                      Strip zero-width & control
-                    </DropdownMenuCheckboxItem>
-
-                    <DropdownMenuCheckboxItem
-                      checked={normOpts.tabsToSpace && normOpts.normalizeNbsp}
-                      onCheckedChange={(v) =>
-                        setNormOpts({
-                          ...normOpts,
-                          tabsToSpace: Boolean(v),
-                          normalizeNbsp: Boolean(v),
-                        })
-                      }
-                    >
-                      Tabs → spaces & NBSP → space
-                    </DropdownMenuCheckboxItem>
-
-                    <DropdownMenuCheckboxItem
-                      checked={normOpts.trim}
-                      onCheckedChange={(v) =>
-                        setNormOpts({ ...normOpts, trim: Boolean(v) })
-                      }
-                    >
-                      Trim
-                    </DropdownMenuCheckboxItem>
-
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onClick={() => setNormOpts(defaultNormalizeOptions)}
-                    >
-                      Reset defaults
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                  <SelectTrigger
+                    value={languageFilter}
+                    className="capitalize w-full"
+                  >
+                    <SelectValue placeholder="Select language" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Languages.map((lang) => (
+                      <SelectItem
+                        className="capitalize"
+                        key={lang}
+                        value={lang}
+                      >
+                        {lang.toLocaleLowerCase()}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-            </div>
 
-            {/* Chapters (improved layout) */}
-            <Card className="p-3 gap-2">
-              <div className="mb-2 flex items-center justify-between">
-                <div className="text-sm font-medium">Chapters</div>
-                <Badge variant="secondary" className="px-2 py-0 text-xs">
-                  {chapters.length}
-                </Badge>
-              </div>
-              {!normalized ? (
-                <div className="text-sm text-muted-foreground">
-                  No text yet.
-                </div>
-              ) : chapters.length === 0 ? (
-                <div className="text-sm text-muted-foreground">
-                  No chapters detected.
-                </div>
-              ) : (
-                <ScrollArea className="h-72 overflow-x-hidden">
-                  {/* This wrapper neutralizes the display:table/min-width:100% sizing */}
-                  <div className="w-full min-w-0">
-                    <Accordion
-                      type="single"
-                      collapsible
-                      className="pr-2 w-full"
-                    >
-                      {chapterBlocks.map((c) => (
-                        <AccordionItem
-                          key={`${c.startLine}-${c.index}`}
-                          value={`c-${c.index}`}
-                        >
-                          <AccordionTrigger className="w-full overflow-hidden py-2 hover:no-underline">
-                            <div className="flex min-w-0 flex-1 items-center gap-3 text-left">
-                              <div className="flex size-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-medium text-muted-foreground">
-                                {c.index}
-                              </div>
+              {/* Speaker (filtered by language) */}
+              <FormField
+                control={form.control}
+                name="speakerId"
+                render={({ field, fieldState }) => (
+                  <FormItem>
+                    <FormLabel>Speaker</FormLabel>
+                    <FormControl>
+                      <Select
+                        value={field.value ?? ""}
+                        onValueChange={(v) => field.onChange(v)}
+                        disabled={filteredSpeakers.length === 0}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue
+                            placeholder={
+                              filteredSpeakers.length === 0
+                                ? "No speakers in this language"
+                                : "Select a speaker"
+                            }
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {filteredSpeakers.map((s) => (
+                            <SelectItem key={s.id} value={s.id}>
+                              {(s as any).displayName ?? s.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormControl>
+                    {fieldState.error && <FormMessage />}
+                  </FormItem>
+                )}
+              />
 
-                              {/* make this column shrinkable */}
-                              <div className="flex min-w-0 basis-0 flex-1 flex-col">
-                                {/* actual truncation target */}
-                                <div className="truncate text-sm font-medium max-w-full">
-                                  {c.header}
-                                </div>
-                                <div className="text-xs text-muted-foreground">
-                                  {c.words.toLocaleString()} words • ~
-                                  {c.readMin} min
-                                </div>
-                              </div>
-                            </div>
-                          </AccordionTrigger>
-
-                          <AccordionContent className="pb-3">
-                            {c.body ? (
-                              <div className="line-clamp-3 whitespace-pre-wrap text-xs text-muted-foreground">
-                                {c.body}
-                              </div>
-                            ) : null}
-                          </AccordionContent>
-                        </AccordionItem>
-                      ))}
-                    </Accordion>
+              {/* Normalization (Dropdown) */}
+              <div className="rounded-xl border p-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm font-medium">
+                    <Settings2 className="h-4 w-4" /> Normalization
                   </div>
-                </ScrollArea>
-              )}
-            </Card>
-          </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        aria-label="Normalization options"
+                        className="h-7 px-2 text-xs"
+                      >
+                        Options
+                        <Badge variant="secondary" className="ml-2 px-1.5 py-0">
+                          {Object.values(normOpts).filter(Boolean).length}
+                        </Badge>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-64">
+                      <DropdownMenuCheckboxItem
+                        checked={normOpts.asciiQuotes}
+                        onCheckedChange={(v) =>
+                          setNormOpts({ ...normOpts, asciiQuotes: Boolean(v) })
+                        }
+                      >
+                        ASCII quotes
+                      </DropdownMenuCheckboxItem>
 
-          {/* Right: Textarea */}
-          <div className="lg:col-span-8">
-            <FormField
-              control={form.control}
-              name="text"
-              render={({ field, fieldState }) => (
-                <FormItem>
-                  <FormLabel>Raw Text</FormLabel>
-                  <FormControl>
-                    <InputGroup>
-                      <InputGroupTextarea
-                        className="h-[70vh] max-h-[80vh]"
-                        rows={10}
-                        placeholder="Paste your chaptered text here…"
+                      <DropdownMenuCheckboxItem
+                        checked={normOpts.collapseDashes}
+                        onCheckedChange={(v) =>
+                          setNormOpts({
+                            ...normOpts,
+                            collapseDashes: Boolean(v),
+                          })
+                        }
+                      >
+                        Collapse em/en dashes
+                      </DropdownMenuCheckboxItem>
+
+                      <DropdownMenuCheckboxItem
+                        checked={normOpts.normalizeEllipsis}
+                        onCheckedChange={(v) =>
+                          setNormOpts({
+                            ...normOpts,
+                            normalizeEllipsis: Boolean(v),
+                          })
+                        }
+                      >
+                        Normalize ellipsis
+                      </DropdownMenuCheckboxItem>
+
+                      <DropdownMenuCheckboxItem
+                        checked={
+                          normOpts.collapseSpaces && normOpts.collapseBlankLines
+                        }
+                        onCheckedChange={(v) =>
+                          setNormOpts({
+                            ...normOpts,
+                            collapseSpaces: Boolean(v),
+                            collapseBlankLines: Boolean(v),
+                          })
+                        }
+                      >
+                        Collapse spaces & blank lines
+                      </DropdownMenuCheckboxItem>
+
+                      <DropdownMenuCheckboxItem
+                        checked={
+                          normOpts.stripZeroWidth && normOpts.stripControl
+                        }
+                        onCheckedChange={(v) =>
+                          setNormOpts({
+                            ...normOpts,
+                            stripZeroWidth: Boolean(v),
+                            stripControl: Boolean(v),
+                          })
+                        }
+                      >
+                        Strip zero-width & control
+                      </DropdownMenuCheckboxItem>
+
+                      <DropdownMenuCheckboxItem
+                        checked={normOpts.tabsToSpace && normOpts.normalizeNbsp}
+                        onCheckedChange={(v) =>
+                          setNormOpts({
+                            ...normOpts,
+                            tabsToSpace: Boolean(v),
+                            normalizeNbsp: Boolean(v),
+                          })
+                        }
+                      >
+                        Tabs → spaces & NBSP → space
+                      </DropdownMenuCheckboxItem>
+
+                      <DropdownMenuCheckboxItem
+                        checked={normOpts.trim}
+                        onCheckedChange={(v) =>
+                          setNormOpts({ ...normOpts, trim: Boolean(v) })
+                        }
+                      >
+                        Trim
+                      </DropdownMenuCheckboxItem>
+
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={() => setNormOpts(defaultNormalizeOptions)}
+                      >
+                        Reset defaults
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </div>
+
+              {/* Chapters (improved layout) */}
+              <Card className="p-3 gap-2">
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="text-sm font-medium">Chapters</div>
+                  <Badge variant="secondary" className="px-2 py-0 text-xs">
+                    {chapters.length}
+                  </Badge>
+                </div>
+                {!normalized ? (
+                  <div className="text-sm text-muted-foreground">
+                    No text yet.
+                  </div>
+                ) : chapters.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">
+                    No chapters detected.
+                  </div>
+                ) : (
+                  <ScrollArea className="h-72 overflow-x-hidden">
+                    {/* This wrapper neutralizes the display:table/min-width:100% sizing */}
+                    <div className="w-full min-w-0">
+                      <Accordion
+                        type="single"
+                        collapsible
+                        className="pr-2 w-full"
+                      >
+                        {chapterBlocks.map((c) => (
+                          <AccordionItem
+                            key={`${c.startLine}-${c.index}`}
+                            value={`c-${c.index}`}
+                          >
+                            <AccordionTrigger className="w-full overflow-hidden py-2 hover:no-underline">
+                              <div className="flex min-w-0 flex-1 items-center gap-3 text-left">
+                                <div className="flex size-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-medium text-muted-foreground">
+                                  {c.index}
+                                </div>
+
+                                {/* make this column shrinkable */}
+                                <div className="flex min-w-0 basis-0 flex-1 flex-col">
+                                  {/* actual truncation target */}
+                                  <div className="truncate text-sm font-medium max-w-full">
+                                    {c.title}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {c.words.toLocaleString()} words • ~
+                                    {c.readMin} min
+                                  </div>
+                                </div>
+                              </div>
+                            </AccordionTrigger>
+
+                            <AccordionContent className="pb-3">
+                              {c.body ? (
+                                <div className="line-clamp-3 whitespace-pre-wrap text-xs text-muted-foreground">
+                                  {c.body}
+                                </div>
+                              ) : null}
+                            </AccordionContent>
+                          </AccordionItem>
+                        ))}
+                      </Accordion>
+                    </div>
+                  </ScrollArea>
+                )}
+              </Card>
+            </div>
+
+            {/* Right: Title and Textarea */}
+            <div className="lg:col-span-8">
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem className={cn("mb-4 md:max-w-96")}>
+                    <FormLabel>
+                      Title
+                      <span className="text-muted-foreground font-normal">
+                        (optional)
+                      </span>
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="e.g., My Morning Affirmations"
                         {...field}
                         value={field.value ?? ""}
-                        aria-label="Raw text input"
                       />
-                    </InputGroup>
-                  </FormControl>
-                  {fieldState.error && <FormMessage />}
-                </FormItem>
-              )}
-            />
-          </div>
-        </form>
-      </Form>
-    </div>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="text"
+                render={({ field, fieldState }) => (
+                  <FormItem>
+                    <FormLabel>Raw Text</FormLabel>
+                    <FormControl>
+                      <InputGroup>
+                        <InputGroupTextarea
+                          className="h-[70vh] max-h-[70vh]"
+                          rows={10}
+                          placeholder="Paste your chaptered text here…"
+                          {...field}
+                          value={field.value ?? ""}
+                          aria-label="Raw text input"
+                        />
+
+                        {/* Add-on with your credit/loader text */}
+                        <InputGroupAddon align="block-end">
+                          {/* Keep it tiny + responsive like your original (hidden on mobile) */}
+                          <div
+                            className="flex gap-2 items-end justify-end"
+                            aria-live="polite"
+                          >
+                            {(requiredCredits > 0 ||
+                              creditsQuery.data?.credits) && (
+                              <InputGroupText
+                                className={cn(
+                                  "text-xs ml-auto",
+                                  overCharacterLimit
+                                    ? "text-amber-600"
+                                    : "text-muted-foreground"
+                                )}
+                              >
+                                {requiredCredits > 0
+                                  ? `${requiredCredits} Credits - $${(
+                                      (requiredCredits * 10) /
+                                      1_000_000
+                                    ).toFixed(4)}`
+                                  : "0"}
+                                {typeof availableCredits === "number" &&
+                                  isLoggedIn &&
+                                  ` |  Remaining Credits: ${availableCredits}`}
+                              </InputGroupText>
+                            )}
+                          </div>
+                        </InputGroupAddon>
+                      </InputGroup>
+                    </FormControl>
+                    {fieldState.error && <FormMessage />}
+                  </FormItem>
+                )}
+              />
+            </div>
+          </form>
+        </Form>
+      </div>
+    </>
   );
 }
 

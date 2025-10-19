@@ -5,7 +5,6 @@ import { ConfirmAudioVisibility } from "@/components/confirm-audio-visibility";
 import ExampleAudioToggle from "@/components/example-audio-toggle";
 import { LoginRequiredDialog } from "@/components/login-required-modal";
 import { NotEnoughCreditsDialog } from "@/components/not-enough-credits-modal";
-import Logo from "@/components/svgs/logo";
 import { authClient } from "@/lib/auth-client";
 import { useNewAudioFormStore } from "@/store/use-new-audio-form-store";
 import { api } from "@/trpc/react";
@@ -191,11 +190,6 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
     []
   );
 
-  const [selectedAudioFileId, setSelectedAudioFileId] = useQueryState(
-    "id",
-    parseAsString.withDefault("").withOptions({})
-  );
-
   // Auth state
   const { data: userData } = authClient.useSession();
   const isLoggedIn = !!userData?.session;
@@ -215,7 +209,6 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
   });
 
   // Queries
-  const audioFile = api.audio.fetch.useQuery({ id: selectedAudioFileId });
   const creditsQuery = api.credits.fetch.useQuery();
 
   const initialLanguage: (typeof Languages)[number] = useMemo(() => {
@@ -350,7 +343,21 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
     form,
   ]);
 
-  const createAudioFile = api.audio.inworld.create.useMutation({
+  const createAudioFile = api.audio.inworld.createFromCopy.useMutation({
+    onSuccess: (data) => {
+      router.push(`/audio-file/${data.audioFile.id}`);
+      resetStore();
+    },
+    onError: (error) => {
+      console.error("Error creating audio file:", error);
+      toast("Error", {
+        description: error.message,
+        duration: 6000,
+      });
+    },
+  });
+
+  const createAudioFileFromAi = api.audio.inworld.createFromAi.useMutation({
     onSuccess: (data) => {
       router.push(`/audio-file/${data.audioFile.id}`);
       resetStore();
@@ -493,9 +500,17 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
             suggestedTitle ||
             "Untitled Audio";
 
+          if (mode === "ai") {
+            createAudioFileFromAi.mutate({
+              ...vals,
+              name: finalName,
+              public: !!isPublic,
+            });
+            return;
+          }
+
           createAudioFile.mutate({
             ...vals,
-            mode: mode as "copy" | "ai",
             name: finalName,
             public: !!isPublic,
           });
@@ -503,35 +518,6 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
       />
 
       <div className="container mx-auto p-4 flex flex-col md:justify-center max-w-5xl">
-        {/* Loading State */}
-        {audioFile.isLoading && selectedAudioFileId.length > 0 && (
-          <div className="mb-4 w-full gap-4 text-primary justify-center flex items-center flex-col animate-pulse duration-100">
-            <p className="mb-4">Loading...</p>
-          </div>
-        )}
-
-        {/* Error page: Create new audio file */}
-        {!audioFile.isLoading &&
-          !audioFile.data?.audioFile &&
-          selectedAudioFileId.length > 0 && (
-            <div className="mb-4 w-full justify-center flex items-center flex-col">
-              <Logo className="size-30 fill-primary" />
-              <p className="mb-4">No audio file found.</p>
-              <Button
-                className="flex gap-2"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setSelectedAudioFileId("");
-                }}
-                variant={"outline"}
-              >
-                <AudioLinesIcon className="h-4 w-4" />
-                Create New Audio File
-              </Button>
-            </div>
-          )}
-
         {/* STEP 1: Choose how to start */}
         {!mode && (
           <div className="mb-8">
@@ -606,9 +592,7 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
         {/* STEP 2 (both modes): Create new audio file form */}
         {mode && mode !== "advanced" && (
           <Form {...form}>
-            <form
-              className={cn(selectedAudioFileId.length > 0 ? "hidden" : "")}
-            >
+            <form>
               {/* Back to mode selection */}
               <div className="mb-2">
                 <Button
@@ -918,13 +902,14 @@ const NewAudioClient = ({ speakers }: { speakers: Speaker[] }) => {
                   onClick={handleCreateClick}
                   disabled={
                     createAudioFile.isPending ||
+                    createAudioFileFromAi.isPending ||
                     !form.formState.isValid ||
                     !form.getValues("speakerId") ||
                     filteredSpeakers.length === 0
                   }
                 >
                   <AudioLinesIcon className="h-4 w-4" />
-                  {createAudioFile.isPending
+                  {createAudioFile.isPending || createAudioFileFromAi.isPending
                     ? "Synthesizing..."
                     : "Create Audio"}
                 </Button>

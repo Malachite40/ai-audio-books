@@ -4,6 +4,7 @@ const TASK_NAMES = {
   processAudioFile: "tasks.processAudioFile",
   concatAudioFile: "tasks.concatAudioFile",
   createAudioFileChunks: "tasks.createAudioFileChunks",
+  createAudioFileChunksFromChapters: "tasks.createAudioFileChunksFromChapters",
   ai: {
     generateStory: "tasks.ai.generateStory",
     generateImage: "tasks.ai.generateImage",
