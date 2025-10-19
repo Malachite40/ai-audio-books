@@ -21,6 +21,7 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import type { ReadableStream as NodeWebReadableStream } from "node:stream/web";
 import pLimit from "p-limit";
+import { forceGarbageCollection } from "../lib/garbage";
 import { detectMime, getAudioDurationMs } from "../lib/utils/audio";
 import {
   buildChunks,
@@ -396,6 +397,8 @@ export const workersRouter = createTRPCRouter({
         where: { id: audioFile.id },
         data: { status: "PROCESSED" },
       });
+
+      forceGarbageCollection();
 
       console.log(
         `[concat] done in ${Date.now() - startTime}ms, wrote ~${(totalBytes / (1024 * 1024)).toFixed(1)} MB`
