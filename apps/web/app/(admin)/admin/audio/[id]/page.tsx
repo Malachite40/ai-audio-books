@@ -4,6 +4,7 @@ import { Badge } from "@workspace/ui/components/badge";
 import { AdminAudioFileActions } from "../../_components/admin-audio-file-actions";
 import type { Route } from "next";
 import { AudioChunksTable } from "./_components/audio-chunks-table";
+import { formatDurationHMS } from "../../_components/format-duration";
 
 type tParams = Promise<{ id: string }>; 
 
@@ -34,7 +35,7 @@ export default async function AdminAudioDetailPage({
               </span>
               <span>Owner: {audioFile.owner?.name || audioFile.owner?.email || "—"}</span>
               <span>Public: {audioFile.public ? "Yes" : "No"}</span>
-              <span>Duration: {Math.round((audioFile.durationMs ?? 0) / 1000)}s</span>
+              <span>Duration: {formatDurationHMS(audioFile.durationMs)}</span>
               <span>Created: {new Date(audioFile.createdAt as any).toLocaleString()}</span>
             </div>
           </div>

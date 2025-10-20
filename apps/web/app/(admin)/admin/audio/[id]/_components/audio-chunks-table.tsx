@@ -21,6 +21,7 @@ import {
 } from "@workspace/ui/components/table";
 import { Loader } from "lucide-react";
 import { useMemo, useState } from "react";
+import { formatDurationHMS } from "../../../_components/format-duration";
 
 const PAGE_SIZE = 50;
 const CHUNK_STATUSES = ["PENDING", "PROCESSING", "PROCESSED", "ERROR"] as const;
@@ -99,7 +100,7 @@ export function AudioChunksTable({ audioFileId }: { audioFileId: string }) {
             <TableRow key={c.id}>
               <TableCell>{c.sequence}</TableCell>
               <TableCell>{c.status}</TableCell>
-              <TableCell>{Math.round((c.durationMs ?? 0) / 1000)}s</TableCell>
+              <TableCell>{formatDurationHMS(c.durationMs)}</TableCell>
               <TableCell>
                 {c.paddingStartMs} / {c.paddingEndMs}
               </TableCell>
@@ -149,4 +150,3 @@ export function AudioChunksTable({ audioFileId }: { audioFileId: string }) {
     </Card>
   );
 }
-

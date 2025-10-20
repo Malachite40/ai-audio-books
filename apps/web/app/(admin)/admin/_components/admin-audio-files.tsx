@@ -25,6 +25,7 @@ import Link from "next/link";
 import type { Route } from "next";
 import { useMemo, useState } from "react";
 import { AdminAudioFileActions } from "./admin-audio-file-actions";
+import { formatDurationHMS } from "./format-duration";
  
 
 const PAGE_SIZE = 20;
@@ -157,7 +158,7 @@ export function AdminAudioFilesCard() {
                 </div>
               </TableCell>
               <TableCell>{af.public ? "Yes" : "No"}</TableCell>
-              <TableCell>{Math.round((af.durationMs ?? 0) / 1000)}s</TableCell>
+              <TableCell>{formatDurationHMS(af.durationMs)}</TableCell>
               <TableCell>
                 {af.createdAt instanceof Date
                   ? af.createdAt.toLocaleString()
