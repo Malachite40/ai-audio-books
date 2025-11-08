@@ -1,4 +1,5 @@
 import { Geist, Geist_Mono } from "next/font/google";
+import { Suspense } from "react";
 
 import { Providers } from "@/components/providers";
 import RedditPixel from "@/components/RedditPixel";
@@ -39,7 +40,9 @@ export default function RootLayout({
       <body
         className={`${fontSans.variable} ${fontMono.variable} font-sans antialiased w-full`}
       >
-        <RedditPixel />
+        <Suspense fallback={null}>
+          <RedditPixel />
+        </Suspense>
         <Providers>{children}</Providers>
       </body>
     </html>
