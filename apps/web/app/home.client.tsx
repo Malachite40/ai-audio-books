@@ -30,6 +30,7 @@ import { useRef } from "react";
 
 // NEW: accordion components
 import FooterSection from "@/components/footer";
+import { TestimonialsColumn } from "@/components/testimonials-columns";
 import { env } from "@/env";
 import { authClient } from "@/lib/auth-client";
 import {
@@ -345,6 +346,106 @@ export function HomeClient(props: HomeClientProps) {
                 View Pricing
               </Link>
             </div>
+          </div>
+        </section>
+
+        {/* Testimonials */}
+        <section className="relative py-10 mb-20 min-h-dvh">
+          <div className="mx-auto max-w-5xl">
+            <div className="mx-auto flex max-w-sm flex-col items-center justify-center gap-4">
+              <div className="flex justify-center">
+                <div className="rounded-lg border px-4 py-1">Testimonials</div>
+              </div>
+
+              <h2 className="font-bold text-3xl tracking-tighter lg:text-4xl">
+                What our users say
+              </h2>
+              <p className="text-center text-muted-foreground text-sm">
+                Feedback from authors, educators, and publishers.
+              </p>
+            </div>
+
+            {(() => {
+              const testimonials = [
+                {
+                  text: "Turned a 120k‑word web serial into a clean MP3 overnight. No manual chunking—chapters were detected automatically.",
+                  image: "https://randomuser.me/api/portraits/women/21.jpg",
+                  name: "Maya Chen",
+                  role: "Web Serial Author",
+                },
+                {
+                  text: "The smart chapter breaks and natural padding make it sound human. I pasted my manuscript and hit render.",
+                  image: "https://randomuser.me/api/portraits/men/32.jpg",
+                  name: "Alex Romero",
+                  role: "Indie Author",
+                },
+                {
+                  text: "Rollover credits mean I never waste a month. When a big upload hits, overage pricing is predictable.",
+                  image: "https://randomuser.me/api/portraits/women/45.jpg",
+                  name: "Priya Patel",
+                  role: "Content Creator",
+                },
+                {
+                  text: "Our 18‑hour training course exported as a single file with chapter markers—exactly what we needed.",
+                  image: "https://randomuser.me/api/portraits/men/65.jpg",
+                  name: "Jordan Blake",
+                  role: "Head of L&D",
+                },
+                {
+                  text: "Voices are surprisingly good for long narration. Listeners assumed it was a studio read.",
+                  image: "https://randomuser.me/api/portraits/women/12.jpg",
+                  name: "Elena Park",
+                  role: "Podcaster",
+                },
+                {
+                  text: "Fast turnaround and a simple hosted player link we share with beta readers.",
+                  image: "https://randomuser.me/api/portraits/men/77.jpg",
+                  name: "Samir Khan",
+                  role: "Small Publisher",
+                },
+                {
+                  text: "I stitched multiple chapters with no clicks between them—the transitions feel natural.",
+                  image: "https://randomuser.me/api/portraits/men/23.jpg",
+                  name: "Noah Williams",
+                  role: "Hobby Audio Editor",
+                },
+                {
+                  text: "Great value: a million characters gets ~25 hours. The pricing is easy to plan around.",
+                  image: "https://randomuser.me/api/portraits/women/36.jpg",
+                  name: "Rachel Lee",
+                  role: "Community Manager",
+                },
+                {
+                  text: "Support helped map our TOC so chapter jumps line up perfectly—super responsive.",
+                  image: "https://randomuser.me/api/portraits/women/68.jpg",
+                  name: "Olivia Grant",
+                  role: "Editor",
+                },
+              ];
+
+              const firstColumn = testimonials.slice(0, 3);
+              const secondColumn = testimonials.slice(3, 6);
+              const thirdColumn = testimonials.slice(6, 9);
+
+              return (
+                <div className="mt-10 flex max-h-[740px] justify-center gap-6 overflow-hidden [mask-image:linear-gradient(to_bottom,transparent,black_25%,black_75%,transparent)]">
+                  <TestimonialsColumn
+                    duration={16}
+                    testimonials={firstColumn}
+                  />
+                  <TestimonialsColumn
+                    className="hidden md:block"
+                    duration={20}
+                    testimonials={secondColumn}
+                  />
+                  <TestimonialsColumn
+                    className="hidden lg:block"
+                    duration={18}
+                    testimonials={thirdColumn}
+                  />
+                </div>
+              );
+            })()}
           </div>
         </section>
 
