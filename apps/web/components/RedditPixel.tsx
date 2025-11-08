@@ -21,44 +21,50 @@ export default function RedditPixel() {
 
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const loadedRef = useRef(false);
-
-  // Initialize Reddit Pixel once when the script loads on the client.
-  const handleScriptLoad = () => {
-    if (typeof window === "undefined") return;
-    if (window.__redditPixelInitialized) return;
-
-    if (typeof window.rdt === "function") {
-      window.rdt("init", PIXEL_ID);
-      window.rdt("track", "PageVisit");
-      window.__redditPixelInitialized = true;
-      loadedRef.current = true;
-    }
-  };
+  const didMount = useRef(false);
 
   // Track client-side navigations (App Router) once initialized.
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    // If the script has already loaded and init ran, track route changes.
-    if (window.__redditPixelInitialized && typeof window.rdt === "function") {
-      window.rdt("track", "PageVisit");
+    // Skip initial render: initial PageVisit is queued in bootstrap below.
+    if (!didMount.current) {
+      didMount.current = true;
       return;
     }
 
-    // If we haven't seen onLoad yet (slow network), don't attempt to queue here.
-    // The initial PageVisit will be sent in handleScriptLoad.
+    // Track client-side navigation; stub queues if pixel not ready yet.
+    if (typeof window.rdt === "function") {
+      window.rdt("track", "PageVisit");
+    }
   }, [pathname, searchParams]);
 
   return (
     <>
-      {/* Load the official Reddit Pixel script asynchronously in the browser */}
+      {/* Bootstrap rdt queue and queue initial init + PageVisit */}
       <Script
-        id="reddit-pixel"
-        src="https://www.redditstatic.com/ads/pixel.js"
+        id="reddit-pixel-bootstrap"
         strategy="afterInteractive"
-        onLoad={handleScriptLoad}
+        dangerouslySetInnerHTML={{
+          __html: `
+            (function(w,d){
+              if(!w.rdt){
+                var p=w.rdt=function(){
+                  p.sendEvent ? p.sendEvent.apply(p, arguments) : p.callQueue.push(arguments);
+                };
+                p.callQueue=[]; p.t=+new Date; p.version='0.3';
+              }
+              if(!w.__redditPixelInitialized){
+                w.rdt('init','${PIXEL_ID}');
+                w.rdt('track','PageVisit');
+                w.__redditPixelInitialized = true;
+              }
+            })(window,document);
+          `,
+        }}
       />
+      {/* Load the official Reddit Pixel script asynchronously in the browser */}
+      <Script id="reddit-pixel" src="https://www.redditstatic.com/ads/pixel.js" strategy="afterInteractive" />
     </>
   );
 }
