@@ -59,6 +59,12 @@ export default function RedditPixel() {
                 w.rdt('track','PageVisit');
                 w.__redditPixelInitialized = true;
               }
+              // Send a one-time test event with a unique conversionId for deduplication
+              if(!w.__redditTestEventSent){
+                var cid = 'test-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,10);
+                w.rdt('track','TestEvent', { conversionId: cid });
+                w.__redditTestEventSent = true;
+              }
             })(window,document);
           `,
         }}
