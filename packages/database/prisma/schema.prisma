@@ -13,6 +13,7 @@ model SupportSubmission {
     name        String
     description String
     createdAt   DateTime @default(now()) @db.Timestamptz()
+    readAt      DateTime? @db.Timestamptz()
 
     @@index([userId, createdAt])
 }

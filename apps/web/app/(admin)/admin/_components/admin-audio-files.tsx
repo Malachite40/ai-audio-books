@@ -146,9 +146,19 @@ export function AdminAudioFilesCard() {
               </TableCell>
               <TableCell>
                 <div className="flex items-center gap-2 max-w-[280px] whitespace-nowrap overflow-hidden text-ellipsis">
-                  <span title={af.owner?.email || undefined}>
-                    {af.owner?.name || af.owner?.email || "—"}
-                  </span>
+                  {af.owner?.id ? (
+                    <Link
+                      href={`/admin/users/${af.owner.id}`}
+                      className="hover:underline"
+                      title={af.owner?.email || undefined}
+                    >
+                      {af.owner?.name || af.owner?.email || af.owner.id}
+                    </Link>
+                  ) : (
+                    <span title={af.owner?.email || undefined}>
+                      {af.owner?.name || af.owner?.email || "—"}
+                    </span>
+                  )}
                   {af.owner?.role === "admin" && (
                     <span className="text-xs text-muted-foreground">(admin)</span>
                   )}

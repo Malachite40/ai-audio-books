@@ -14,6 +14,7 @@ import {
   TableRow,
 } from "@workspace/ui/components/table";
 import { PaginationBar } from "@/components/pagination-bar";
+import Link from "next/link";
 
 export function CreditTransactionsCard() {
   const [page, setPage] = useState(1);
@@ -94,7 +95,13 @@ export function CreditTransactionsCard() {
                       {new Date(t.createdAt).toLocaleString()}
                     </TableCell>
                     <TableCell className="whitespace-nowrap">
-                      {t.user?.email ?? t.userId}
+                      {t.userId ? (
+                        <Link href={`/admin/users/${t.userId}`} className="hover:underline">
+                          {t.user?.email ?? t.userId}
+                        </Link>
+                      ) : (
+                        t.user?.email ?? "—"
+                      )}
                     </TableCell>
                     <TableCell className="text-right whitespace-nowrap">
                       <span className={isPositive ? "text-green-600" : "text-red-600"}>
@@ -125,4 +132,3 @@ export function CreditTransactionsCard() {
     </Card>
   );
 }
-
