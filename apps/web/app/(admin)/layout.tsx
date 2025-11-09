@@ -1,5 +1,7 @@
 "use client";
 
+import { FullScreenSignIn } from "@/components/sign-in";
+import { api } from "@/trpc/server";
 import {
   Sidebar,
   SidebarContent,
@@ -32,9 +34,22 @@ const items = [
   { title: "Debug", href: "/admin/debug" },
 ] as const satisfies ReadonlyArray<{ title: string; href: Route }>;
 
-export default function AdminLayout({ children }: AdminLayoutProps) {
+export default async function AdminLayout({ children }: AdminLayoutProps) {
   const pathname = usePathname();
+  const { user } = await api.users.self();
+  if (!user) {
+    return <FullScreenSignIn />;
+  }
 
+  if (user.role !== "admin") {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center">
+        <h1 className="text-2xl font-bold">
+          You do not have access to this page
+        </h1>
+      </div>
+    );
+  }
   return (
     <SidebarProvider>
       <Sidebar>

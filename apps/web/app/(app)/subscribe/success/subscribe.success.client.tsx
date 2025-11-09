@@ -9,11 +9,8 @@ import {
 } from "@workspace/ui/components/card";
 import { CheckCircle2 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 
 export default function SuccessPage() {
-  const router = useRouter();
-
   return (
     <div className="relative mx-auto flex min-h-[80vh] w-full max-w-md flex-col items-center justify-center px-6 py-16">
       <Card className="text-center">
