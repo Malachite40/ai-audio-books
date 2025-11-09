@@ -25,6 +25,7 @@ export const inworldRouter = createTRPCRouter({
           .max(120)
           .optional(),
         public: z.boolean(),
+        includeTitle: z.boolean().optional().default(true),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -51,6 +52,7 @@ export const inworldRouter = createTRPCRouter({
         {
           audioFileId: audioFile.id,
           chunkSize: 300,
+          includeTitle: input.includeTitle ?? true,
         } satisfies z.infer<typeof createAudioFileChunksInput>,
       ]);
       return {
@@ -60,7 +62,6 @@ export const inworldRouter = createTRPCRouter({
   createFromAi: authenticatedProcedure
     .input(
       z.object({
-        name: z.string().min(2, "Please enter a name.").max(100),
         text: z.string().min(1, "text is required"),
         speakerId: z.string(),
         chunkSize: z.number().int().positive().max(2000).optional(),
@@ -90,7 +91,7 @@ export const inworldRouter = createTRPCRouter({
       const audioFile = await ctx.db.audioFile.create({
         data: {
           speakerId: input.speakerId,
-          name: input.name,
+          name: `AI Generated: ${input.text.slice(0, 20)}...`,
           ownerId: ctx.user.id,
           text: input.text,
           public: input.public,

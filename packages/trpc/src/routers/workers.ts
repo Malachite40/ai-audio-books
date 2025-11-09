@@ -39,6 +39,7 @@ export const concatAudioFileInput = z.object({
 export const createAudioFileChunksInput = z.object({
   audioFileId: z.string().uuid(),
   chunkSize: z.number().min(1).max(2000),
+  includeTitle: z.boolean().optional().default(true),
 });
 export const createAudioFileChunksFromChaptersInput = z.object({
   audioFileId: z.string().uuid(),
@@ -642,21 +643,25 @@ export const workersRouter = createTRPCRouter({
         include: { speaker: true },
       });
 
-      // Create title chunk
-      await ctx.db.audioChunk.create({
-        data: {
-          audioFileId: audioFile.id,
-          text: `${audioFile.name}, narrated by ${audioFile.speaker.displayName}.`,
-          sequence: 0,
-          paddingEndMs: 2000,
-        },
-      });
+      // Optionally create title chunk
+      const includeTitle = input.includeTitle ?? true;
+      if (includeTitle) {
+        await ctx.db.audioChunk.create({
+          data: {
+            audioFileId: audioFile.id,
+            text: `${audioFile.name}, narrated by ${audioFile.speaker.displayName}.`,
+            sequence: 0,
+            paddingEndMs: 2000,
+          },
+        });
+      }
 
       const sentences = splitIntoSentences(audioFile.text);
       const chunkTexts = buildChunks(sentences, input.chunkSize);
 
       const filtered = chunkTexts.filter((c) => c.length > 0);
       const batchSize = 50;
+      const sequenceOffset = includeTitle ? 1 : 0;
       for (let i = 0; i < filtered.length; i += batchSize) {
         const batch = filtered.slice(i, i + batchSize);
         await Promise.all(
@@ -665,7 +670,7 @@ export const workersRouter = createTRPCRouter({
               data: {
                 audioFileId: audioFile.id,
                 text: c,
-                sequence: i + j + 1,
+                sequence: i + j + sequenceOffset,
                 paddingEndMs: 550,
               },
             });

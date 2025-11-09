@@ -86,6 +86,7 @@ export const aiWorkerRouter = createTRPCRouter({
         {
           audioFileId: input.audioFileId,
           chunkSize: 500,
+          includeTitle: true,
         } satisfies z.infer<typeof createAudioFileChunksInput>,
       ]);
 

@@ -297,7 +297,11 @@ export const audioRouter = createTRPCRouter({
         });
         const task = client.createTask(TASK_NAMES.createAudioFileChunks);
         task.applyAsync([
-          { audioFileId: input.audioFileId, chunkSize: input.chunkSize ?? 300 },
+          {
+            audioFileId: input.audioFileId,
+            chunkSize: input.chunkSize ?? 300,
+            includeTitle: true,
+          },
         ]);
         await ctx.db.audioFile.update({
           where: { id: input.audioFileId },

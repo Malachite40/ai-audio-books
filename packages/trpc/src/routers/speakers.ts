@@ -79,7 +79,7 @@ export const speakersRouter = createTRPCRouter({
       // Queue chunk creation/processing
       const task = client.createTask(TASK_NAMES.createAudioFileChunks);
       await task.applyAsync([
-        { audioFileId: audioFile.id, chunkSize: 300 } as z.infer<
+        { audioFileId: audioFile.id, chunkSize: 300, includeTitle: true } as z.infer<
           typeof createAudioFileChunksInput
         >,
       ]);
