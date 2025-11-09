@@ -16,6 +16,8 @@ import {
 import { Route } from "next";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { api } from "@/trpc/react";
+import { Badge } from "@workspace/ui/components/badge";
 
 type Item = { title: string; href: string };
 
@@ -27,6 +29,9 @@ export function AdminSidebarShell({
   items: ReadonlyArray<Item>;
 }) {
   const pathname = usePathname();
+  const { data: unreadCount } = api.support.adminUnreadCount.useQuery(undefined, {
+    refetchInterval: 30000,
+  });
 
   return (
     <SidebarProvider>
@@ -42,8 +47,11 @@ export function AdminSidebarShell({
                       asChild
                       isActive={pathname === item.href}
                     >
-                      <Link href={item.href as Route} prefetch>
+                      <Link href={item.href as Route} prefetch className="flex w-full items-center justify-between">
                         <span>{item.title}</span>
+                        {item.href === "/admin/support" && (unreadCount ?? 0) > 0 && (
+                          <Badge variant="secondary">{unreadCount}</Badge>
+                        )}
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

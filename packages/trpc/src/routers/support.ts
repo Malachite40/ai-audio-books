@@ -78,4 +78,43 @@ export const supportRouter = createTRPCRouter({
         pageSize: input.pageSize,
       };
     }),
+
+  // Admin: mark a support submission as read (sets readAt)
+  adminMarkRead: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      await ctx.db.supportSubmission.update({
+        where: { id: input.id },
+        data: { readAt: new Date() },
+      });
+      return { success: true };
+    }),
+
+  // Admin: mark a support submission as unread (clears readAt)
+  adminMarkUnread: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      await ctx.db.supportSubmission.update({
+        where: { id: input.id },
+        data: { readAt: null },
+      });
+      return { success: true };
+    }),
+
+  // Admin: total unread submissions
+  adminUnreadCount: adminProcedure.query(async ({ ctx }) => {
+    const count = await ctx.db.supportSubmission.count({
+      where: { readAt: null },
+    });
+    return count;
+  }),
+
+  // Admin: mark all unread submissions as read
+  adminMarkAllRead: adminProcedure.mutation(async ({ ctx }) => {
+    const result = await ctx.db.supportSubmission.updateMany({
+      where: { readAt: null },
+      data: { readAt: new Date() },
+    });
+    return { success: true, count: result.count };
+  }),
 });
