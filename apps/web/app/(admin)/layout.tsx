@@ -1,23 +1,9 @@
-"use client";
+"use server";
 
 import { FullScreenSignIn } from "@/components/sign-in";
 import { api } from "@/trpc/server";
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarInset,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarProvider,
-  SidebarTrigger,
-} from "@workspace/ui/components/sidebar";
 import type { Route } from "next";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { AdminSidebarShell } from "./_components/admin-sidebar-shell";
 
 type AdminLayoutProps = {
   children: React.ReactNode;
@@ -35,7 +21,6 @@ const items = [
 ] as const satisfies ReadonlyArray<{ title: string; href: Route }>;
 
 export default async function AdminLayout({ children }: AdminLayoutProps) {
-  const pathname = usePathname();
   const { user } = await api.users.self();
   if (!user) {
     return <FullScreenSignIn />;
@@ -50,38 +35,5 @@ export default async function AdminLayout({ children }: AdminLayoutProps) {
       </div>
     );
   }
-  return (
-    <SidebarProvider>
-      <Sidebar>
-        <SidebarContent>
-          <SidebarGroup>
-            <SidebarGroupLabel>Admin</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {items.map((item) => (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton
-                      asChild
-                      isActive={pathname === item.href}
-                    >
-                      <Link href={item.href} prefetch>
-                        <span>{item.title}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        </SidebarContent>
-      </Sidebar>
-      <SidebarInset>
-        <header className="flex h-16 shrink-0 items-center gap-2 px-4">
-          <SidebarTrigger />
-          <h1 className="text-lg font-semibold">Admin Panel</h1>
-        </header>
-        <div className="flex flex-1 flex-col gap-4 p-4 pt-0">{children}</div>
-      </SidebarInset>
-    </SidebarProvider>
-  );
+  return <AdminSidebarShell items={items}>{children}</AdminSidebarShell>;
 }
