@@ -30,10 +30,11 @@ import {
   UserPlus,
   Users as UsersIcon,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 type Item = { title: string; href: string };
 
-const iconByHref: Record<string, (props: React.SVGProps<SVGSVGElement>) => JSX.Element> = {
+const iconByHref: Record<string, LucideIcon> = {
   "/admin/stats": BarChart3,
   "/admin/speakers": Megaphone,
   "/admin/users": UsersIcon,
