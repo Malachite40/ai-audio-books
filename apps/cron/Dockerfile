@@ -16,4 +16,4 @@ RUN bun run build --filter=@workspace/trpc
 
 # Start the cron job. This uses apps/cron/package.json "start"
 # e.g. "start": "bun run ./index.ts"
-CMD ["bun", "run", "start", "--filter=cron"]
+CMD ["bun", "run", "start", "--filter=@workspace/cron"]
