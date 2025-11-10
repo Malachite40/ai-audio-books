@@ -9,7 +9,6 @@ import { PassThrough, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import z from "zod";
 import { env } from "../env";
-import { client } from "../queue/client";
 import { s3Client } from "../s3";
 import { TASK_NAMES } from "../server";
 import { createTRPCRouter, queueProcedure } from "../trpc";
@@ -29,6 +28,7 @@ import {
   sectionType,
   splitIntoSentences,
 } from "../lib/utils/chunking";
+import { enqueueTask } from "../queue/enqueue";
 
 export const audioChunkInput = z.object({ id: z.string().uuid() });
 export const processAudioFileInput = z.object({ id: z.string().uuid() });
@@ -591,12 +591,11 @@ export const workersRouter = createTRPCRouter({
           where: { id: audioChunk.audioFileId },
           data: { status: "PROCESSING" },
         });
-        const task = client.createTask(TASK_NAMES.concatAudioFile);
-        await task.applyAsync([
-          { id: audioChunk.audioFileId, overwrite: true } as z.infer<
-            typeof concatAudioFileInput
-          >,
-        ]);
+
+        await enqueueTask(TASK_NAMES.concatAudioFile, {
+          id: audioChunk.audioFileId,
+          overwrite: true,
+        } satisfies z.infer<typeof concatAudioFileInput>);
       }
 
       return {};
@@ -621,12 +620,9 @@ export const workersRouter = createTRPCRouter({
         const batch = chunks.slice(i, i + BATCH_SIZE);
         await Promise.all(
           batch.map((chunk) => {
-            const task = client.createTask(
-              TASK_NAMES.processAudioChunkWithInworld
-            );
-            return task.applyAsync([
-              { id: chunk.id } satisfies z.infer<typeof audioChunkInput>,
-            ]);
+            return enqueueTask(TASK_NAMES.processAudioChunkWithInworld, {
+              id: chunk.id,
+            } satisfies z.infer<typeof audioChunkInput>);
           })
         );
         if (i + BATCH_SIZE < chunks.length)
@@ -678,10 +674,9 @@ export const workersRouter = createTRPCRouter({
         );
       }
 
-      const task = client.createTask(TASK_NAMES.processAudioFile);
-      task.applyAsync([
-        { id: audioFile.id } satisfies z.infer<typeof processAudioFileInput>,
-      ]);
+      await enqueueTask(TASK_NAMES.processAudioFile, {
+        id: audioFile.id,
+      } satisfies z.infer<typeof processAudioFileInput>);
 
       if (audioFile.ownerId) {
         await ctx.db.$transaction(async (tx) => {
@@ -739,10 +734,9 @@ export const workersRouter = createTRPCRouter({
         );
       }
 
-      const task = client.createTask(TASK_NAMES.processAudioFile);
-      task.applyAsync([
-        { id: audioFile.id } satisfies z.infer<typeof processAudioFileInput>,
-      ]);
+      await enqueueTask(TASK_NAMES.processAudioFile, {
+        id: audioFile.id,
+      } satisfies z.infer<typeof processAudioFileInput>);
 
       if (audioFile.ownerId) {
         await ctx.db.$transaction(async (tx) => {

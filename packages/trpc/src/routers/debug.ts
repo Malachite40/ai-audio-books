@@ -3,7 +3,7 @@ import * as v8 from "v8";
 import z from "zod";
 import { forceGarbageCollection } from "../lib/garbage";
 import { TASK_NAMES } from "../queue";
-import { client } from "../queue/client";
+import { enqueueTask } from "../queue/enqueue";
 import {
   adminProcedure,
   createTRPCRouter,
@@ -24,11 +24,13 @@ const memoryHogStore: { holder: unknown[]; allocatedMB: number } = {
   allocatedMB: 0,
 };
 export const debugRouter = createTRPCRouter({
+  // Simple queue-only proc to be triggered by the cron app
+  helloWorld: queueProcedure.mutation(async () => {
+    console.log("hello world");
+    return { ok: true } as const;
+  }),
   queueHeapSnapshot: adminProcedure.mutation(async () => {
-    const task = client.createTask(TASK_NAMES.test.heapSnapShot);
-    const result = task.applyAsync([]);
-    const value = await result.get();
-    return value;
+    await enqueueTask(TASK_NAMES.test.heapSnapShot, undefined);
   }),
   queueMemoryHogAlloc: adminProcedure
     .input(
@@ -38,16 +40,10 @@ export const debugRouter = createTRPCRouter({
     )
     .mutation(async ({ input }) => {
       const mb = input?.mb ?? 2048;
-      const task = client.createTask(TASK_NAMES.test.memoryHogAlloc);
-      const result = task.applyAsync([{ mb }]);
-      const value = await result.get();
-      return value;
+      await enqueueTask(TASK_NAMES.test.memoryHogAlloc, { mb });
     }),
   queueGarbageCleanup: adminProcedure.mutation(async () => {
-    const task = client.createTask(TASK_NAMES.test.garbageCleanup);
-    const result = task.applyAsync([]);
-    const value = await result.get();
-    return value;
+    await enqueueTask(TASK_NAMES.test.garbageCleanup, undefined);
   }),
   heapSnapshot: publicProcedure.mutation(async () => {
     const m = process.memoryUsage();

@@ -12,6 +12,7 @@ import { workersRouter } from "./routers/workers";
 import { createCallerFactory, createTRPCRouter } from "./trpc";
 import { referralsRouter } from "./routers/referrals";
 import { statsRouter } from "./routers/stats";
+import { redditRouter } from "./routers/reddit";
 
 export const appRouter = createTRPCRouter({
   users: usersRouter,
@@ -27,6 +28,7 @@ export const appRouter = createTRPCRouter({
   debug: debugRouter,
   referrals: referralsRouter,
   stats: statsRouter,
+  reddit: redditRouter,
 });
 
 // export type definition of API

@@ -24,6 +24,9 @@ Data flow:
 - apps/queue: Celery worker wiring to run background tasks
   - Worker entry: `apps/queue/index.ts`
   - tRPC caller for worker: `apps/queue/src/trpc.ts`
+- apps/cron: Bun-powered cron scheduler for server-to-server tRPC calls
+  - Entry: `apps/cron/index.ts`
+  - tRPC caller for cron: `apps/cron/trpc.ts`
 - packages/trpc: Shared API package
   - Context and auth bootstrap: `packages/trpc/src/context.ts`
   - Middlewares and helpers: `packages/trpc/src/trpc.ts`
@@ -91,12 +94,81 @@ Data flow:
 
 - Worker entry: `apps/queue/index.ts` sets up a Celery worker using `createWorker(BROKER, REDIS_URL)` and registers task names from `TASK_NAMES`.
 - Worker executes tRPC procedures by building a server-side caller with `createQueueContext({ apiKey: "1113" })` and `createCaller(ctx)`.
-- Queue client (for enqueuing): `packages/trpc/src/queue/client.ts` uses `createClient(BROKER, REDIS_URL)` to push tasks.
+- Enqueue helper: prefer `packages/trpc/src/queue/enqueue.ts` (`enqueueTask`) over direct `client.createTask(...).applyAsync(...)` to avoid Redis ready-listener buildup and to reuse cached Task instances.
 - Task names: `packages/trpc/src/queue/index.ts`
 - Typical flow:
-  1. Web enqueues a task, e.g. `client.createTask(TASK_NAMES.concatAudioFile).applyAsync([{ id }])`.
+  1. Web enqueues a task with `enqueueTask("concatAudioFile", { id })`.
   2. Celery worker picks it up and calls the corresponding tRPC `queueProcedure` mutation.
   3. Worker streams input chunks, uses ffmpeg to transcode/concat, uploads output to Cloudflare R2 via `s3Client`, and updates DB rows.
+
+Enqueuing tasks (best practices)
+
+- Use `enqueueTask(taskKey, payload)` from `packages/trpc/src/queue/enqueue.ts`:
+  - Awaits a single Redis readiness gate to prevent EventEmitter warnings.
+  - Reuses a cached `Task` instance per task name.
+  - Normalizes calling convention to pass a single payload object.
+
+Examples
+
+Type-safe payloads
+
+- Use the TypeScript `satisfies` operator with Zod inference to guarantee at compile time that the payload matches the target procedure’s input schema.
+
+```ts
+import z from "zod";
+import { enqueueTask } from "@workspace/trpc/src/queue/enqueue";
+import { TASK_NAMES } from "@workspace/trpc/src/queue";
+
+// Define or import the exact Zod input schema used by the queue procedure
+const CreateChunksInput = z.object({
+  audioFileId: z.string().uuid(),
+  chunkSize: z.number().min(1),
+  includeTitle: z.boolean().optional(),
+});
+
+await enqueueTask(TASK_NAMES.createAudioFileChunks, {
+  audioFileId,
+  chunkSize: 500,
+  includeTitle: true,
+} satisfies z.infer<typeof CreateChunksInput>);
+```
+
+Do/Don’t
+
+- Do pass a single object as the payload that matches the Zod schema of the target `queueProcedure`. Don’t pass arrays as the payload.
+- Do batch with `Promise.all` when enqueuing many tasks; keep payloads small and idempotent.
+- Do prefer `enqueueTask` to avoid piling up `ready` listeners on Redis; if you must use the low-level client, call `await client.isReady()` once and reuse a cached `Task` instance.
+- Do keep task handlers idempotent by using unique constraints and `upsert` patterns where possible.
+
+## Cron Scheduler (Bun + node-cron)
+
+- Location: `apps/cron`
+- Runtime: Bun. Scheduler: `node-cron` (default import `import cron from "node-cron"`).
+- Purpose: trigger lightweight, scheduled tasks that make single-line tRPC calls using a queue context (`createQueueContext`) and defer heavy work to workers.
+
+Files:
+
+- `apps/cron/index.ts` – registers cron schedules. Example schedule: `"0,10,20,30,40,50 * * * *"`.
+- `apps/cron/trpc.ts` – builds a server-to-server tRPC caller:
+
+```ts
+import { createCaller, createQueueContext } from "@workspace/trpc/server";
+const ctx = await createQueueContext({ apiKey: "1113" });
+export const api = createCaller(ctx);
+```
+
+Initial job:
+
+- Calls `await api.debug.helloWorld()` on each tick. The `debug.helloWorld` procedure is a `queueProcedure` that logs "hello world" in the cron app’s console.
+
+Best practices:
+
+- Keep cron jobs to single-line tRPC calls; do not embed heavy logic in the cron process.
+- Expose cron-callable procedures as `queueProcedure` so they’re server-to-server only.
+- Make cron-triggered operations idempotent (safe to retry) and fast to return.
+- Push long-running work to the queue workers (`apps/queue`) via existing tRPC endpoints.
+- Log clearly and catch errors around each scheduled call to avoid crashing the scheduler.
+- Prefer configuration via code; if env is needed, add `.env` under `apps/cron` and read via `process.env`.
 
 ## Storage and Media
 
@@ -136,10 +208,11 @@ Data flow:
 2. Start infra: `docker compose up -d` (Postgres, RabbitMQ, Redis).
 3. Generate Prisma client: `bun -w packages/database run generate`.
 4. Migrate DB: `bun -w packages/database run db:migrate:dev`.
-5. Dev servers: from repo root run `bun run dev` (Turbo will run `apps/web` and `apps/queue` dev scripts).
+5. Dev servers: from repo root run `bun run dev` (Turbo will run app dev scripts).
    - Or run individually:
      - Web: `cd apps/web && bun run dev`
      - Queue: `cd apps/queue && bun run dev`
+     - Cron: `cd apps/cron && bun run dev`
 6. Optional: Stripe webhook forwarding: `bun -w apps/web run stripe`.
 
 ## Extending the API (tRPC)
@@ -237,10 +310,19 @@ export function ExampleModalTrigger() {
         <div className="space-y-3 text-sm">
           <p>Any React content as children.</p>
           <div className="flex gap-2">
-            <Button variant="outline" className="flex-1" onClick={() => setOpen(false)}>
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => setOpen(false)}
+            >
               Close
             </Button>
-            <Button className="flex-1" onClick={() => {/* do something */}}>
+            <Button
+              className="flex-1"
+              onClick={() => {
+                /* do something */
+              }}
+            >
               Confirm
             </Button>
           </div>
@@ -251,15 +333,64 @@ export function ExampleModalTrigger() {
 }
 ```
 
-## Pagination Pattern (Frontend + tRPC + DB)
+## Pagination Patterns
 
-- Server: use cursor pagination with `take = limit + 1` + optional `cursor`; if more than `limit`, pop and set `nextCursor`.
-  - Audio router example: `packages/trpc/src/routers/audio.ts:82`
-  - Favorites router example: `packages/trpc/src/routers/favoritesRouter.ts:77`
-- Client: use `useInfiniteQuery` via tRPC React; pass `getNextPageParam: (last) => last.nextCursor`.
-  - History: `apps/web/components/audio/audio-history.tsx:20`
-  - Favorites: `apps/web/components/audio/audio-file-favorites.tsx:20`
-- UX: merge pages `data.pages.flatMap(p => p.items)` (here `audioFiles`) and use an `IntersectionObserver` sentinel to prefetch the next page.
+Default recommendation (apps/web tables)
+
+- Prefer numbered pagination (page/pageSize + total) using the shared `PaginationBar`.
+- Use cursor/infinite pagination only for true feeds or infinite scroll UX.
+
+Approach 1 — Numbered Pagination (preferred for tables)
+
+- When to use
+  - Admin/data tables, filterable lists, jump-to-page UX, showing “X–Y of Z”.
+  - When you need a stable count and clear page boundaries.
+- API shape
+  - Input: `{ page, pageSize, ...filters }`
+  - Output: `{ items, total }`
+- DB query
+  - `skip: (page - 1) * pageSize`, `take: pageSize`, `orderBy: <stable>` and mirror filters in a matching `count()`.
+- Client usage
+  - Keep `page` state; compute `totalPages = Math.ceil(total / pageSize)`; render `PaginationBar`.
+  - Reset `page` to 1 when filters/search change; debounce search inputs.
+- Pros
+  - Simple UX, easy to link/share specific pages, trivial “X of Y” display.
+  - Works naturally with server-rendered tables and admin views.
+- Tradeoffs
+  - Requires a `count()` which can be expensive on very large datasets.
+  - Can show duplicates/omissions if ordering isn’t stable; always set a deterministic `orderBy`.
+
+Approach 2 — Cursor (Infinite) Pagination
+
+- When to use
+  - Infinite scroll feeds, activity timelines, very large lists where `count()` is costly or unnecessary.
+- API shape
+  - Input: `{ limit, cursor?, ...filters }`
+  - Output: `{ items, nextCursor }`
+- DB query
+  - `take: limit + 1`, `orderBy: <stable>`, optional `cursor`; if `items.length > limit`, pop the extra and set `nextCursor`.
+- Client usage
+  - `useInfiniteQuery` with `getNextPageParam: (last) => last.nextCursor` and merge pages (`data.pages.flatMap(p => p.items)`).
+- Pros
+  - Efficient for endless lists; avoids expensive counts; resilient to concurrent inserts.
+- Tradeoffs
+  - No built-in notion of total pages; harder to jump to arbitrary positions.
+
+References
+
+- Numbered pattern
+  - Frontend: `apps/web/app/(admin)/admin/_components/admin-users.tsx`, `apps/web/app/(admin)/admin/leads/page.tsx`, `apps/web/components/pagination-bar.tsx`
+  - tRPC: `packages/trpc/src/routers/users.ts` (`adminList`), `packages/trpc/src/routers/reddit.ts` (`listPosts`)
+- Cursor pattern
+  - Server examples: `packages/trpc/src/routers/audio.ts`, `packages/trpc/src/routers/favoritesRouter.ts`
+  - Client examples: `apps/web/components/audio/audio-history.tsx`, `apps/web/components/audio/audio-file-favorites.tsx`
+
+Implementation checklist
+
+- Always use a deterministic `orderBy`.
+- Mirror filters between the `findMany` and `count()`.
+- Debounce free-text search; reset `page` when any filter changes.
+- Disable Prev/Next at bounds; show “Showing X–Y of Z” when using numbered pagination.
 
 ## Common Workflows
 
@@ -297,6 +428,8 @@ Quick anchors:
 - Prisma schema: packages/database/prisma/schema.prisma
 - Worker wiring: apps/queue/index.ts
 - Worker routers: packages/trpc/src/routers/workers.ts
+- Cron entry: apps/cron/index.ts
+- Cron tRPC caller: apps/cron/trpc.ts
 - Env schema: packages/trpc/src/env.ts
 - R2 client: packages/trpc/src/s3.ts
 - Emails: packages/transactional/emails/welcome.tsx

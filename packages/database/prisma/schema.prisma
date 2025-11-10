@@ -4,15 +4,15 @@ generator client {
 }
 
 model SupportSubmission {
-    id          String   @id @default(uuid())
+    id          String    @id @default(uuid())
     // Optional association to a user if known at submission time
     userId      String?
-    user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+    user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
     // Best-effort contact info captured when available
     email       String?
     name        String
     description String
-    createdAt   DateTime @default(now()) @db.Timestamptz()
+    createdAt   DateTime  @default(now()) @db.Timestamptz()
     readAt      DateTime? @db.Timestamptz()
 
     @@index([userId, createdAt])
@@ -289,4 +289,44 @@ model CreditTransaction {
     user User @relation(fields: [userId], references: [id])
 
     @@index([userId, createdAt])
+}
+
+model RedditPost {
+    id          String   @id @default(uuid())
+    redditId    String   @unique
+    subreddit   String
+    category    String
+    title       String
+    selfText    String?
+    author      String?
+    url         String?
+    permalink   String
+    createdUtc  DateTime
+    score       Int?
+    numComments Int?
+    // Evaluation (1:1 optional)
+    evaluation  RedditPostEvaluation?
+
+    @@index([subreddit, category, createdUtc])
+}
+
+model RedditWatchList {
+    id        String   @id @default(uuid())
+    subreddit String   @unique
+    createdAt DateTime @default(now()) @db.Timestamptz()
+    updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz()
+}
+
+model RedditPostEvaluation {
+    id            String     @id @default(uuid())
+    redditPostId  String     @unique
+    score         Int
+    reasoning     String
+    modelName     String
+    createdAt     DateTime   @default(now()) @db.Timestamptz()
+    updatedAt     DateTime   @default(now()) @updatedAt @db.Timestamptz()
+
+    redditPost RedditPost @relation(fields: [redditPostId], references: [id], onDelete: Cascade)
+
+    @@index([score, createdAt])
 }

@@ -1,5 +1,5 @@
 import z from "zod";
-import { client } from "../queue/client";
+import { enqueueTask } from "../queue/enqueue";
 import { TASK_NAMES } from "../queue/index";
 import { createTRPCRouter, queueProcedure } from "../trpc";
 
@@ -56,8 +56,9 @@ export const testWorkersRouter = createTRPCRouter({
         allChunks.every((c) => c.status === "PROCESSED");
       if (allProcessed) {
         // Queue concat test procedure
-        const task = client.createTask(TASK_NAMES.test.concatTestAudioFile);
-        await task.applyAsync([{ id: chunk.audioFileId }]);
+        await enqueueTask(TASK_NAMES.test.concatTestAudioFile, {
+          id: chunk.audioFileId,
+        } satisfies z.infer<typeof testConcatAudioFileInput>);
       }
       return { url: PLACEHOLDER_URL };
     }),
@@ -81,10 +82,9 @@ export const testWorkersRouter = createTRPCRouter({
         const batch = chunks.slice(i, i + BATCH_SIZE);
         await Promise.all(
           batch.map((chunk) => {
-            const task = client.createTask(
-              TASK_NAMES.test.processTestAudioChunk
-            );
-            return task.applyAsync([{ id: chunk.id }]);
+            return enqueueTask(TASK_NAMES.test.processTestAudioChunk, {
+              id: chunk.id,
+            } satisfies z.infer<typeof testAudioChunkInput>);
           })
         );
         if (i + BATCH_SIZE < chunks.length) {

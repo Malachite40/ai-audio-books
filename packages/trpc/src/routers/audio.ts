@@ -3,7 +3,7 @@ import { TRPCError } from "@trpc/server";
 import z from "zod";
 import { env } from "../env";
 import { TASK_NAMES } from "../queue";
-import { client } from "../queue/client";
+import { enqueueTask } from "../queue/enqueue";
 import { s3Client } from "../s3";
 import {
   adminProcedure,
@@ -16,7 +16,7 @@ import { audioFileSettingsRouter } from "./audioFileSettings";
 import { audioFileTestRouter } from "./audioFileTest";
 import { favoritesRouter } from "./favoritesRouter";
 import { inworldRouter } from "./inworld";
-import { concatAudioFileInput } from "./workers";
+import { audioChunkInput, concatAudioFileInput } from "./workers";
 
 export const audioRouter = createTRPCRouter({
   // Admin: fetch a single audio file with speaker and owner
@@ -241,13 +241,10 @@ export const audioRouter = createTRPCRouter({
           message: `Audio file with ID ${input.audioFileId} has ${audioChunks} unprocessed chunks. Cannot re-stitch until all chunks are processed.`,
         });
       }
-
-      const task = client.createTask(TASK_NAMES.concatAudioFile);
-      task.applyAsync([
-        { id: input.audioFileId, overwrite: true } as z.infer<
-          typeof concatAudioFileInput
-        >,
-      ]);
+      await enqueueTask(TASK_NAMES.concatAudioFile, {
+        id: input.audioFileId,
+        overwrite: true,
+      });
     }),
 
   // Admin: re-queue processing for an audio file
@@ -281,8 +278,13 @@ export const audioRouter = createTRPCRouter({
           select: { id: true },
         });
         if (chunks.length === 0) return {};
-        const task = client.createTask(TASK_NAMES.processAudioChunkWithInworld);
-        await Promise.all(chunks.map((c) => task.applyAsync([{ id: c.id }])));
+
+        for (const c of chunks) {
+          await enqueueTask(TASK_NAMES.processAudioChunkWithInworld, {
+            id: c.id,
+          } satisfies z.infer<typeof audioChunkInput>);
+        }
+
         await ctx.db.audioFile.update({
           where: { id: input.audioFileId },
           data: { status: "PROCESSING" },
@@ -295,14 +297,13 @@ export const audioRouter = createTRPCRouter({
         await ctx.db.audioChunk.deleteMany({
           where: { audioFileId: input.audioFileId },
         });
-        const task = client.createTask(TASK_NAMES.createAudioFileChunks);
-        task.applyAsync([
-          {
-            audioFileId: input.audioFileId,
-            chunkSize: input.chunkSize ?? 300,
-            includeTitle: true,
-          },
-        ]);
+
+        await enqueueTask(TASK_NAMES.createAudioFileChunks, {
+          audioFileId: input.audioFileId,
+          chunkSize: input.chunkSize ?? 300,
+          includeTitle: true,
+        });
+
         await ctx.db.audioFile.update({
           where: { id: input.audioFileId },
           data: { status: "PENDING", durationMs: 0 },
@@ -323,12 +324,11 @@ export const audioRouter = createTRPCRouter({
           message: `Audio file has ${audioChunks} unprocessed chunks. Cannot re-stitch until all chunks are processed.`,
         });
       }
-      const task = client.createTask(TASK_NAMES.concatAudioFile);
-      task.applyAsync([
-        { id: input.audioFileId, overwrite: true } as z.infer<
-          typeof concatAudioFileInput
-        >,
-      ]);
+
+      await enqueueTask(TASK_NAMES.concatAudioFile, {
+        id: input.audioFileId,
+        overwrite: true,
+      } satisfies z.infer<typeof concatAudioFileInput>);
       return {};
     }),
 

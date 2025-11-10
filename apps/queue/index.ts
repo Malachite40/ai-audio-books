@@ -45,6 +45,16 @@ worker.register(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Register Reddit Worker Tasks
+// ─────────────────────────────────────────────────────────────────────────────
+worker.register(
+  TASK_NAMES.redditScanSubreddit,
+  async (payload: any) => {
+    await api.reddit.scanSubreddit(payload);
+  }
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Register AI Worker Tasks
 // ─────────────────────────────────────────────────────────────────────────────
 worker.register(TASK_NAMES.ai.generateStory, api.workers.ai.generateStory);

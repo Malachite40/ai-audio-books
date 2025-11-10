@@ -2,7 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { sectionType } from "../lib/utils/chunking";
 import { TASK_NAMES } from "../queue";
-import { client } from "../queue/client";
+import { enqueueTask } from "../queue/enqueue";
 import { authenticatedProcedure, createTRPCRouter } from "../trpc";
 import {
   audioChunkInput,
@@ -46,15 +46,11 @@ export const inworldRouter = createTRPCRouter({
           public: input.public,
         },
       });
-
-      const task = client.createTask(TASK_NAMES.createAudioFileChunks);
-      task.applyAsync([
-        {
-          audioFileId: audioFile.id,
-          chunkSize: 300,
-          includeTitle: input.includeTitle ?? true,
-        } satisfies z.infer<typeof createAudioFileChunksInput>,
-      ]);
+      await enqueueTask(TASK_NAMES.createAudioFileChunks, {
+        audioFileId: audioFile.id,
+        chunkSize: 300,
+        includeTitle: input.includeTitle ?? true,
+      } satisfies z.infer<typeof createAudioFileChunksInput>);
       return {
         audioFile,
       };
@@ -98,14 +94,11 @@ export const inworldRouter = createTRPCRouter({
         },
       });
 
-      const task = client.createTask(TASK_NAMES.ai.generateStory);
-      task.applyAsync([
-        {
-          audioFileId: audioFile.id,
-          prompt: input.text,
-          durationMinutes: input.durationMinutes ?? 5,
-        } satisfies z.infer<typeof generateStoryInput>,
-      ]);
+      await enqueueTask(TASK_NAMES.ai.generateStory, {
+        audioFileId: audioFile.id,
+        prompt: input.text,
+        durationMinutes: input.durationMinutes ?? 5,
+      } satisfies z.infer<typeof generateStoryInput>);
 
       return {
         audioFile,
@@ -148,15 +141,11 @@ export const inworldRouter = createTRPCRouter({
         },
       });
 
-      const task = client.createTask(
-        TASK_NAMES.createAudioFileChunksFromChapters
-      );
-      task.applyAsync([
-        {
-          audioFileId: audioFile.id,
-          chapters: input.chapters,
-        } satisfies z.infer<typeof createAudioFileChunksFromChaptersInput>,
-      ]);
+      await enqueueTask(TASK_NAMES.createAudioFileChunksFromChapters, {
+        audioFileId: audioFile.id,
+        chapters: input.chapters,
+      } satisfies z.infer<typeof createAudioFileChunksFromChaptersInput>);
+
       return {
         audioFile,
       };
@@ -177,12 +166,9 @@ export const inworldRouter = createTRPCRouter({
       // Retry processing for each failed chunks
       await Promise.all(
         failedChunks.map((chunk) => {
-          const task = client.createTask(
-            TASK_NAMES.processAudioChunkWithInworld
-          );
-          return task.applyAsync([
-            { id: chunk.id } satisfies z.infer<typeof audioChunkInput>,
-          ]);
+          return enqueueTask(TASK_NAMES.processAudioChunkWithInworld, {
+            id: chunk.id,
+          } satisfies z.infer<typeof audioChunkInput>);
         })
       );
     }),

@@ -19,7 +19,31 @@ import { usePathname } from "next/navigation";
 import { api } from "@/trpc/react";
 import { Badge } from "@workspace/ui/components/badge";
 
+import {
+  AudioLinesIcon,
+  BarChart3,
+  Braces,
+  Bug,
+  CreditCard,
+  LifeBuoy,
+  Megaphone,
+  UserPlus,
+  Users as UsersIcon,
+} from "lucide-react";
+
 type Item = { title: string; href: string };
+
+const iconByHref: Record<string, (props: React.SVGProps<SVGSVGElement>) => JSX.Element> = {
+  "/admin/stats": BarChart3,
+  "/admin/speakers": Megaphone,
+  "/admin/users": UsersIcon,
+  "/admin/audio": AudioLinesIcon,
+  "/admin/kv": Braces,
+  "/admin/support": LifeBuoy,
+  "/admin/credits": CreditCard,
+  "/admin/leads": UserPlus,
+  "/admin/debug": Bug,
+};
 
 export function AdminSidebarShell({
   children,
@@ -48,7 +72,13 @@ export function AdminSidebarShell({
                       isActive={pathname === item.href}
                     >
                       <Link href={item.href as Route} prefetch className="flex w-full items-center justify-between">
-                        <span>{item.title}</span>
+                        <span className="inline-flex items-center gap-2">
+                          {(() => {
+                            const Icon = iconByHref[item.href];
+                            return Icon ? <Icon className="h-4 w-4" aria-hidden /> : null;
+                          })()}
+                          {item.title}
+                        </span>
                         {item.href === "/admin/support" && (unreadCount ?? 0) > 0 && (
                           <Badge variant="secondary">{unreadCount}</Badge>
                         )}

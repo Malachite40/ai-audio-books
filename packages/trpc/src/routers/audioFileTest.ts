@@ -1,8 +1,9 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { TASK_NAMES } from "../queue";
-import { client } from "../queue/client";
+import { enqueueTask } from "../queue/enqueue";
 import { authenticatedProcedure, createTRPCRouter } from "../trpc";
+import { processAudioFileInput } from "./workers";
 
 const ID = "d67cfd0a-ba84-498c-89cb-9146c3e0b413";
 
@@ -127,9 +128,9 @@ export const audioFileTestRouter = createTRPCRouter({
         });
       }
 
-      // Queue test process audio file (batch chunk processing)
-      const task = client.createTask(TASK_NAMES.test.processTestAudioFile);
-      task.applyAsync([{ id: audioFile.id }]);
+      await enqueueTask(TASK_NAMES.test.processTestAudioFile, {
+        id: audioFile.id,
+      } satisfies z.infer<typeof processAudioFileInput>);
       return { audioFile };
     }),
 });

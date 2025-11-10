@@ -5,6 +5,7 @@ const TASK_NAMES = {
   concatAudioFile: "tasks.concatAudioFile",
   createAudioFileChunks: "tasks.createAudioFileChunks",
   createAudioFileChunksFromChapters: "tasks.createAudioFileChunksFromChapters",
+  redditScanSubreddit: "reddit.scanSubreddit",
   ai: {
     generateStory: "tasks.ai.generateStory",
     generateImage: "tasks.ai.generateImage",

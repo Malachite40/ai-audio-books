@@ -17,6 +17,7 @@ const items = [
   { title: "Key-Value", href: "/admin/kv" },
   { title: "Support Submissions", href: "/admin/support" },
   { title: "Credit Transactions", href: "/admin/credits" },
+  { title: "Leads", href: "/admin/leads" },
   { title: "Debug", href: "/admin/debug" },
 ] as const satisfies ReadonlyArray<{ title: string; href: Route }>;
 

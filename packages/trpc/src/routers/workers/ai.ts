@@ -6,7 +6,7 @@ import z from "zod";
 import { env } from "../../env";
 import { generateStory } from "../../lib/story-generation";
 import { TASK_NAMES } from "../../queue";
-import { client } from "../../queue/client";
+import { enqueueTask } from "../../queue/enqueue";
 import { s3Client } from "../../s3";
 import { createTRPCRouter, queueProcedure } from "../../trpc";
 import { createAudioFileChunksInput } from "../workers";
@@ -73,22 +73,16 @@ export const aiWorkerRouter = createTRPCRouter({
         data: { name: title, text: story },
       });
 
-      const imageTask = client.createTask(TASK_NAMES.ai.generateImage);
-      imageTask.applyAsync([
-        {
-          audioFileId: input.audioFileId,
-          prompt: `Generate an image for a story, the: ${title}.`,
-        } satisfies z.infer<typeof generateImageInput>,
-      ]);
+      await enqueueTask(TASK_NAMES.ai.generateImage, {
+        audioFileId: input.audioFileId,
+        prompt: `Generate an image for a story, the: ${title}.`,
+      } satisfies z.infer<typeof generateImageInput>);
 
-      const task = client.createTask(TASK_NAMES.createAudioFileChunks);
-      task.applyAsync([
-        {
-          audioFileId: input.audioFileId,
-          chunkSize: 500,
-          includeTitle: true,
-        } satisfies z.infer<typeof createAudioFileChunksInput>,
-      ]);
+      await enqueueTask(TASK_NAMES.createAudioFileChunks, {
+        audioFileId: input.audioFileId,
+        chunkSize: 500,
+        includeTitle: true,
+      } satisfies z.infer<typeof createAudioFileChunksInput>);
 
       return {};
     }),
