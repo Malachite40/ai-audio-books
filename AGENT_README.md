@@ -202,6 +202,81 @@ Best practices:
   - Export a function named `handle<EventCamelCase>` receiving the specific typed `Stripe.<EventName>Event`.
   - Add a `case "<event.type>"` in `handler.ts` that calls your new function.
 
+## Global Singletons
+
+Purpose
+
+- Keep one instance of SDK/clients during dev hot reloads to avoid duplicate connections and memory leaks.
+
+Pattern (attach to `global`)
+
+- Cast `global` to a typed bag, create or reuse, then cache in non‑prod:
+  - `const globalForX = global as unknown as { x: Type }`
+  - `export const x = globalForX.x || new Type(/* ... */)`
+  - `if (process.env.NODE_ENV !== "production") globalForX.x = x`
+
+Examples
+
+- Prisma client: packages/database/src/client.ts:3
+- Stripe client: packages/trpc/src/lib/stripe/index.ts:5
+- Resend client: packages/trpc/src/lib/resend/index.ts:5
+- Celery queue client: packages/trpc/src/queue/client.ts:3
+- Task cache via `globalThis`: packages/trpc/src/queue/enqueue.ts:11, packages/trpc/src/queue/enqueue.ts:21
+
+Notes
+
+- Prefer the reuse form (`globalForX.x || new Type()`) so hot reloads do not create multiple instances. Some modules (e.g., the Celery client) currently instantiate unconditionally; mirror the Prisma pattern if you need reuse.
+- `declare global { var __name__: Type | undefined }` with `globalThis.__name__ ??= value` is also used for simple caches where a full SDK instance isn’t needed.
+
+## Environment Variables
+
+Sources
+
+- Shared server env (tRPC and workers): `packages/trpc/src/env.ts`
+- Next.js app env: `apps/web/env.ts`
+
+How it works
+
+- Uses `@t3-oss/env-nextjs` + Zod to validate at startup/build and provide typed access via an `env` export.
+- Two schemas per file:
+  - `server`: server-only keys (never exposed to the browser)
+  - `client`: browser-exposed keys (must be prefixed with `NEXT_PUBLIC_`)
+- `runtimeEnv`: explicit mapping from `process.env` to satisfy edge/client constraints and avoid destructuring `process.env`.
+- `skipValidation`: set `SKIP_ENV_VALIDATION=1` to bypass checks (useful in Docker builds or partial local setups).
+- `emptyStringAsUndefined: true`: empty strings are treated as missing and will fail validation.
+- `packages/trpc/src/env.ts` calls `dotenv.config()` to load `.env` before validation for Node runtimes. Next.js (`apps/web/env.ts`) relies on Next’s env loading.
+
+Key locations and usage
+
+- tRPC server code imports `env` from `packages/trpc/src/env.ts` (e.g., `context.ts`, `s3.ts`, `lib/resend`, routers).
+- Next.js code imports `env` from `apps/web/env.ts` and may access both server and client keys.
+
+Adding a variable
+
+- Define in the appropriate schema(s) and wire in `runtimeEnv`:
+
+```ts
+// packages/trpc/src/env.ts
+server: { MY_SECRET: z.string() },
+client: { NEXT_PUBLIC_FOO: z.string().url() },
+runtimeEnv: {
+  MY_SECRET: process.env.MY_SECRET,
+  NEXT_PUBLIC_FOO: process.env.NEXT_PUBLIC_FOO,
+}
+```
+
+Using a variable
+
+- Server only: `import { env } from "../env"; env.MY_SECRET`
+- Client safe: `env.NEXT_PUBLIC_FOO` (from `apps/web/env.ts`)
+
+Where to set values
+
+- Next.js app: `apps/web/.env`
+- Queue worker: `apps/queue/.env`
+- Cron: `apps/cron/.env`
+- Shared server libs: rely on the process’s env; `.env` in `packages/trpc/` is supported by its `dotenv.config()` when that package is the entrypoint in Node.
+
 ## Running Locally
 
 1. Prereqs: Node 20+, Bun, Docker.

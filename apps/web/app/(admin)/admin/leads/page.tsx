@@ -23,6 +23,15 @@ import {
   TableHeader,
   TableRow,
 } from "@workspace/ui/components/table";
+import {
+  ChartContainer,
+  ChartLegend,
+  ChartLegendContent,
+  ChartTooltip,
+  ChartTooltipContent,
+} from "@workspace/ui/components/chart";
+import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@workspace/ui/components/tabs";
 
 const CATEGORIES = ["new", "hot", "rising", "top", "controversial"] as const;
 
@@ -42,6 +51,8 @@ export default function AdminLeadsPage() {
   const [evalSubreddit, setEvalSubreddit] = useState("");
   const [minScore, setMinScore] = useState<number | undefined>(70);
   const [evalPage, setEvalPage] = useState(1);
+  // Timeseries (Evaluations) state
+  const [tsMinScore, setTsMinScore] = useState<number>(75);
 
   // Debounce search
   useEffect(() => {
@@ -87,11 +98,31 @@ export default function AdminLeadsPage() {
     subreddit: evalSubreddit.trim() ? evalSubreddit.trim() : undefined,
     minScore: typeof minScore === "number" ? minScore : undefined,
   });
-  const evalItems = useMemo(() => evalQuery.data?.items ?? [], [evalQuery.data]);
+  const evalItems = useMemo(
+    () => evalQuery.data?.items ?? [],
+    [evalQuery.data]
+  );
   const evalTotalPages = useMemo(
     () => Math.max(1, Math.ceil((evalQuery.data?.total ?? 0) / PAGE_SIZE)),
     [evalQuery.data?.total]
   );
+
+  // Evaluation score timeseries query (30d fixed window)
+  const tsQuery = trpc.reddit.evaluationTimeseries.useQuery({
+    minScore: typeof tsMinScore === "number" ? tsMinScore : 75,
+    days: 30,
+    subreddit: evalSubreddit.trim() ? evalSubreddit.trim() : undefined,
+  });
+  const tsData = useMemo(() => {
+    const series = tsQuery.data?.series ?? [];
+    return series.map((d) => {
+      const day = new Date((d as any).day);
+      const date = isNaN(day.getTime())
+        ? String((d as any).day).slice(0, 10)
+        : day.toISOString().slice(0, 10);
+      return { date, count: (d as any).count as number };
+    });
+  }, [tsQuery.data]);
 
   // Watch list data + mutations
   const { data: watchData, isLoading: watchLoading } =
@@ -112,6 +143,12 @@ export default function AdminLeadsPage() {
 
   return (
     <div className="space-y-4 container mx-auto ">
+      <Tabs defaultValue="eval">
+        <TabsList>
+          <TabsTrigger value="eval">Watch List + Evaluations</TabsTrigger>
+          <TabsTrigger value="posts">Reddit Posts</TabsTrigger>
+        </TabsList>
+        <TabsContent value="eval" className="space-y-4">
       {/* Watch List Management */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
@@ -204,6 +241,196 @@ export default function AdminLeadsPage() {
         </div>
       </div>
 
+        
+
+        
+      {/* Evaluations */}
+      <div className="space-y-3 pt-8">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Reddit Post Evaluations</h2>
+          <div className="text-sm text-muted-foreground">
+            Auto-scored by AI for backlink opportunities
+          </div>
+        </div>
+
+        {/* Eval Timeseries: Scores >= threshold over time */}
+        <div className="space-y-2">
+          <div className="flex items-end gap-3 flex-wrap">
+            <div>
+              <label className="block text-sm mb-1">Score threshold</label>
+              <Input
+                type="number"
+                min={1}
+                max={100}
+                value={tsMinScore}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setTsMinScore(v ? Math.max(1, Math.min(100, Number(v))) : 75);
+                }}
+              />
+            </div>
+            {evalSubreddit && (
+              <div className="text-sm text-muted-foreground pb-1">
+                Filtering by subreddit: r/{evalSubreddit}
+              </div>
+            )}
+          </div>
+          <div className="overflow-hidden rounded-xl border">
+            <ChartContainer
+              config={{ count: { label: `Scores >= ${tsMinScore}`, color: "var(--color-chart-1)" } }}
+              className="h-64 w-full"
+            >
+              <LineChart data={tsData} margin={{ left: 8, right: 8, top: 8, bottom: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="date" tickMargin={6} />
+                <YAxis allowDecimals={false} />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Line type="monotone" dataKey="count" stroke="var(--color-count)" strokeWidth={2} dot={false} />
+                <ChartLegend content={<ChartLegendContent />} />
+              </LineChart>
+            </ChartContainer>
+          </div>
+        </div>
+
+        {/* Eval Filters */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div className="col-span-1">
+            <label className="block text-sm mb-1">Search</label>
+            <Input
+              placeholder="Title or author"
+              value={evalSearch}
+              onChange={(e) => setEvalSearch(e.target.value)}
+            />
+          </div>
+          <div className="col-span-1">
+            <label className="block text-sm mb-1">Subreddit</label>
+            <Input
+              placeholder="e.g. programming"
+              value={evalSubreddit}
+              onChange={(e) =>
+                setEvalSubreddit(e.target.value.replace(/^r\//, ""))
+              }
+            />
+          </div>
+          <div className="col-span-1">
+            <label className="block text-sm mb-1">Min Score</label>
+            <Input
+              type="number"
+              min={1}
+              max={100}
+              value={minScore ?? ""}
+              onChange={(e) => {
+                const v = e.target.value;
+                setMinScore(
+                  v ? Math.max(1, Math.min(100, Number(v))) : undefined
+                );
+              }}
+            />
+          </div>
+          <div className="col-span-1 flex items-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => evalQuery.refetch()}
+              disabled={evalQuery.isFetching}
+            >
+              {evalQuery.isFetching ? "Refreshing…" : "Refresh"}
+            </Button>
+            {(evalSearch || evalSubreddit || typeof minScore === "number") && (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setEvalSearch("");
+                  setEvalQ("");
+                  setEvalSubreddit("");
+                  setMinScore(70);
+                }}
+              >
+                Clear filters
+              </Button>
+            )}
+          </div>
+        </div>
+
+        <div className="overflow-auto rounded-xl border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="min-w-[160px]">Evaluated</TableHead>
+                <TableHead>Subreddit</TableHead>
+                <TableHead className="min-w-[360px]">Title</TableHead>
+                <TableHead>Score</TableHead>
+                <TableHead>Example Response</TableHead>
+                <TableHead className="min-w-[400px]">Reasoning</TableHead>
+                <TableHead>Links</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {evalItems.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={6}
+                    className="text-center py-8 text-muted-foreground"
+                  >
+                    No evaluations yet.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                evalItems.map((r) => (
+                  <TableRow key={r.id}>
+                    <TableCell>
+                      {new Date(
+                        r.createdAt as unknown as string
+                      ).toLocaleString()}
+                    </TableCell>
+                    <TableCell>r/{r.redditPost.subreddit}</TableCell>
+                    <TableCell className="whitespace-pre-wrap">
+                      {r.redditPost.title}
+                    </TableCell>
+                    <TableCell>{r.score}</TableCell>
+                    <TableCell className="whitespace-pre-wrap">
+                      {r.exampleMessage}
+                    </TableCell>
+                    <TableCell className="whitespace-pre-wrap">
+                      {r.reasoning}
+                    </TableCell>
+                    <TableCell className="space-x-2">
+                      <Link
+                        className="underline"
+                        href={`https://www.reddit.com${r.redditPost.permalink}`}
+                        target="_blank"
+                      >
+                        Reddit
+                      </Link>
+                      {r.redditPost.url && (
+                        <a
+                          className="underline"
+                          href={r.redditPost.url}
+                          target="_blank"
+                        >
+                          Source
+                        </a>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+        <div className="mt-4">
+          <PaginationBar
+            page={evalPage}
+            totalPages={evalTotalPages}
+            pages={Array.from({ length: evalTotalPages }, (_, i) => i + 1)}
+            showLeftEllipsis={evalPage > 3}
+            showRightEllipsis={evalPage < evalTotalPages - 2}
+            setPage={setEvalPage}
+          />
+        </div>
+      </div>
+        </TabsContent>
+
+        <TabsContent value="posts" className="space-y-4">
       {/* Filters */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
         <div className="col-span-1">
@@ -340,139 +567,8 @@ export default function AdminLeadsPage() {
           setPage={setPage}
         />
       </div>
-
-      {/* Evaluations */}
-      <div className="space-y-3 pt-8">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Reddit Post Evaluations</h2>
-          <div className="text-sm text-muted-foreground">
-            Auto-scored by AI for backlink opportunities
-          </div>
-        </div>
-
-        {/* Eval Filters */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <div className="col-span-1">
-            <label className="block text-sm mb-1">Search</label>
-            <Input
-              placeholder="Title or author"
-              value={evalSearch}
-              onChange={(e) => setEvalSearch(e.target.value)}
-            />
-          </div>
-          <div className="col-span-1">
-            <label className="block text-sm mb-1">Subreddit</label>
-            <Input
-              placeholder="e.g. programming"
-              value={evalSubreddit}
-              onChange={(e) =>
-                setEvalSubreddit(e.target.value.replace(/^r\//, ""))
-              }
-            />
-          </div>
-          <div className="col-span-1">
-            <label className="block text-sm mb-1">Min Score</label>
-            <Input
-              type="number"
-              min={1}
-              max={100}
-              value={minScore ?? ""}
-              onChange={(e) => {
-                const v = e.target.value;
-                setMinScore(v ? Math.max(1, Math.min(100, Number(v))) : undefined);
-              }}
-            />
-          </div>
-          <div className="col-span-1 flex items-end gap-2">
-            <Button
-              variant="outline"
-              onClick={() => evalQuery.refetch()}
-              disabled={evalQuery.isFetching}
-            >
-              {evalQuery.isFetching ? "Refreshing…" : "Refresh"}
-            </Button>
-            {(evalSearch || evalSubreddit || typeof minScore === "number") && (
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setEvalSearch("");
-                  setEvalQ("");
-                  setEvalSubreddit("");
-                  setMinScore(70);
-                }}
-              >
-                Clear filters
-              </Button>
-            )}
-          </div>
-        </div>
-
-        <div className="overflow-auto rounded-xl border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="min-w-[160px]">Evaluated</TableHead>
-                <TableHead>Subreddit</TableHead>
-                <TableHead className="min-w-[360px]">Title</TableHead>
-                <TableHead>Score</TableHead>
-                <TableHead className="min-w-[400px]">Reasoning</TableHead>
-                <TableHead>Links</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {evalItems.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                    No evaluations yet.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                evalItems.map((r) => (
-                  <TableRow key={r.id}>
-                    <TableCell>
-                      {new Date(
-                        r.createdAt as unknown as string
-                      ).toLocaleString()}
-                    </TableCell>
-                    <TableCell>r/{r.redditPost.subreddit}</TableCell>
-                    <TableCell className="whitespace-pre-wrap">
-                      {r.redditPost.title}
-                    </TableCell>
-                    <TableCell>{r.score}</TableCell>
-                    <TableCell className="whitespace-pre-wrap">
-                      {r.reasoning}
-                    </TableCell>
-                    <TableCell className="space-x-2">
-                      <Link
-                        className="underline"
-                        href={`https://www.reddit.com${r.redditPost.permalink}`}
-                        target="_blank"
-                      >
-                        Reddit
-                      </Link>
-                      {r.redditPost.url && (
-                        <a className="underline" href={r.redditPost.url} target="_blank">
-                          Source
-                        </a>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
-        <div className="mt-4">
-          <PaginationBar
-            page={evalPage}
-            totalPages={evalTotalPages}
-            pages={Array.from({ length: evalTotalPages }, (_, i) => i + 1)}
-            showLeftEllipsis={evalPage > 3}
-            showRightEllipsis={evalPage < evalTotalPages - 2}
-            setPage={setEvalPage}
-          />
-        </div>
-      </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

@@ -292,8 +292,8 @@ model CreditTransaction {
 }
 
 model RedditPost {
-    id          String   @id @default(uuid())
-    redditId    String   @unique
+    id          String                @id @default(uuid())
+    redditId    String                @unique
     subreddit   String
     category    String
     title       String
@@ -318,13 +318,14 @@ model RedditWatchList {
 }
 
 model RedditPostEvaluation {
-    id            String     @id @default(uuid())
-    redditPostId  String     @unique
-    score         Int
-    reasoning     String
-    modelName     String
-    createdAt     DateTime   @default(now()) @db.Timestamptz()
-    updatedAt     DateTime   @default(now()) @updatedAt @db.Timestamptz()
+    id             String   @id @default(uuid())
+    redditPostId   String   @unique
+    score          Int
+    reasoning      String
+    exampleMessage String?
+    modelName      String
+    createdAt      DateTime @default(now()) @db.Timestamptz()
+    updatedAt      DateTime @default(now()) @updatedAt @db.Timestamptz()
 
     redditPost RedditPost @relation(fields: [redditPostId], references: [id], onDelete: Cascade)
 

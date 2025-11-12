@@ -30,6 +30,11 @@ export const env = createEnv({
     OPENAI_API_KEY: z.string(),
     RESEND_API_KEY: z.string(),
     REFERRAL_COOKIE_SECRET: z.string().min(16),
+    REDDIT_CLIENT_ID: z.string(),
+    REDDIT_CLIENT_SECRET: z.string(),
+    REDDIT_USER_AGENT: z.string(),
+    REDDIT_USERNAME: z.string(),
+    REDDIT_PASSWORD: z.string(),
   },
 
   /**
@@ -75,6 +80,11 @@ export const env = createEnv({
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
     RESEND_API_KEY: process.env.RESEND_API_KEY,
     REFERRAL_COOKIE_SECRET: process.env.REFERRAL_COOKIE_SECRET,
+    REDDIT_CLIENT_ID: process.env.REDDIT_CLIENT_ID,
+    REDDIT_CLIENT_SECRET: process.env.REDDIT_CLIENT_SECRET,
+    REDDIT_USER_AGENT: process.env.REDDIT_USER_AGENT,
+    REDDIT_USERNAME: process.env.REDDIT_USERNAME,
+    REDDIT_PASSWORD: process.env.REDDIT_PASSWORD,
   },
   /**
    * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially

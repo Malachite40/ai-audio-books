@@ -3,6 +3,7 @@ import { Prisma, prisma } from "@workspace/database";
 import { generateObject } from "ai";
 import crypto from "crypto";
 import z from "zod";
+import { reddit } from "../lib/reddit";
 import { TASK_NAMES } from "../queue";
 import { enqueueTask } from "../queue/enqueue";
 import { adminProcedure, createTRPCRouter, queueProcedure } from "../trpc";
@@ -65,6 +66,66 @@ export const redditRouter = createTRPCRouter({
           createdUtc: new Date((d?.created_utc ?? 0) * 1000),
           score: typeof d?.score === "number" ? d.score : null,
           selfText: d.selftext ?? null,
+          numComments:
+            typeof d?.num_comments === "number" ? d.num_comments : null,
+        };
+      });
+
+      const created = await prisma.redditPost.createMany({
+        data: rows,
+        skipDuplicates: true,
+      });
+      return { ok: true, fetched: rows.length, inserted: created.count };
+    }),
+
+  scanSubredditWithSdk: queueProcedure
+    .input(scanSubredditInput)
+    .mutation(async ({ input }) => {
+      const { subreddit, category } = input;
+      const limit = 25;
+      const sub = reddit.getSubreddit(subreddit);
+
+      let items: any[] = [];
+      switch (category) {
+        case "hot":
+          items = await sub.getHot({ limit });
+          break;
+        case "new":
+          items = await sub.getNew({ limit });
+          break;
+        case "rising":
+          items = await sub.getRising({ limit });
+          break;
+        case "top":
+          items = await sub.getTop({ limit });
+          break;
+        case "controversial":
+          items = await sub.getControversial({ limit });
+          break;
+      }
+
+      const rows = items.map((d: any) => {
+        const baseId = d?.id ?? "";
+        const name = d?.name;
+        const redditId =
+          (name && String(name)) ||
+          (baseId ? `t3_${baseId}` : crypto.randomUUID());
+        const author =
+          typeof d?.author === "string" ? d.author : (d?.author?.name ?? null);
+        const createdSec =
+          (typeof d?.created_utc === "number" ? d.created_utc : d?.created) ??
+          0;
+        return {
+          redditId,
+          subreddit,
+          category,
+          title: d?.title ?? "",
+          author,
+          url: d?.url_overridden_by_dest ?? d?.url ?? null,
+          permalink: d?.permalink ?? "",
+          createdUtc: new Date(createdSec * 1000),
+          score: typeof d?.score === "number" ? d.score : null,
+          selfText: d?.selftext ?? null,
           numComments:
             typeof d?.num_comments === "number" ? d.num_comments : null,
         };
@@ -223,6 +284,10 @@ OUTPUT: JSON with { score: 1-100, reasoning: string }. No extra keys.`;
                 .string()
                 .min(3)
                 .describe("Explanation for the score, short and concise."),
+              exampleMessage: z
+                .string()
+                .min(3)
+                .describe("An example message the user might have sent."),
             }),
             prompt: `${basePrompt}\n\n---
 REDDIT POST
@@ -231,6 +296,10 @@ ${details}\n---\nReturn only JSON.`,
 
           const score = Math.max(1, Math.min(100, Math.round(object.score)));
           const reasoning = String(object.reasoning || "").slice(0, 4000);
+          const exampleMessage = String(object.exampleMessage || "").slice(
+            0,
+            4000
+          );
 
           // Upsert to guard against race
           await prisma.redditPostEvaluation.create({
@@ -239,6 +308,7 @@ ${details}\n---\nReturn only JSON.`,
               score,
               reasoning,
               modelName: "gpt-4o-mini",
+              exampleMessage,
             },
           });
           evaluated++;
@@ -302,6 +372,69 @@ ${details}\n---\nReturn only JSON.`,
       ]);
 
       return { items, total };
+    }),
+
+  /**
+   * Daily timeseries of evaluation counts above a score threshold.
+   * Optional subreddit filter and lookback window (days).
+   */
+  evaluationTimeseries: adminProcedure
+    .input(
+      z.object({
+        minScore: z.number().min(1).max(100).default(75),
+        days: z.number().min(1).max(365).default(30),
+        subreddit: z.string().optional(),
+      })
+    )
+    .query(async ({ input }) => {
+      const start = new Date(Date.now() - input.days * 24 * 60 * 60 * 1000);
+      type Row = { day: Date; count: number };
+
+      // Use a parameterized raw query to efficiently aggregate by day and include zeros via generate_series
+      let rows: Row[] = [];
+      if (input.subreddit) {
+        rows = (await prisma.$queryRaw<Row[]>`
+          WITH dates AS (
+            SELECT generate_series(date_trunc('day', ${start}::timestamptz), date_trunc('day', now()), interval '1 day') AS day
+          ),
+          counts AS (
+            SELECT date_trunc('day', e."createdAt") AS day, COUNT(*)::int AS count
+            FROM "RedditPostEvaluation" e
+            JOIN "RedditPost" p ON p.id = e."redditPostId"
+            WHERE e.score >= ${input.minScore}
+              AND e."createdAt" >= ${start}
+              AND p.subreddit = ${input.subreddit}
+            GROUP BY 1
+          )
+          SELECT d.day, COALESCE(c.count, 0)::int AS count
+          FROM dates d
+          LEFT JOIN counts c ON c.day = d.day
+          ORDER BY d.day
+        `) as Row[];
+      } else {
+        rows = (await prisma.$queryRaw<Row[]>`
+          WITH dates AS (
+            SELECT generate_series(date_trunc('day', ${start}::timestamptz), date_trunc('day', now()), interval '1 day') AS day
+          ),
+          counts AS (
+            SELECT date_trunc('day', e."createdAt") AS day, COUNT(*)::int AS count
+            FROM "RedditPostEvaluation" e
+            JOIN "RedditPost" p ON p.id = e."redditPostId"
+            WHERE e.score >= ${input.minScore}
+              AND e."createdAt" >= ${start}
+            GROUP BY 1
+          )
+          SELECT d.day, COALESCE(c.count, 0)::int AS count
+          FROM dates d
+          LEFT JOIN counts c ON c.day = d.day
+          ORDER BY d.day
+        `) as Row[];
+      }
+
+      return {
+        series: rows.map((r) => ({ day: r.day, count: Number(r.count) })),
+        start,
+      };
     }),
 });
 
