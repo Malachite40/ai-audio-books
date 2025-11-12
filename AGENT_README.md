@@ -65,6 +65,22 @@ Data flow:
   - Wrap pages with `TRPCReactProvider` and use `api.<router>.<procedure>.useQuery()` / `.useMutation()`.
 - tRPC HTTP adapter: `apps/web/app/api/trpc/[trpc]/route.ts` uses `fetchRequestHandler` with `appRouter` and `createNextTRPCContext`.
 
+## Naming Conventions
+
+- App Router pages (server): keep `page.tsx` as a server component that default-exports a small wrapper rendering a co-located client component when needed.
+  - Client entry files end with `.client.tsx` and export a named component `XxxClientPage`.
+  - The server page imports the named export and renders it.
+  - Examples:
+    - `apps/web/app/(admin)/admin/users/page.tsx` → imports `{ UsersClientPage }` from `./users.client`.
+    - `apps/web/app/(admin)/admin/stats/page.tsx` → imports `{ StatsClientPage }` from `./stats.client`.
+    - `apps/web/app/(admin)/admin/leads/page.tsx` → imports `{ LeadsClientPage }` from `./leads.client`.
+
+- Route-local UI components: place under an `_components/` folder next to the route, use kebab-case filenames, and export named PascalCase components.
+  - Example: `apps/web/app/(admin)/admin/_components/admin-users.tsx` exports `AdminUsersCard`.
+  - Add `"use client"` at the top only when hooks/state or browser-only APIs are used.
+
+- Webhooks: see the Stripe Webhooks section for event handler file naming that mirrors the Stripe event type (e.g., `checkout.session.completed.ts`).
+
 ## Emails (Transactional)
 
 - Templates live in `packages/transactional/emails` and are built with `@react-email/components`, using shared layout and tokens:
@@ -491,6 +507,42 @@ Implementation checklist
 - For background work, enqueue via `packages/trpc/src/queue/client.ts` and implement the worker-side logic as `queueProcedure` mutations.
 - Prefer server-side tRPC calls in RSC for SSR and hydration; use the React client only in client components.
 - Follow existing style/structure; avoid unrelated refactors.
+
+## URL Query State (nuqs `useQueryState`)
+
+- Purpose
+  - Keep UI state in the URL search params so it’s shareable, deep-linkable, and persists on refresh/back/forward.
+- Library
+  - `useQueryState` from `nuqs`. Parsers like `parseAsString` define how a param is read/written.
+- Client‑only
+  - Use inside client components (file must include `"use client"`).
+
+Basic example (mode switcher)
+
+```tsx
+import { parseAsString, useQueryState } from "nuqs";
+
+// Binds the `mode` query param to React state.
+// Example URL: /new?mode=copy
+const [mode, setMode] = useQueryState(
+  "mode",
+  parseAsString.withDefault("").withOptions({})
+);
+
+// Set a mode (updates URL):
+setMode("copy"); // => ?mode=copy
+
+// Clear to default (removes UI selection):
+setMode(""); // => ? (default from withDefault)
+```
+
+In practice, this drives conditional UIs, e.g. swapping forms based on `mode` and providing a back action that clears it. See `apps/web/app/(app)/audio-file/new/new.audio.client.tsx` for a working usage.
+
+Notes
+
+- `parseAsString.withDefault("")` supplies a value when the param is missing.
+- Call `setMode(value)` to push a new value into the URL; use the default to “reset”.
+- Keep param keys stable; avoid frequent renames since URLs may be shared/bookmarked.
 
 ---
 
