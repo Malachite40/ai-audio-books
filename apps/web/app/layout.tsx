@@ -31,7 +31,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className="h-full flex overflow-x-hidden max-w-dvw"
+      className="min-h-full flex overflow-x-hidden max-w-dvw"
     >
       <meta
         name="viewport"

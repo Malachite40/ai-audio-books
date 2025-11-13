@@ -2,6 +2,7 @@
 
 import { TRPCReactProvider } from "@/trpc/react";
 import { GoogleAnalytics } from "@next/third-parties/google";
+import { Toaster } from "@workspace/ui/components/sonner";
 import { ThemeProvider as NextThemesProvider } from "next-themes";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import * as React from "react";
@@ -31,6 +32,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <NuqsAdapter>
           <ThemeProvider>{children}</ThemeProvider>
         </NuqsAdapter>
+        <Toaster position="bottom-center" />
       </React.Suspense>
     </TRPCReactProvider>
   );

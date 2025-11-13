@@ -21,6 +21,44 @@ export class RedditClient {
     this.creds = creds;
   }
 
+  /** Fetch comments for a post by permalink (e.g. /r/sub/comments/id/title/) */
+  async getCommentsByPermalink(permalink: string, opts?: { limit?: number; depth?: number }) {
+    const path = permalink.startsWith("/") ? permalink : `/${permalink}`;
+    const params = new URLSearchParams();
+    if (opts?.limit) params.set("limit", String(opts.limit));
+    if (opts?.depth) params.set("depth", String(opts.depth));
+
+    // Reddit returns [post, commentsListing]
+    const json = await this.request<any>(`${path}.json?${params.toString()}`);
+    const commentsListing = Array.isArray(json) && json.length > 1 ? json[1] : null;
+    const children = commentsListing?.data?.children ?? [];
+
+    // Flatten and normalize basic fields
+    const flatten = (nodes: any[], depth = 0): any[] => {
+      const out: any[] = [];
+      for (const n of nodes) {
+        if (n.kind !== "t1") continue; // comments are t1
+        const d = n.data ?? {};
+        out.push({
+          id: String(d.id || d.name || ""),
+          name: String(d.name || ""),
+          parentId: typeof d.parent_id === "string" ? d.parent_id : undefined,
+          author: typeof d.author === "string" ? d.author : null,
+          body: typeof d.body === "string" ? d.body : "",
+          score: typeof d.score === "number" ? d.score : null,
+          createdUtc: d.created_utc ? new Date(d.created_utc * 1000).toISOString() : undefined,
+          depth,
+          authorIcon: typeof d.author_icon_img === "string" && d.author_icon_img ? d.author_icon_img : undefined,
+        });
+        // replies can be an object or empty string
+        const replies = d.replies && typeof d.replies === "object" ? d.replies.data?.children ?? [] : [];
+        if (replies.length) out.push(...flatten(replies, depth + 1));
+      }
+      return out;
+    };
+
+    return flatten(children, 0);
+  }
   private async ensureToken(): Promise<void> {
     const now = Date.now();
     if (this.accessToken && now < this.tokenExpiresAt) return;
@@ -100,6 +138,91 @@ export class RedditClient {
     );
     return json.data.children.map((c) => c.data);
   }
+
+  /**
+   * Search for subreddits by keyword by querying cross-subreddit posts and extracting subreddit names.
+   * Returns a de-duplicated list of subreddit names and their r/ prefixed form.
+   */
+  async searchSubreddits(term: string, opts?: { limit?: number }) {
+    const params = new URLSearchParams();
+    params.set("q", term);
+    // Search across all subreddits (not restricted to a single sr)
+    params.set("restrict_sr", "false");
+    // Keep it focused on posts, which contain subreddit fields reliably
+    params.set("type", "link");
+    if (opts?.limit) params.set("limit", String(Math.min(200, Math.max(1, opts.limit))));
+
+    const json = await this.request<{ data: { children: Array<{ data: any }> } }>(
+      `/search.json?${params.toString()}`,
+    );
+
+    const counts = new Map<string, { name: string; prefixed: string; count: number }>();
+    for (const child of json.data.children || []) {
+      const d = child?.data ?? {};
+      const name = typeof d?.subreddit === "string" ? d.subreddit : undefined;
+      const pref = typeof d?.subreddit_name_prefixed === "string" ? d.subreddit_name_prefixed : (name ? `r/${name}` : undefined);
+      if (!name || !pref) continue;
+      const curr = counts.get(name);
+      if (curr) curr.count += 1;
+      else counts.set(name, { name, prefixed: pref, count: 1 });
+    }
+
+    // Sort by frequency desc, then alphabetical by name
+    return Array.from(counts.values())
+      .sort((a, b) => (b.count - a.count) || a.name.localeCompare(b.name))
+      .map(({ name, prefixed }) => ({ name, prefixed }));
+  }
+
+  /**
+   * Search subreddits via the native endpoint: /subreddits/search.json?q=
+   * Returns display info straight from the subreddit listing.
+   */
+  async searchSubredditsApi(term: string, opts?: { limit?: number }) {
+    const params = new URLSearchParams();
+    params.set("q", term);
+    if (opts?.limit)
+      params.set("limit", String(Math.min(200, Math.max(1, opts.limit))));
+
+    const json = await this.request<{
+      data: { children: Array<{ data: any }> };
+    }>(`/subreddits/search.json?${params.toString()}`);
+
+    return (json.data.children || []).map((c) => {
+      const d = c?.data ?? {};
+      const name = String(d.display_name || d.name || d.id || "");
+      const prefixed = String(d.display_name_prefixed || (name ? `r/${name}` : ""));
+      const subscribers = typeof d.subscribers === "number" ? d.subscribers : undefined;
+      const title = typeof d.title === "string" ? d.title : undefined;
+      const description = typeof d.public_description === "string" ? d.public_description : undefined;
+      return { name, prefixed, subscribers, title, description };
+    });
+  }
+
+  /** Fetch subreddit rules via /r/{name}/about/rules.json */
+  async getSubredditRules(name: string) {
+    const json = await this.request<{
+      rules: Array<{
+        short_name?: string;
+        description?: string;
+        description_html?: string;
+        priority?: number;
+        violation_reason?: string;
+        created_utc?: number;
+      }>;
+      site_rules?: string[];
+    }>(`/r/${encodeURIComponent(name)}/about/rules.json`);
+
+    const items = (json.rules || []).map((r) => ({
+      shortName: r.short_name ?? "",
+      description: r.description ?? "",
+      descriptionHtml: r.description_html ?? undefined,
+      priority: typeof r.priority === "number" ? r.priority : undefined,
+      violationReason: r.violation_reason ?? undefined,
+      createdUtc: r.created_utc ? new Date(r.created_utc * 1000).toISOString() : undefined,
+    }));
+    const siteRules = json.site_rules ?? [];
+    return { items, siteRules };
+  }
 }
 
 // Factory using env (convenience when used within this package)
@@ -112,4 +235,3 @@ export function createRedditClientFromEnv() {
     password: env.REDDIT_PASSWORD,
   });
 }
-

@@ -291,9 +291,21 @@ model CreditTransaction {
     @@index([userId, createdAt])
 }
 
+model Campaign {
+    id          String   @id @default(uuid())
+    name        String
+    description String
+    isActive    Boolean  @default(true)
+    createdAt   DateTime @default(now()) @db.Timestamptz()
+    updatedAt   DateTime @default(now()) @updatedAt @db.Timestamptz()
+
+    watchedSubreddit WatchedSubreddit[]
+    evaluations      RedditPostEvaluation[]
+}
+
 model RedditPost {
-    id          String                @id @default(uuid())
-    redditId    String                @unique
+    id          String                 @id @default(uuid())
+    redditId    String                 @unique
     subreddit   String
     category    String
     title       String
@@ -304,17 +316,20 @@ model RedditPost {
     createdUtc  DateTime
     score       Int?
     numComments Int?
-    // Evaluation (1:1 optional)
-    evaluation  RedditPostEvaluation?
+    evaluations RedditPostEvaluation[]
 
     @@index([subreddit, category, createdUtc])
 }
 
-model RedditWatchList {
-    id        String   @id @default(uuid())
-    subreddit String   @unique
-    createdAt DateTime @default(now()) @db.Timestamptz()
-    updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz()
+model WatchedSubreddit {
+    campaignId String
+    subreddit  String
+    createdAt  DateTime @default(now()) @db.Timestamptz()
+    updatedAt  DateTime @default(now()) @updatedAt @db.Timestamptz()
+
+    campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+    @@id([campaignId, subreddit])
 }
 
 model RedditPostEvaluation {
@@ -326,8 +341,10 @@ model RedditPostEvaluation {
     modelName      String
     createdAt      DateTime @default(now()) @db.Timestamptz()
     updatedAt      DateTime @default(now()) @updatedAt @db.Timestamptz()
+    campaignId     String
 
     redditPost RedditPost @relation(fields: [redditPostId], references: [id], onDelete: Cascade)
+    campaign   Campaign?  @relation(fields: [campaignId], references: [id])
 
     @@index([score, createdAt])
 }

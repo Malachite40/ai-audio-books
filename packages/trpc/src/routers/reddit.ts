@@ -1,5 +1,6 @@
 import { openai } from "@ai-sdk/openai";
-import { Prisma, prisma } from "@workspace/database";
+import { TRPCError } from "@trpc/server";
+import { prisma, Prisma } from "@workspace/database";
 import { generateObject } from "ai";
 import crypto from "crypto";
 import z from "zod";
@@ -7,16 +8,63 @@ import { reddit } from "../lib/reddit";
 import { TASK_NAMES } from "../queue";
 import { enqueueTask } from "../queue/enqueue";
 import { adminProcedure, createTRPCRouter, queueProcedure } from "../trpc";
-
-const Category = z.enum(["new", "hot", "rising", "top", "controversial"]);
-type Category = z.infer<typeof Category>;
-
-const scanSubredditInput = z.object({
-  subreddit: z.string().min(1),
-  category: Category,
-});
+import { campaignsRouter } from "./campaign";
+import {
+  Category,
+  scanSubredditInput,
+  scoreRedditPostInput,
+  scoreRedditPostsInput,
+} from "./reddit/types";
 
 export const redditRouter = createTRPCRouter({
+  campaigns: campaignsRouter,
+  searchSubreddits: adminProcedure
+    .input(
+      z.object({
+        query: z.string().min(1),
+        limit: z.number().min(1).max(200).default(50),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const items = await reddit.searchSubreddits(input.query, {
+        limit: input.limit,
+      });
+      return { items };
+    }),
+  searchSubredditsApi: adminProcedure
+    .input(
+      z.object({
+        query: z.string().min(1),
+        limit: z.number().min(1).max(200).default(50),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const items = await reddit.searchSubredditsApi(input.query, {
+        limit: input.limit,
+      });
+      return { items };
+    }),
+  getSubredditRules: adminProcedure
+    .input(z.object({ subreddit: z.string().min(1) }))
+    .mutation(async ({ input }) => {
+      const data = await reddit.getSubredditRules(input.subreddit);
+      return data;
+    }),
+  getPostComments: adminProcedure
+    .input(
+      z.object({
+        permalink: z.string().min(1),
+        limit: z.number().min(1).max(500).optional(),
+        depth: z.number().min(1).max(10).optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const items = await reddit.getCommentsByPermalink(input.permalink, {
+        limit: input.limit ?? 100,
+        depth: input.depth ?? 5,
+      });
+      return { items };
+    }),
   adminQueueScanSubreddit: adminProcedure
     .input(z.object({ subreddit: z.string().min(1) }))
     .mutation(async ({ input }) => {
@@ -24,16 +72,22 @@ export const redditRouter = createTRPCRouter({
       return { ok: true };
     }),
   scanWatchList: queueProcedure.mutation(async () => {
-    await queueScanWatchList();
+    await queueScanWatchedSubreddits({});
     return { ok: true };
   }),
-  adminScanWatchList: adminProcedure.mutation(async () => {
-    await queueScanWatchList();
-    return { ok: true };
-  }),
+  adminScanWatchList: adminProcedure
+    .input(
+      z.object({
+        campaignId: z.string().uuid(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      await queueScanWatchedSubreddits({ campaignId: input.campaignId });
+      return { ok: true };
+    }),
   scanSubreddit: queueProcedure
     .input(scanSubredditInput)
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { subreddit, category } = input;
       const url = `https://www.reddit.com/r/${encodeURIComponent(
         subreddit
@@ -71,7 +125,7 @@ export const redditRouter = createTRPCRouter({
         };
       });
 
-      const created = await prisma.redditPost.createMany({
+      const created = await ctx.db.redditPost.createMany({
         data: rows,
         skipDuplicates: true,
       });
@@ -80,7 +134,7 @@ export const redditRouter = createTRPCRouter({
 
   scanSubredditWithSdk: queueProcedure
     .input(scanSubredditInput)
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { subreddit, category } = input;
       const limit = 25;
       const sub = reddit.getSubreddit(subreddit);
@@ -131,7 +185,7 @@ export const redditRouter = createTRPCRouter({
         };
       });
 
-      const created = await prisma.redditPost.createMany({
+      const created = await ctx.db.redditPost.createMany({
         data: rows,
         skipDuplicates: true,
       });
@@ -146,11 +200,54 @@ export const redditRouter = createTRPCRouter({
         subreddit: z.string().optional(),
         category: Category.optional(),
         search: z.string().optional(),
+        campaignId: z.string().uuid().optional(),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      let campaignSubreddits: string[] | undefined;
+      if (input.campaignId) {
+        const watched = await ctx.db.watchedSubreddit.findMany({
+          where: { campaignId: input.campaignId },
+          select: { subreddit: true },
+        });
+        if (watched.length === 0) {
+          return { items: [], total: 0 };
+        }
+        campaignSubreddits = watched.map((item) => item.subreddit);
+      }
+
+      const sanitizedInputSubreddit = input.subreddit?.trim();
+      const normalizedInputSubreddit = sanitizedInputSubreddit?.toLowerCase();
+      if (
+        campaignSubreddits &&
+        normalizedInputSubreddit &&
+        !campaignSubreddits.some(
+          (sub) => sub.trim().toLowerCase() === normalizedInputSubreddit
+        )
+      ) {
+        return { items: [], total: 0 };
+      }
+
+      let subredditFilter: { equals: string } | { in: string[] } | undefined;
+      if (campaignSubreddits) {
+        if (normalizedInputSubreddit) {
+          const matched = campaignSubreddits.find(
+            (sub) => sub.trim().toLowerCase() === normalizedInputSubreddit
+          );
+          subredditFilter = matched
+            ? { equals: matched }
+            : sanitizedInputSubreddit
+              ? { equals: sanitizedInputSubreddit }
+              : undefined;
+        } else {
+          subredditFilter = { in: campaignSubreddits };
+        }
+      } else if (sanitizedInputSubreddit) {
+        subredditFilter = { equals: sanitizedInputSubreddit };
+      }
+
       const where = {
-        subreddit: input.subreddit ? { equals: input.subreddit } : undefined,
+        subreddit: subredditFilter,
         category: input.category ? { equals: input.category } : undefined,
         OR: input.search
           ? [
@@ -168,155 +265,227 @@ export const redditRouter = createTRPCRouter({
       } as const;
 
       const [items, total] = await Promise.all([
-        prisma.redditPost.findMany({
+        ctx.db.redditPost.findMany({
           where,
           orderBy: { createdUtc: "desc" },
           skip: (input.page - 1) * input.pageSize,
           take: input.pageSize,
         }),
-        prisma.redditPost.count({ where }),
+        ctx.db.redditPost.count({ where }),
       ]);
 
       return { items, total };
     }),
-  listWatchList: adminProcedure.query(async () => {
-    const items = await prisma.redditWatchList.findMany({
+  listWatchedSubreddit: adminProcedure.query(async ({ ctx }) => {
+    const items = await ctx.db.watchedSubreddit.findMany({
       orderBy: { subreddit: "asc" },
     });
     return { items };
   }),
-  upsertWatchList: adminProcedure
-    .input(z.object({ subreddit: z.string().min(1) }))
-    .mutation(async ({ input }) => {
-      const item = await prisma.redditWatchList.upsert({
-        where: { subreddit: input.subreddit },
+  upsertWatchedSubreddit: adminProcedure
+    .input(z.object({ subreddit: z.string().min(1), campaignId: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const item = await ctx.db.watchedSubreddit.upsert({
+        where: {
+          campaignId_subreddit: {
+            campaignId: input.campaignId,
+            subreddit: input.subreddit,
+          },
+        },
         update: { updatedAt: new Date() },
-        create: { subreddit: input.subreddit },
+        create: { subreddit: input.subreddit, campaignId: input.campaignId },
       });
       return { ok: true, item };
     }),
-  deleteWatchList: adminProcedure
-    .input(z.object({ subreddit: z.string().min(1) }))
-    .mutation(async ({ input }) => {
-      await prisma.redditWatchList.delete({
-        where: { subreddit: input.subreddit },
+  deleteWatchedSubreddit: adminProcedure
+    .input(z.object({ subreddit: z.string().min(1), campaignId: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      await ctx.db.watchedSubreddit.delete({
+        where: {
+          campaignId_subreddit: {
+            campaignId: input.campaignId,
+            subreddit: input.subreddit,
+          },
+        },
       });
       return { ok: true };
     }),
   /**
-   * Queue-only: evaluate unevaluated reddit posts with AI and persist a score/reasoning.
-   * Idempotent via unique index on redditPostId.
+   * Count unscored posts for a campaign
    */
-  scoreRedditPosts: queueProcedure
-    .input(
-      z
-        .object({
-          limit: z.number().min(1).max(50).default(10),
-          minCreatedUtc: z.date().optional(),
-          subreddit: z.string().optional(),
-        })
-        .optional()
-    )
-    .mutation(async ({ input }) => {
-      const limit = input?.limit ?? 10;
-
-      // Load evaluation prompt from KV, or use reasonable default
-      const kv = await prisma.keyValueStore.findUnique({
-        where: { key: "ai-eval-prompt" },
+  countUnscoredPostsForCampaign: adminProcedure
+    .input(z.object({ campaignId: z.string().uuid() }))
+    .query(async ({ input, ctx }) => {
+      const watched = await ctx.db.watchedSubreddit.findMany({
+        where: { campaignId: input.campaignId },
+        select: { subreddit: true },
       });
+
+      const subreddits = watched.map((w) => w.subreddit);
+      const count = await ctx.db.redditPost.count({
+        where: {
+          evaluations: {
+            every: {
+              NOT: {
+                campaignId: input.campaignId,
+              },
+            },
+          },
+          subreddit: { in: subreddits },
+        },
+      });
+
+      return { count };
+    }),
+  scoreRedditPosts: queueProcedure
+    .input(scoreRedditPostsInput)
+    .mutation(async ({ input, ctx }) => {
+      const campaign = await ctx.db.campaign.findUnique({
+        where: { id: input.campaignId },
+        select: { id: true },
+      });
+
+      if (!campaign) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `Campaign not found: ${input.campaignId}`,
+        });
+      }
+
+      const watched = await ctx.db.watchedSubreddit.findMany({
+        where: { campaignId: input.campaignId, subreddit: input.subreddit },
+        select: { subreddit: true },
+      });
+
+      // Find posts without an evaluation in the watched subreddits for this campaign
+      const posts = await ctx.db.redditPost.findMany({
+        where: {
+          evaluations: {
+            every: {
+              NOT: {
+                campaignId: input.campaignId,
+              },
+            },
+          },
+          subreddit: {
+            in: watched.map((w) => w.subreddit),
+          },
+        },
+        orderBy: { createdUtc: "desc" },
+      });
+
+      if (posts.length === 0) return { ok: true, evaluated: 0 };
+
+      for (const p of posts) {
+        await enqueueTask(TASK_NAMES.scoreRedditPost, {
+          postId: p.redditId,
+          campaignId: input.campaignId,
+        } satisfies z.infer<typeof scoreRedditPostInput>);
+      }
+
+      return { ok: true };
+    }),
+
+  scoreRedditPost: queueProcedure
+    .input(scoreRedditPostInput)
+    .mutation(async ({ input, ctx }) => {
+      const campaign = await ctx.db.campaign.findUnique({
+        where: { id: input.campaignId },
+      });
+
+      if (!campaign) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `Campaign not found: ${input.campaignId}`,
+        });
+      }
+
       const defaultPrompt = `ROLE: You are an expert community + SEO strategist.
-GOAL: Score how promising it is to post a helpful reply that naturally mentions and links to https://instantaudio.online to drive organic traffic.
+GOAL: Score how promising it is to post a helpful reply that naturally mentions ${campaign.name} to drive organic traffic.
 
 SCORING (1–100): Higher is better. Consider:
-- Relevance to text-to-speech, audio narration, creating audiobooks, or converting content to audio
+- Relevance to the business description: ${campaign.description}
 - Explicit need/pain (“how do I”, “tools for…”, “recommend”) vs. broad discussion
 - Post tone: questions/requests > debates > memes
 - Recency and engagement (score/comments) as signal of visibility
 - Clear angle to add value without being spammy; can suggest a free useful tip + link
 
-OUTPUT: JSON with { score: 1-100, reasoning: string }. No extra keys.`;
-      const basePrompt = (kv?.value ?? defaultPrompt).trim();
+OUTPUT: JSON with { score: 1-100, reasoning: string, exampleMessage: string }. No extra keys.`;
 
-      // Find posts without an evaluation yet
-      const posts = await prisma.redditPost.findMany({
+      // Find post without an evaluation in the watched subreddits for this campaign
+      const post = await ctx.db.redditPost.findFirst({
         where: {
-          evaluation: { is: null },
-          subreddit: input?.subreddit ? { equals: input.subreddit } : undefined,
-          createdUtc: input?.minCreatedUtc
-            ? { gte: input.minCreatedUtc }
-            : undefined,
+          redditId: input.postId,
         },
-        orderBy: { createdUtc: "desc" },
-        take: limit,
       });
 
-      if (posts.length === 0) return { ok: true, evaluated: 0 };
+      if (!post) return { ok: true, evaluated: 0 };
 
       const model = openai("gpt-4o-mini");
 
       let evaluated = 0;
-      for (const p of posts) {
-        try {
-          const details = [
-            `Subreddit: r/${p.subreddit}`,
-            `Category: ${p.category}`,
-            `Title: ${p.title}`,
-            p.selfText ? `SelfText: ${p.selfText}` : null,
-            p.author ? `Author: ${p.author}` : null,
-            p.score != null ? `Reddit Score: ${p.score}` : null,
-            p.numComments != null ? `Comments: ${p.numComments}` : null,
-            `Permalink: https://www.reddit.com${p.permalink}`,
-            p.url ? `Linked URL: ${p.url}` : null,
-          ]
-            .filter(Boolean)
-            .join("\n");
 
-          const { object } = await generateObject({
-            model,
-            schema: z.object({
-              score: z
-                .number()
-                .int()
-                .min(1)
-                .max(100)
-                .describe("Score from 1 to 100, higher is better."),
-              reasoning: z
-                .string()
-                .min(3)
-                .describe("Explanation for the score, short and concise."),
-              exampleMessage: z
-                .string()
-                .min(3)
-                .describe("An example message the user might have sent."),
-            }),
-            prompt: `${basePrompt}\n\n---
+      try {
+        const details = [
+          `Subreddit: r/${post.subreddit}`,
+          `Category: ${post.category}`,
+          `Title: ${post.title}`,
+          post.selfText ? `SelfText: ${post.selfText}` : null,
+          post.author ? `Author: ${post.author}` : null,
+          post.score != null ? `Reddit Score: ${post.score}` : null,
+          post.numComments != null ? `Comments: ${post.numComments}` : null,
+          `Permalink: https://www.reddit.com${post.permalink}`,
+          post.url ? `Linked URL: ${post.url}` : null,
+        ]
+          .filter(Boolean)
+          .join("\n");
+
+        const { object } = await generateObject({
+          model,
+          schema: z.object({
+            score: z
+              .number()
+              .int()
+              .min(1)
+              .max(100)
+              .describe("Score from 1 to 100, higher is better."),
+            reasoning: z
+              .string()
+              .min(3)
+              .describe("Explanation for the score, short and concise."),
+            exampleMessage: z
+              .string()
+              .min(3)
+              .describe("An example message the user might have sent."),
+          }),
+          prompt: `${defaultPrompt}\n\n---
 REDDIT POST
 ${details}\n---\nReturn only JSON.`,
-          });
+        });
 
-          const score = Math.max(1, Math.min(100, Math.round(object.score)));
-          const reasoning = String(object.reasoning || "").slice(0, 4000);
-          const exampleMessage = String(object.exampleMessage || "").slice(
-            0,
-            4000
-          );
+        const score = Math.max(1, Math.min(100, Math.round(object.score)));
+        const reasoning = String(object.reasoning || "").slice(0, 4000);
+        const exampleMessage = String(object.exampleMessage || "").slice(
+          0,
+          4000
+        );
 
-          // Upsert to guard against race
-          await prisma.redditPostEvaluation.create({
-            data: {
-              redditPostId: p.id,
-              score,
-              reasoning,
-              modelName: "gpt-4o-mini",
-              exampleMessage,
-            },
-          });
-          evaluated++;
-        } catch (err) {
-          // Skip failures; continue with others
-          // Optional: log to console; cron stdout shows it
-          console.error("[scoreRedditPosts] eval failed for", p.id, err);
-        }
+        // Upsert to guard against race; include campaignId if provided
+        await ctx.db.redditPostEvaluation.create({
+          data: {
+            redditPostId: post.id,
+            score,
+            reasoning,
+            modelName: "gpt-4o-mini",
+            exampleMessage,
+            campaignId: input.campaignId,
+          },
+        });
+        evaluated++;
+      } catch (err) {
+        // Skip failures; continue with others
+        // Optional: log to console; cron stdout shows it
+        console.error("[scoreRedditPosts] eval failed for", post.id, err);
       }
 
       return { ok: true, evaluated };
@@ -330,10 +499,19 @@ ${details}\n---\nReturn only JSON.`,
         subreddit: z.string().optional(),
         minScore: z.number().min(1).max(100).optional(),
         search: z.string().optional(),
+        campaignId: z.string().uuid().optional(),
+        sort: z
+          .object({
+            field: z.enum(["createdAt", "score"]).default("createdAt"),
+            dir: z.enum(["asc", "desc"]).default("desc"),
+          })
+          .optional()
+          .default({ field: "createdAt", dir: "desc" }),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const where = {
+        campaignId: input.campaignId ? { equals: input.campaignId } : undefined,
         score: input.minScore ? { gte: input.minScore } : undefined,
         redditPost: {
           is: {
@@ -361,91 +539,90 @@ ${details}\n---\nReturn only JSON.`,
       } satisfies Prisma.RedditPostEvaluationWhereInput;
 
       const [items, total] = await Promise.all([
-        prisma.redditPostEvaluation.findMany({
+        ctx.db.redditPostEvaluation.findMany({
           where,
-          orderBy: { createdAt: "desc" },
+          orderBy:
+            input.sort?.field === "score"
+              ? { score: input.sort.dir }
+              : { createdAt: input.sort?.dir ?? "desc" },
           include: { redditPost: true },
           skip: (input.page - 1) * input.pageSize,
           take: input.pageSize,
         }),
-        prisma.redditPostEvaluation.count({ where }),
+        ctx.db.redditPostEvaluation.count({ where }),
       ]);
 
       return { items, total };
     }),
-
-  /**
-   * Daily timeseries of evaluation counts above a score threshold.
-   * Optional subreddit filter and lookback window (days).
-   */
-  evaluationTimeseries: adminProcedure
+  /** Get daily counts of evaluations with score > 75 for a campaign */
+  getEvaluationTimeSeries: adminProcedure
     .input(
       z.object({
-        minScore: z.number().min(1).max(100).default(75),
-        days: z.number().min(1).max(365).default(30),
-        subreddit: z.string().optional(),
+        campaignId: z.string().uuid(),
+        days: z.number().min(1).max(90).default(30),
       })
     )
-    .query(async ({ input }) => {
-      const start = new Date(Date.now() - input.days * 24 * 60 * 60 * 1000);
-      type Row = { day: Date; count: number };
+    .query(async ({ input, ctx }) => {
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - input.days);
+      startDate.setHours(0, 0, 0, 0);
 
-      // Use a parameterized raw query to efficiently aggregate by day and include zeros via generate_series
-      let rows: Row[] = [];
-      if (input.subreddit) {
-        rows = (await prisma.$queryRaw<Row[]>`
-          WITH dates AS (
-            SELECT generate_series(date_trunc('day', ${start}::timestamptz), date_trunc('day', now()), interval '1 day') AS day
-          ),
-          counts AS (
-            SELECT date_trunc('day', e."createdAt") AS day, COUNT(*)::int AS count
-            FROM "RedditPostEvaluation" e
-            JOIN "RedditPost" p ON p.id = e."redditPostId"
-            WHERE e.score >= ${input.minScore}
-              AND e."createdAt" >= ${start}
-              AND p.subreddit = ${input.subreddit}
-            GROUP BY 1
-          )
-          SELECT d.day, COALESCE(c.count, 0)::int AS count
-          FROM dates d
-          LEFT JOIN counts c ON c.day = d.day
-          ORDER BY d.day
-        `) as Row[];
-      } else {
-        rows = (await prisma.$queryRaw<Row[]>`
-          WITH dates AS (
-            SELECT generate_series(date_trunc('day', ${start}::timestamptz), date_trunc('day', now()), interval '1 day') AS day
-          ),
-          counts AS (
-            SELECT date_trunc('day', e."createdAt") AS day, COUNT(*)::int AS count
-            FROM "RedditPostEvaluation" e
-            JOIN "RedditPost" p ON p.id = e."redditPostId"
-            WHERE e.score >= ${input.minScore}
-              AND e."createdAt" >= ${start}
-            GROUP BY 1
-          )
-          SELECT d.day, COALESCE(c.count, 0)::int AS count
-          FROM dates d
-          LEFT JOIN counts c ON c.day = d.day
-          ORDER BY d.day
-        `) as Row[];
+      const evaluations = await ctx.db.redditPostEvaluation.findMany({
+        where: {
+          campaignId: input.campaignId,
+          score: { gte: 75 },
+          createdAt: { gte: startDate },
+        },
+        select: {
+          createdAt: true,
+        },
+        orderBy: { createdAt: "asc" },
+      });
+
+      // Group by date
+      const countsByDate = new Map<string, number>();
+
+      // Initialize all dates with 0
+      for (let i = 0; i < input.days; i++) {
+        const date = new Date(startDate);
+        date.setDate(date.getDate() + i);
+        const dateKey = date.toISOString().split("T")[0]!;
+        countsByDate.set(dateKey, 0);
       }
 
-      return {
-        series: rows.map((r) => ({ day: r.day, count: Number(r.count) })),
-        start,
-      };
+      // Count evaluations by date
+      for (const evaluation of evaluations) {
+        const dateKey = evaluation.createdAt.toISOString().split("T")[0]!;
+        countsByDate.set(dateKey, (countsByDate.get(dateKey) ?? 0) + 1);
+      }
+
+      // Convert to array format
+      const series = Array.from(countsByDate.entries())
+        .map(([date, count]) => ({ date, count }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+      return { series };
     }),
 });
 
-async function queueScanWatchList() {
-  const rows = await prisma.redditWatchList.findMany({
+async function queueScanWatchedSubreddits({
+  campaignId,
+}: {
+  campaignId?: string;
+}) {
+  const watchedSubreddits = await prisma.watchedSubreddit.findMany({
+    where: campaignId ? { campaignId } : undefined,
     select: { subreddit: true },
   });
 
-  for (let i = 0; i < rows.length; i++) {
-    const r = rows[i]!;
-    await queueScanSubreddit(r.subreddit);
+  const deduped = new Set<string>();
+  watchedSubreddits.forEach((r) => deduped.add(r.subreddit));
+
+  const dedupedArray = Array.from(deduped);
+  for (let i = 0; i < dedupedArray.length; i++) {
+    await queueScanSubreddit(dedupedArray[i]!);
+    // Throttle to avoid Reddit rate limits
+    await new Promise((resolve) => setTimeout(resolve, 500));
   }
 }
 
