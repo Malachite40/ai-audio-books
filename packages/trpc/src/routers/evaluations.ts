@@ -94,31 +94,58 @@ export const evaluationsRouter = createTRPCRouter({
         },
         select: {
           createdAt: true,
+          redditPost: {
+            select: { subreddit: true },
+          },
         },
         orderBy: { createdAt: "asc" },
       });
 
-      // Group by date
-      const countsByDate = new Map<string, number>();
+      // Map of subreddit -> Map<date, count>
+      const countsBySubreddit = new Map<string, Map<string, number>>();
+      const totalsByDate = new Map<string, number>();
 
-      // Initialize all dates with 0
+      // Initialize all dates for totals with 0
       for (let i = 0; i < input.days; i++) {
         const date = new Date(startDate);
         date.setDate(date.getDate() + i);
         const dateKey = date.toISOString().split("T")[0]!;
-        countsByDate.set(dateKey, 0);
+        totalsByDate.set(dateKey, 0);
       }
 
-      // Count evaluations by date
+      // Count evaluations by date and subreddit
       for (const evaluation of evaluations) {
         const dateKey = evaluation.createdAt.toISOString().split("T")[0]!;
-        countsByDate.set(dateKey, (countsByDate.get(dateKey) ?? 0) + 1);
+        const subreddit = evaluation.redditPost?.subreddit ?? "unknown";
+
+        if (!countsBySubreddit.has(subreddit)) {
+          countsBySubreddit.set(subreddit, new Map<string, number>());
+        }
+        const subMap = countsBySubreddit.get(subreddit)!;
+        subMap.set(dateKey, (subMap.get(dateKey) ?? 0) + 1);
+
+        totalsByDate.set(dateKey, (totalsByDate.get(dateKey) ?? 0) + 1);
       }
 
-      // Convert to array format
-      const series = Array.from(countsByDate.entries())
-        .map(([date, count]) => ({ date, count }))
-        .sort((a, b) => a.date.localeCompare(b.date));
+      // Build a sorted list of all date keys
+      const allDates = Array.from(totalsByDate.keys()).sort((a, b) =>
+        a.localeCompare(b)
+      );
+
+      const series = allDates.map((date) => {
+        const total = totalsByDate.get(date) ?? 0;
+        const subredditCounts: Record<string, number> = {};
+
+        for (const [subreddit, subMap] of countsBySubreddit.entries()) {
+          subredditCounts[subreddit] = subMap.get(date) ?? 0;
+        }
+
+        return {
+          date,
+          total,
+          subreddits: subredditCounts,
+        };
+      });
 
       return { series };
     }),

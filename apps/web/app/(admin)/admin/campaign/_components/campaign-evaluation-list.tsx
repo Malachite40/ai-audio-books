@@ -250,10 +250,10 @@ export function CampaignEvaluationList({ campaignId }: { campaignId: string }) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="min-w-[160px]">Created</TableHead>
-                <TableHead>Score</TableHead>
-                <TableHead>Subreddit</TableHead>
-                <TableHead className="min-w-[320px]">Title</TableHead>
+                <TableHead className="w-52">Created</TableHead>
+                <TableHead className="w-20">Score</TableHead>
+                <TableHead className="w-44">Subreddit</TableHead>
+                <TableHead>Title</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -331,13 +331,23 @@ export function CampaignEvaluationList({ campaignId }: { campaignId: string }) {
                           className="bg-muted/20"
                           key={evaluation.id + "-details"}
                         >
-                          <TableCell colSpan={4} className="p-0">
-                            <div className="px-4 py-4 space-y-3 ">
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="flex flex-col gap-2">
+                          <TableCell
+                            colSpan={4}
+                            className="p-0 max-w-full hover:bg-none"
+                          >
+                            <div className="px-4 py-4 space-y-3 w-full overflow-hidden">
+                              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-wrap">
+                                <div className="flex flex-col gap-2 col-span-3">
+                                  {/* title */}
                                   <span className="font-semibold text-xl">
                                     {evaluation.redditPost?.title ?? "—"}
                                   </span>
+
+                                  {/* Content */}
+                                  <span className="text-muted-foreground line-clamp-[10]">
+                                    {evaluation.redditPost?.selfText}
+                                  </span>
+
                                   <div className="flex gap-2">
                                     {evaluation.redditPost?.author ? (
                                       <a
@@ -364,7 +374,7 @@ export function CampaignEvaluationList({ campaignId }: { campaignId: string }) {
                                   </div>
                                 </div>
 
-                                <div className="flex flex-col items-end gap-4">
+                                <div className="flex flex-col items-end gap-4 col-span-1">
                                   <Button
                                     className="flex md:w-fit gap-2 items-center"
                                     size={"sm"}

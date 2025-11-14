@@ -1,14 +1,13 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import { api } from "@/trpc/react";
+import { Badge } from "@workspace/ui/components/badge";
 import { Button } from "@workspace/ui/components/button";
 import { Card } from "@workspace/ui/components/card";
 import {
   ChartContainer,
-  ChartLegend,
-  ChartLegendContent,
   ChartTooltip,
   ChartTooltipContent,
 } from "@workspace/ui/components/chart";
@@ -30,6 +29,10 @@ export function CampaignEvaluationChart({
   campaignId,
   days = 30,
 }: CampaignEvaluationChartProps) {
+  const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(
+    () => new Set()
+  );
+
   const { data, isLoading, error } =
     api.reddit.evaluations.getTimeSeries.useQuery({
       campaignId,
@@ -38,17 +41,36 @@ export function CampaignEvaluationChart({
 
   const chartData = useMemo(() => {
     if (!data?.series) return [];
-    return data.series.map((point) => ({
-      date: new Date(point.date).toLocaleDateString("en-US", {
+    const subreddits = new Set<string>();
+
+    for (const point of data.series) {
+      Object.keys(point.subreddits ?? {}).forEach((sub) => subreddits.add(sub));
+    }
+
+    return data.series.map((point) => {
+      const formattedDate = new Date(point.date).toLocaleDateString("en-US", {
         month: "short",
         day: "numeric",
-      }),
-      evaluations: point.count,
-    }));
+      });
+
+      const row: Record<string, string | number> = {
+        date: formattedDate,
+        total: point.total ?? 0,
+      };
+
+      for (const subreddit of subreddits) {
+        row[subreddit] = point.subreddits?.[subreddit] ?? 0;
+      }
+
+      return row;
+    });
   }, [data]);
 
   const total = useMemo(() => {
-    return chartData.reduce((sum, point) => sum + point.evaluations, 0);
+    return chartData.reduce(
+      (sum, point) => sum + (Number(point.total) || 0),
+      0
+    );
   }, [chartData]);
 
   if (error) {
@@ -85,13 +107,58 @@ export function CampaignEvaluationChart({
       </div>
 
       <ChartContainer
-        config={{
-          evaluations: {
-            label: "High-Score Posts",
-            // Make the line green by defining the series color here
-            color: "hsl(142 70% 45%)",
-          },
-        }}
+        config={
+          // `ChartContainer` expects a config object keyed by dataKey.
+          // We'll add `total` (green) plus one entry per subreddit based on
+          // the series payload, falling back to a simple total-only config
+          // if the data isn't available yet.
+          (() => {
+            if (!data?.series?.length) {
+              return {
+                total: {
+                  label: "Total High-Score Posts",
+                  color: "hsl(142 70% 45%)",
+                },
+              } as const;
+            }
+
+            const subreddits = new Set<string>();
+            for (const point of data.series) {
+              Object.keys(point.subreddits ?? {}).forEach((sub) =>
+                subreddits.add(sub)
+              );
+            }
+
+            const baseConfig: Record<
+              string,
+              { label: string; color?: string }
+            > = {
+              total: {
+                label: "Total (all subreddits)",
+                color: "hsl(142 70% 45%)",
+              },
+            };
+
+            const palette = [
+              "hsl(210 80% 60%)",
+              "hsl(25 90% 55%)",
+              "hsl(280 70% 60%)",
+              "hsl(190 75% 55%)",
+              "hsl(340 75% 60%)",
+            ];
+
+            Array.from(subreddits)
+              .sort()
+              .forEach((subreddit, index) => {
+                baseConfig[subreddit] = {
+                  label: `r/${subreddit}`,
+                  color: palette[index % palette.length],
+                };
+              });
+
+            return baseConfig;
+          })()
+        }
         className="h-64 w-full"
       >
         <LineChart
@@ -114,25 +181,160 @@ export function CampaignEvaluationChart({
               <ChartTooltipContent
                 indicator="line"
                 labelFormatter={(label) => String(label)}
-                formatter={(value) => (
-                  <span className="font-mono">
-                    {Number(value).toLocaleString()} posts
-                  </span>
-                )}
+                formatter={(value, name, item) => {
+                  const numeric = Number(value) || 0;
+                  const isTotal = name === "total";
+                  const color = item?.color ?? item?.payload?.stroke;
+
+                  if (isTotal) {
+                    return (
+                      <span className="flex items-center gap-2 font-mono w-full min-w-[275px]">
+                        <span
+                          className="h-2.5 w-2.5 rounded-sm"
+                          style={color ? { backgroundColor: color } : {}}
+                        />
+                        <span>Total</span>
+                        <span className="bg-muted h-px flex-1"></span>
+                        <span className="ml-auto text-right">
+                          {numeric.toLocaleString()} posts
+                        </span>
+                      </span>
+                    );
+                  }
+
+                  const nameStr = String(name ?? "");
+                  const label = nameStr.startsWith("r/")
+                    ? nameStr
+                    : `r/${nameStr}`;
+
+                  return (
+                    <span className="flex items-center gap-2 font-mono w-full min-w-[275px]">
+                      <span
+                        className="h-2.5 w-2.5 rounded-sm"
+                        style={color ? { backgroundColor: color } : {}}
+                      />
+                      <span>{label}</span>
+                      <span className="bg-muted h-px flex-1"></span>
+                      <span className="ml-auto text-right">
+                        {numeric.toLocaleString()} posts
+                      </span>
+                    </span>
+                  );
+                }}
               />
             }
           />
-          <Line
-            type="monotone"
-            dataKey="evaluations"
-            stroke="var(--color-evaluations)"
-            strokeWidth={2}
-            dot={false}
-            activeDot={false}
-          />
-          <ChartLegend content={<ChartLegendContent />} />
+          {/* Total line (green) */}
+          {!hiddenSeries.has("total") && (
+            <Line
+              type="monotone"
+              dataKey="total"
+              stroke="var(--color-total, hsl(142 70% 45%))"
+              strokeWidth={2}
+              dot={false}
+              activeDot={false}
+            />
+          )}
+
+          {/* One line per subreddit */}
+          {data?.series &&
+            (() => {
+              const subreddits = new Set<string>();
+              for (const point of data.series) {
+                Object.keys(point.subreddits ?? {}).forEach((sub) =>
+                  subreddits.add(sub)
+                );
+              }
+
+              return Array.from(subreddits)
+                .sort()
+                .map((subreddit) =>
+                  hiddenSeries.has(subreddit) ? null : (
+                    <Line
+                      key={subreddit}
+                      type="monotone"
+                      dataKey={subreddit}
+                      stroke={`var(--color-${subreddit})`}
+                      strokeWidth={1.5}
+                      dot={false}
+                      activeDot={false}
+                    />
+                  )
+                );
+            })()}
         </LineChart>
       </ChartContainer>
+
+      {/* Custom legend below the chart */}
+      {data?.series &&
+        data.series.length > 0 &&
+        (() => {
+          const subreddits = new Set<string>();
+          for (const point of data.series) {
+            Object.keys(point.subreddits ?? {}).forEach((sub) =>
+              subreddits.add(sub)
+            );
+          }
+
+          const palette = [
+            "hsl(210 80% 60%)",
+            "hsl(25 90% 55%)",
+            "hsl(280 70% 60%)",
+            "hsl(190 75% 55%)",
+            "hsl(340 75% 60%)",
+          ];
+
+          const items = [
+            {
+              key: "total",
+              label: "Total (all subreddits)",
+              color: "hsl(142 70% 45%)",
+            },
+            ...Array.from(subreddits)
+              .sort()
+              .map((subreddit, index) => ({
+                key: subreddit,
+                label: `r/${subreddit}`,
+                color: palette[index % palette.length],
+              })),
+          ];
+
+          return (
+            <div className="mb-2 flex flex-wrap gap-3 text-xs text-muted-foreground px-10">
+              {items.map((item) => {
+                const isHidden = hiddenSeries.has(item.key);
+                return (
+                  <Badge
+                    key={item.key}
+                    onClick={() => {
+                      setHiddenSeries((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(item.key)) {
+                          next.delete(item.key);
+                        } else {
+                          next.add(item.key);
+                        }
+                        return next;
+                      });
+                    }}
+                    className={
+                      isHidden
+                        ? "opacity-40 grayscale cursor-pointer"
+                        : "hover:bg-muted cursor-pointer"
+                    }
+                    variant={"outline"}
+                  >
+                    <span
+                      className="inline-block h-2 w-4 rounded-sm"
+                      style={{ backgroundColor: item.color }}
+                    />
+                    <span>{item.label}</span>
+                  </Badge>
+                );
+              })}
+            </div>
+          );
+        })()}
     </Card>
   );
 }
