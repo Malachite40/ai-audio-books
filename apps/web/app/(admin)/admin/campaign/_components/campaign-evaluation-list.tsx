@@ -30,11 +30,14 @@ import {
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import {
+  ArchiveIcon,
   CopyIcon,
   ExternalLinkIcon,
   Loader2,
   PlusIcon,
   RefreshCw,
+  ThumbsDown,
+  ThumbsUp,
 } from "lucide-react";
 
 const SORT_OPTIONS = [
@@ -55,6 +58,19 @@ export function CampaignEvaluationList({ campaignId }: { campaignId: string }) {
   );
   const [page, setPage] = useState(1);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const utils = api.useUtils();
+
+  const updateRating = api.reddit.updateRating.useMutation({
+    onSuccess: () => {
+      void utils.reddit.evaluations.fetchAll.invalidate();
+    },
+  });
+
+  const archiveEvaluation = api.reddit.evaluations.archive.useMutation({
+    onSuccess: () => {
+      void utils.reddit.evaluations.fetchAll.invalidate();
+    },
+  });
 
   const parsedMinScore = useMemo(() => {
     if (minScore.trim() === "") return undefined;
@@ -73,7 +89,7 @@ export function CampaignEvaluationList({ campaignId }: { campaignId: string }) {
   ];
 
   const { data, isFetching, error, refetch } =
-    api.reddit.listEvaluations.useQuery({
+    api.reddit.evaluations.fetchAll.useQuery({
       campaignId,
       page,
       pageSize: EVALUATION_PAGE_SIZE,
@@ -259,7 +275,11 @@ export function CampaignEvaluationList({ campaignId }: { campaignId: string }) {
                         onClick={() => toggleRow(evaluation.id)}
                         className={cn(
                           "cursor-pointer transition-colors hover:bg-muted/50",
-                          isOpen && "bg-muted/40"
+                          evaluation.rating === "POSITIVE" &&
+                            "bg-emerald-500/5 hover:bg-emerald-500/20",
+                          evaluation.rating === "NEGATIVE" &&
+                            "bg-rose-500/5 hover:bg-rose-500/20",
+                          isOpen && !evaluation.rating && "bg-muted/40"
                         )}
                         role="button"
                         tabIndex={0}
@@ -366,6 +386,85 @@ export function CampaignEvaluationList({ campaignId }: { campaignId: string }) {
                                     <PlusIcon className="size-4" />
                                     <ExternalLinkIcon className="size-4" />
                                   </Button>
+
+                                  <div className="flex gap-2">
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          variant={
+                                            evaluation.rating === "POSITIVE"
+                                              ? "outline"
+                                              : "ghost"
+                                          }
+                                          size="icon"
+                                          aria-label="Mark as positive"
+                                          onClick={() =>
+                                            updateRating.mutate({
+                                              id: evaluation.id,
+                                              direction:
+                                                evaluation.rating === "POSITIVE"
+                                                  ? "clear"
+                                                  : "up",
+                                            })
+                                          }
+                                          disabled={updateRating.isPending}
+                                        >
+                                          <ThumbsUp className="size-4" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>Upvote</TooltipContent>
+                                    </Tooltip>
+
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          variant={
+                                            evaluation.rating === "NEGATIVE"
+                                              ? "outline"
+                                              : "ghost"
+                                          }
+                                          size="icon"
+                                          aria-label="Mark as negative"
+                                          onClick={() =>
+                                            updateRating.mutate({
+                                              id: evaluation.id,
+                                              direction:
+                                                evaluation.rating === "NEGATIVE"
+                                                  ? "clear"
+                                                  : "down",
+                                            })
+                                          }
+                                          disabled={updateRating.isPending}
+                                        >
+                                          <ThumbsDown className="size-4" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>Downvote</TooltipContent>
+                                    </Tooltip>
+
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          aria-label="Archive evaluation"
+                                          onClick={() =>
+                                            archiveEvaluation.mutate({
+                                              id: evaluation.id,
+                                            })
+                                          }
+                                          disabled={archiveEvaluation.isPending}
+                                        >
+                                          {archiveEvaluation.isPending ? (
+                                            <Loader2 className="size-4 animate-spin" />
+                                          ) : (
+                                            <ArchiveIcon className="size-4" />
+                                          )}
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>Archive</TooltipContent>
+                                    </Tooltip>
+                                  </div>
                                 </div>
                               </div>
                               <div className="space-y-2 text-wrap grid grid-cols-1 md:grid-cols-2 gap-4">

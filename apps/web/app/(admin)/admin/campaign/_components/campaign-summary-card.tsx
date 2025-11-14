@@ -1,12 +1,19 @@
 "use client";
 
 import { ResponsiveModal } from "@/components/resonpsive-modal";
+import { useAreYouSure } from "@/hooks/use-are-you-sure";
 import { api } from "@/trpc/react";
 import { Campaign } from "@workspace/database";
 import { Badge } from "@workspace/ui/components/badge";
 import { Button } from "@workspace/ui/components/button";
 import { Card } from "@workspace/ui/components/card";
-import { EditIcon } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@workspace/ui/components/tooltip";
+import { EditIcon, Trash2Icon } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { CampaignForm } from "./campaign-form";
 
@@ -24,13 +31,22 @@ export function CampaignSummaryCard({
   onUpdated,
 }: CampaignSummaryCardProps) {
   const [editOpen, setEditOpen] = useState(false);
+  const { AreYouSure, setShowAreYouSure } = useAreYouSure();
+  const router = useRouter();
+  const utils = api.useUtils();
   const toggleMutation = api.reddit.campaigns.upsert.useMutation({
     onSuccess: async () => {
       await utils.reddit.campaigns.fetch.invalidate();
       await utils.reddit.campaigns.fetchAll.invalidate();
     },
   });
-  const utils = api.useUtils();
+  const deleteMutation = api.reddit.campaigns.delete.useMutation({
+    onSuccess: async () => {
+      await utils.reddit.campaigns.fetch.invalidate();
+      await utils.reddit.campaigns.fetchAll.invalidate();
+      router.push("/admin/leads");
+    },
+  });
   const handleUpdated = async () => {
     // Invalidate relevant queries after edit
     await utils.reddit.campaigns.fetch.invalidate();
@@ -51,11 +67,15 @@ export function CampaignSummaryCard({
     });
   };
 
+  const handleConfirmDelete = async () => {
+    deleteMutation.mutate({ id: campaign.id });
+  };
+
   return (
     <>
       <Card className="p-6 space-y-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="space-y-2">
+        <div className="flex flex-wrap items-start justify-between gap-4 w-full">
+          <div className="space-y-2 flex flex-col w-full">
             <div className="flex gap-3 flex-wrap">
               <div className="flex flex-col gap-2">
                 {/*  Toggle Active & Edit Button */}
@@ -94,14 +114,34 @@ export function CampaignSummaryCard({
                 </div>
               </div>
 
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setEditOpen(true)}
-                className="ml-auto"
-              >
-                <EditIcon />
-              </Button>
+              <div className="ml-auto flex items-center gap-1">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-label="Edit campaign"
+                      onClick={() => setEditOpen(true)}
+                    >
+                      <EditIcon className="w-4 h-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Edit campaign</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-label="Delete campaign"
+                      onClick={() => setShowAreYouSure(true)}
+                    >
+                      <Trash2Icon className="w-4 h-4 text-destructive" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Delete campaign</TooltipContent>
+                </Tooltip>
+              </div>
             </div>
             {campaign.description ? (
               <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3">
@@ -128,6 +168,12 @@ export function CampaignSummaryCard({
           onCancel={() => setEditOpen(false)}
         />
       </ResponsiveModal>
+      <AreYouSure
+        title="Delete campaign?"
+        description="This will permanently delete this campaign. This action cannot be undone."
+        onConfirm={handleConfirmDelete}
+        isPending={deleteMutation.isPending}
+      />
     </>
   );
 }

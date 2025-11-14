@@ -68,6 +68,7 @@ Data flow:
 ## Naming Conventions
 
 - App Router pages (server): keep `page.tsx` as a server component that default-exports a small wrapper rendering a co-located client component when needed.
+
   - Client entry files end with `.client.tsx` and export a named component `XxxClientPage`.
   - The server page imports the named export and renders it.
   - Examples:
@@ -76,6 +77,7 @@ Data flow:
     - `apps/web/app/(admin)/admin/leads/page.tsx` → imports `{ LeadsClientPage }` from `./leads.client`.
 
 - Route-local UI components: place under an `_components/` folder next to the route, use kebab-case filenames, and export named PascalCase components.
+
   - Example: `apps/web/app/(admin)/admin/_components/admin-users.tsx` exports `AdminUsersCard`.
   - Add `"use client"` at the top only when hooks/state or browser-only APIs are used.
 
@@ -422,6 +424,37 @@ export function ExampleModalTrigger() {
     </>
   );
 }
+```
+
+## Icon-Only Buttons (Tooltips)
+
+When creating buttons that only render an icon (no text label), always:
+
+- Wrap the button in a `Tooltip`, with a `TooltipTrigger asChild`.
+- Provide an `aria-label` on the `Button` describing the action.
+- Set `TooltipContent` to a short, human-readable description of what the button does.
+
+Example:
+
+```tsx
+<Tooltip>
+  <TooltipTrigger asChild>
+    <Button
+      variant="outline"
+      size="icon"
+      aria-label="Refresh evaluations"
+      onClick={() => refetch()}
+      disabled={isFetching}
+    >
+      {isFetching ? (
+        <Loader2 className="size-4 animate-spin" />
+      ) : (
+        <RefreshCw className="size-4" />
+      )}
+    </Button>
+  </TooltipTrigger>
+  <TooltipContent>Refresh evaluations</TooltipContent>
+</Tooltip>
 ```
 
 ## Pagination Patterns

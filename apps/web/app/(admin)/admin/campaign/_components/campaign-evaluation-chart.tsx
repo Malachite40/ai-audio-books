@@ -31,7 +31,7 @@ export function CampaignEvaluationChart({
   days = 30,
 }: CampaignEvaluationChartProps) {
   const { data, isLoading, error } =
-    api.reddit.getEvaluationTimeSeries.useQuery({
+    api.reddit.evaluations.getTimeSeries.useQuery({
       campaignId,
       days,
     });

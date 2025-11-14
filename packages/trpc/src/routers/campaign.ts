@@ -31,6 +31,13 @@ export const campaignsRouter = createTRPCRouter({
       return { campaign: upserted };
     }),
 
+  delete: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ input, ctx }) => {
+      await ctx.db.campaign.delete({ where: { id: input.id } });
+      return { ok: true };
+    }),
+
   fetchAll: adminProcedure.query(async ({ ctx }) => {
     const items = await ctx.db.campaign.findMany({
       orderBy: { createdAt: "desc" },

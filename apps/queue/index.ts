@@ -51,8 +51,14 @@ worker.register(
   TASK_NAMES.redditScanSubreddit,
   api.reddit.scanSubredditWithSdk
 );
-worker.register(TASK_NAMES.scoreRedditPosts, api.reddit.scoreRedditPosts);
-worker.register(TASK_NAMES.scoreRedditPost, api.reddit.scoreRedditPost);
+worker.register(
+  TASK_NAMES.scoreRedditPosts,
+  api.reddit.evaluations.scoreRedditPosts
+);
+worker.register(
+  TASK_NAMES.scoreRedditPost,
+  api.reddit.evaluations.scoreRedditPost
+);
 worker.register(
   TASK_NAMES.queueAllPostsToScore,
   api.reddit.campaigns.queueAllPostsToScore
