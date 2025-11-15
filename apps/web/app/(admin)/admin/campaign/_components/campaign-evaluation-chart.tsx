@@ -1,5 +1,6 @@
 "use client";
 
+import { format, formatDistanceToNow } from "date-fns";
 import { useMemo, useState } from "react";
 
 import { api } from "@/trpc/react";
@@ -12,12 +13,16 @@ import {
   ChartTooltipContent,
 } from "@workspace/ui/components/chart";
 import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@workspace/ui/components/toggle-group";
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
 import { Loader2, RefreshCw } from "lucide-react";
-import { Line, LineChart, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, CartesianGrid, XAxis } from "recharts";
 import { toast } from "sonner";
 
 type CampaignEvaluationChartProps = {
@@ -29,6 +34,7 @@ export function CampaignEvaluationChart({
   campaignId,
   days = 30,
 }: CampaignEvaluationChartProps) {
+  const [rangeDays, setRangeDays] = useState<number>(days);
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(
     () => new Set()
   );
@@ -36,7 +42,7 @@ export function CampaignEvaluationChart({
   const { data, isLoading, error } =
     api.reddit.evaluations.getTimeSeries.useQuery({
       campaignId,
-      days,
+      days: rangeDays,
     });
 
   const chartData = useMemo(() => {
@@ -48,13 +54,8 @@ export function CampaignEvaluationChart({
     }
 
     return data.series.map((point) => {
-      const formattedDate = new Date(point.date).toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-      });
-
       const row: Record<string, string | number> = {
-        date: formattedDate,
+        date: point.date,
         total: point.total ?? 0,
       };
 
@@ -85,8 +86,8 @@ export function CampaignEvaluationChart({
 
   if (isLoading) {
     return (
-      <Card className="p-6">
-        <div className="flex items-center gap-2 text-muted-foreground">
+      <Card className="p-6 min-h-[500px] flex items-center justify-center">
+        <div className="flex items-center gap-2 text-muted-foreground animate-pulse">
           <Loader2 className="size-4 animate-spin" />
           Loading chart…
         </div>
@@ -95,15 +96,36 @@ export function CampaignEvaluationChart({
   }
 
   return (
-    <Card className="p-6">
+    <Card className="p-6 ">
       <div className="flex justify-between mb-4">
         <div>
           <h2 className="font-semibold text-lg">High-Score Evaluations</h2>
           <p className="text-sm text-muted-foreground">
-            Posts with score ≥ 75 over the last {days} days
+            Posts with score ≥ 75 over the last {rangeDays} days
           </p>
         </div>
-        <HeaderActions campaignId={campaignId} total={total} />
+        <div className="flex items-center gap-4">
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            size="sm"
+            spacing={0}
+            value={String(rangeDays)}
+            onValueChange={(value) => {
+              if (!value) return;
+              const parsed = Number(value);
+              if (!Number.isNaN(parsed)) {
+                setRangeDays(parsed);
+              }
+            }}
+            aria-label="Select time range"
+          >
+            <ToggleGroupItem value="7">7d</ToggleGroupItem>
+            <ToggleGroupItem value="30">30d</ToggleGroupItem>
+            <ToggleGroupItem value="90">90d</ToggleGroupItem>
+          </ToggleGroup>
+          <HeaderActions campaignId={campaignId} total={total} />
+        </div>
       </div>
 
       <ChartContainer
@@ -161,12 +183,12 @@ export function CampaignEvaluationChart({
         }
         className="h-64 w-full"
       >
-        <LineChart
+        <AreaChart
           data={chartData}
           // Reduce left padding to tighten the chart against the Y-axis
           margin={{ left: 0, right: 8, top: 8, bottom: 8 }}
         >
-          {/* Remove background grid lines for a cleaner look */}
+          <CartesianGrid vertical={false} strokeDasharray="3 3" />
           <XAxis
             dataKey="date"
             tickMargin={6}
@@ -174,13 +196,28 @@ export function CampaignEvaluationChart({
             textAnchor="end"
             height={60}
             fontSize={12}
+            tickFormatter={(value) =>
+              formatDistanceToNow(new Date(String(value)), {
+                addSuffix: true,
+              }).replace("about ", "")
+            }
           />
-          <YAxis allowDecimals={false} />
           <ChartTooltip
             content={
               <ChartTooltipContent
                 indicator="line"
-                labelFormatter={(label) => String(label)}
+                labelFormatter={(value) => {
+                  return (
+                    <div className="flex gap-3 items-center">
+                      <span>{format(new Date(String(value)), "P")}</span>
+                      <span className="text-muted-foreground">
+                        {formatDistanceToNow(new Date(String(value)), {
+                          addSuffix: true,
+                        }).replace("about ", "")}
+                      </span>
+                    </div>
+                  );
+                }}
                 formatter={(value, name, item) => {
                   const numeric = Number(value) || 0;
                   const isTotal = name === "total";
@@ -224,12 +261,14 @@ export function CampaignEvaluationChart({
               />
             }
           />
-          {/* Total line (green) */}
+          {/* Total area (green) */}
           {!hiddenSeries.has("total") && (
-            <Line
+            <Area
               type="monotone"
               dataKey="total"
               stroke="var(--color-total, hsl(142 70% 45%))"
+              fill="var(--color-total, hsl(142 70% 45%))"
+              fillOpacity={0.2}
               strokeWidth={2}
               dot={false}
               activeDot={false}
@@ -250,11 +289,13 @@ export function CampaignEvaluationChart({
                 .sort()
                 .map((subreddit) =>
                   hiddenSeries.has(subreddit) ? null : (
-                    <Line
+                    <Area
                       key={subreddit}
                       type="monotone"
                       dataKey={subreddit}
                       stroke={`var(--color-${subreddit})`}
+                      fill={`var(--color-${subreddit})`}
+                      fillOpacity={0.15}
                       strokeWidth={1.5}
                       dot={false}
                       activeDot={false}
@@ -262,7 +303,7 @@ export function CampaignEvaluationChart({
                   )
                 );
             })()}
-        </LineChart>
+        </AreaChart>
       </ChartContainer>
 
       {/* Custom legend below the chart */}
