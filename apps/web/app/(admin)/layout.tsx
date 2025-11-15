@@ -3,6 +3,7 @@
 import { FullScreenSignIn } from "@/components/sign-in";
 import { api } from "@/trpc/server";
 import type { Route } from "next";
+import { cookies } from "next/headers";
 import { AdminSidebarShell } from "./_components/admin-sidebar-shell";
 
 type AdminLayoutProps = {
@@ -36,5 +37,14 @@ export default async function AdminLayout({ children }: AdminLayoutProps) {
       </div>
     );
   }
-  return <AdminSidebarShell items={items}>{children}</AdminSidebarShell>;
+  const cookieStore = await cookies();
+  const sidebarCookie = cookieStore.get("sidebar_state")?.value;
+  const sidebarDefaultOpen =
+    sidebarCookie === undefined ? true : sidebarCookie === "true";
+
+  return (
+    <AdminSidebarShell sidebarDefaultOpen={sidebarDefaultOpen} items={items}>
+      {children}
+    </AdminSidebarShell>
+  );
 }

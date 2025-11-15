@@ -1,5 +1,7 @@
 "use client";
 
+import { api } from "@/trpc/react";
+import { Badge } from "@workspace/ui/components/badge";
 import {
   Sidebar,
   SidebarContent,
@@ -16,9 +18,8 @@ import {
 import { Route } from "next";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { api } from "@/trpc/react";
-import { Badge } from "@workspace/ui/components/badge";
 
+import type { LucideIcon } from "lucide-react";
 import {
   AudioLinesIcon,
   BarChart3,
@@ -30,7 +31,6 @@ import {
   UserPlus,
   Users as UsersIcon,
 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 
 type Item = { title: string; href: string };
 
@@ -49,17 +49,22 @@ const iconByHref: Record<string, LucideIcon> = {
 export function AdminSidebarShell({
   children,
   items,
+  sidebarDefaultOpen,
 }: {
   children: React.ReactNode;
   items: ReadonlyArray<Item>;
+  sidebarDefaultOpen?: boolean;
 }) {
   const pathname = usePathname();
-  const { data: unreadCount } = api.support.adminUnreadCount.useQuery(undefined, {
-    refetchInterval: 30000,
-  });
+  const { data: unreadCount } = api.support.adminUnreadCount.useQuery(
+    undefined,
+    {
+      refetchInterval: 30000,
+    }
+  );
 
   return (
-    <SidebarProvider>
+    <SidebarProvider defaultOpen={sidebarDefaultOpen}>
       <Sidebar>
         <SidebarContent>
           <SidebarGroup>
@@ -72,17 +77,24 @@ export function AdminSidebarShell({
                       asChild
                       isActive={pathname === item.href}
                     >
-                      <Link href={item.href as Route} prefetch className="flex w-full items-center justify-between">
+                      <Link
+                        href={item.href as Route}
+                        prefetch
+                        className="flex w-full items-center justify-between"
+                      >
                         <span className="inline-flex items-center gap-2">
                           {(() => {
                             const Icon = iconByHref[item.href];
-                            return Icon ? <Icon className="h-4 w-4" aria-hidden /> : null;
+                            return Icon ? (
+                              <Icon className="h-4 w-4" aria-hidden />
+                            ) : null;
                           })()}
                           {item.title}
                         </span>
-                        {item.href === "/admin/support" && (unreadCount ?? 0) > 0 && (
-                          <Badge variant="secondary">{unreadCount}</Badge>
-                        )}
+                        {item.href === "/admin/support" &&
+                          (unreadCount ?? 0) > 0 && (
+                            <Badge variant="secondary">{unreadCount}</Badge>
+                          )}
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
