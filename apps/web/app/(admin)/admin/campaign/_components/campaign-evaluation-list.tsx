@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 import { PaginationBar } from "@/components/pagination-bar";
+import { ResponsiveModal } from "@/components/resonpsive-modal";
 import { api } from "@/trpc/react";
 import { Badge } from "@workspace/ui/components/badge";
 import { Button } from "@workspace/ui/components/button";
@@ -23,22 +24,27 @@ import {
   TableHeader,
   TableRow,
 } from "@workspace/ui/components/table";
+import { Textarea } from "@workspace/ui/components/textarea";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
+import { formatDistanceToNow } from "date-fns";
 import {
   ArchiveIcon,
+  BookmarkIcon,
   CopyIcon,
   ExternalLinkIcon,
   Loader2,
+  MessageCircle,
   PlusIcon,
   RefreshCw,
   ThumbsDown,
   ThumbsUp,
 } from "lucide-react";
+import { toast } from "sonner";
 
 const SORT_OPTIONS = [
   { value: "createdAt_desc", label: "Newest first" },
@@ -48,6 +54,13 @@ const SORT_OPTIONS = [
 ] as const;
 type EvaluationSortValue = (typeof SORT_OPTIONS)[number]["value"];
 const DEFAULT_EVALUATION_SORT: EvaluationSortValue = "score_desc";
+const STATUS_OPTIONS = [
+  { value: "active", label: "Active" },
+  { value: "archived", label: "Archived" },
+  { value: "all", label: "All" },
+] as const;
+type EvaluationStatusValue = (typeof STATUS_OPTIONS)[number]["value"];
+const DEFAULT_EVALUATION_STATUS: EvaluationStatusValue = "active";
 const EVALUATION_PAGE_SIZE = 25;
 
 export function CampaignEvaluationList({ campaignId }: { campaignId: string }) {
@@ -56,9 +69,28 @@ export function CampaignEvaluationList({ campaignId }: { campaignId: string }) {
   const [sortValue, setSortValue] = useState<EvaluationSortValue>(
     DEFAULT_EVALUATION_SORT
   );
+  const [statusValue, setStatusValue] = useState<EvaluationStatusValue>(
+    DEFAULT_EVALUATION_STATUS
+  );
   const [page, setPage] = useState(1);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [exampleModalOpen, setExampleModalOpen] = useState(false);
+  const [exampleModalContent, setExampleModalContent] = useState("");
+  const [selectedEvaluation, setSelectedEvaluation] = useState<{
+    id: string;
+    exampleMessage?: string | null;
+    redditPost?: {
+      title?: string | null;
+      selfText?: string | null;
+    };
+  } | null>(null);
   const utils = api.useUtils();
+
+  const closeExampleModal = () => {
+    setExampleModalOpen(false);
+    setSelectedEvaluation(null);
+    setExampleModalContent("");
+  };
 
   const updateRating = api.reddit.updateRating.useMutation({
     onSuccess: () => {
@@ -72,6 +104,66 @@ export function CampaignEvaluationList({ campaignId }: { campaignId: string }) {
     },
   });
 
+  const saveExampleEvaluation =
+    api.reddit.exampleEvaluations.upsert.useMutation({
+      onSuccess: () => {
+        toast.success("Example evaluation saved");
+        void utils.reddit.evaluations.fetchAll.invalidate();
+        closeExampleModal();
+      },
+      onError: (error) => {
+        toast.error("Failed to save example", {
+          description: error.message,
+        });
+      },
+    });
+
+  const deleteExampleEvaluation =
+    api.reddit.exampleEvaluations.delete.useMutation({
+      onSuccess: () => {
+        void utils.reddit.evaluations.fetchAll.invalidate();
+      },
+    });
+
+  const handleExampleSave = () => {
+    if (!selectedEvaluation) return;
+    const trimmed = exampleModalContent.trim();
+    if (trimmed.length === 0) {
+      toast.error("Please add some content before saving.");
+      return;
+    }
+
+    saveExampleEvaluation.mutate({
+      redditPostEvaluationId: selectedEvaluation.id,
+      modifiedContent: trimmed,
+    });
+  };
+
+  const openExampleModal = (evaluation: {
+    id: string;
+    exampleMessage?: string | null;
+    redditPost?: {
+      selfText?: string | null;
+      title?: string | null;
+    };
+  }) => {
+    const defaultContent =
+      evaluation.exampleMessage ??
+      evaluation.redditPost?.selfText ??
+      evaluation.redditPost?.title ??
+      "";
+    setSelectedEvaluation(evaluation);
+    setExampleModalContent(defaultContent);
+    setExampleModalOpen(true);
+  };
+
+  const isExampleSaveDisabled =
+    exampleModalContent.trim().length === 0 || saveExampleEvaluation.isPending;
+
+  const exampleModalDescription = selectedEvaluation?.redditPost?.title
+    ? `Post: ${selectedEvaluation.redditPost?.title}`
+    : undefined;
+
   const parsedMinScore = useMemo(() => {
     if (minScore.trim() === "") return undefined;
     const numeric = Number(minScore);
@@ -81,7 +173,7 @@ export function CampaignEvaluationList({ campaignId }: { campaignId: string }) {
 
   useEffect(() => {
     setPage(1);
-  }, [campaignId, search, parsedMinScore, sortValue]);
+  }, [campaignId, search, parsedMinScore, sortValue, statusValue]);
 
   const sortParts = sortValue.split("_") as [
     "createdAt" | "score",
@@ -95,6 +187,12 @@ export function CampaignEvaluationList({ campaignId }: { campaignId: string }) {
       pageSize: EVALUATION_PAGE_SIZE,
       search: search.trim() || undefined,
       minScore: parsedMinScore,
+      archived:
+        statusValue === "archived"
+          ? true
+          : statusValue === "active"
+            ? false
+            : undefined,
       sort: {
         field: sortParts[0],
         dir: sortParts[1],
@@ -110,12 +208,14 @@ export function CampaignEvaluationList({ campaignId }: { campaignId: string }) {
   const hasFilters =
     Boolean(search.trim()) ||
     parsedMinScore != null ||
-    sortValue !== DEFAULT_EVALUATION_SORT;
+    sortValue !== DEFAULT_EVALUATION_SORT ||
+    statusValue !== DEFAULT_EVALUATION_STATUS;
 
   const handleResetFilters = () => {
     setSearch("");
     setMinScore("");
     setSortValue(DEFAULT_EVALUATION_SORT);
+    setStatusValue(DEFAULT_EVALUATION_STATUS);
   };
 
   const toggleRow = (id: string) => {
@@ -161,7 +261,7 @@ export function CampaignEvaluationList({ campaignId }: { campaignId: string }) {
 
   return (
     <div className="space-y-4 w-full">
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
         <div>
           <label className="block text-sm mb-1">Search</label>
           <Input
@@ -194,6 +294,26 @@ export function CampaignEvaluationList({ campaignId }: { campaignId: string }) {
             </SelectTrigger>
             <SelectContent>
               {SORT_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <label className="block text-sm mb-1">Status</label>
+          <Select
+            value={statusValue}
+            onValueChange={(value) =>
+              setStatusValue(value as EvaluationStatusValue)
+            }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Filter by status" />
+            </SelectTrigger>
+            <SelectContent>
+              {STATUS_OPTIONS.map((option) => (
                 <SelectItem key={option.value} value={option.value}>
                   {option.label}
                 </SelectItem>
@@ -247,12 +367,14 @@ export function CampaignEvaluationList({ campaignId }: { campaignId: string }) {
         </Card>
       ) : (
         <div className="overflow-auto rounded-xl border">
-          <Table>
+          <Table className="">
             <TableHeader>
               <TableRow>
-                <TableHead className="w-52">Created</TableHead>
+                <TableHead className="w-28">Created</TableHead>
                 <TableHead className="w-20">Score</TableHead>
                 <TableHead className="w-44">Subreddit</TableHead>
+                <TableHead className="w-20">Score</TableHead>
+                <TableHead className="w-20"></TableHead>
                 <TableHead>Title</TableHead>
               </TableRow>
             </TableHeader>
@@ -291,8 +413,13 @@ export function CampaignEvaluationList({ campaignId }: { campaignId: string }) {
                         }}
                         aria-expanded={isOpen}
                       >
-                        <TableCell>
-                          {new Date(evaluation.createdAt).toLocaleString()}
+                        <TableCell className="text-sm items-center justify-between flex gap-1">
+                          {formatDistanceToNow(evaluation.createdAt, {
+                            addSuffix: true,
+                          }).replace("about ", "")}
+                          {evaluation.exampleEvaluation && (
+                            <BookmarkIcon className="size-4 text-muted-foreground " />
+                          )}
                         </TableCell>
                         <TableCell>{getScoreBadge(evaluation.score)}</TableCell>
                         <TableCell>
@@ -320,6 +447,28 @@ export function CampaignEvaluationList({ campaignId }: { campaignId: string }) {
                             </Badge>
                           )}
                         </TableCell>
+                        <TableCell>
+                          <span className="gap-1 items-center flex">
+                            <ThumbsUp className="size-3 text-muted-foreground" />
+
+                            <div>
+                              {evaluation.redditPost.score
+                                ? evaluation.redditPost.score
+                                : "-"}
+                            </div>
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <span className="gap-1 items-center flex">
+                            <MessageCircle className="size-3 text-muted-foreground" />
+
+                            <span>
+                              {evaluation.redditPost.numComments
+                                ? evaluation.redditPost.numComments
+                                : "-"}
+                            </span>
+                          </span>
+                        </TableCell>
                         <TableCell className="whitespace-pre-wrap">
                           <span className="text-sm line-clamp-1">
                             {evaluation.redditPost?.title ?? "—"}
@@ -332,7 +481,7 @@ export function CampaignEvaluationList({ campaignId }: { campaignId: string }) {
                           key={evaluation.id + "-details"}
                         >
                           <TableCell
-                            colSpan={4}
+                            colSpan={6}
                             className="p-0 max-w-full hover:bg-none"
                           >
                             <div className="px-4 py-4 space-y-3 w-full overflow-hidden">
@@ -474,6 +623,50 @@ export function CampaignEvaluationList({ campaignId }: { campaignId: string }) {
                                       </TooltipTrigger>
                                       <TooltipContent>Archive</TooltipContent>
                                     </Tooltip>
+
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          variant={
+                                            evaluation.exampleEvaluation
+                                              ? "outline"
+                                              : "ghost"
+                                          }
+                                          size="icon"
+                                          aria-label={
+                                            evaluation.exampleEvaluation
+                                              ? "Remove from examples"
+                                              : "Save as example"
+                                          }
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            if (evaluation.exampleEvaluation) {
+                                              deleteExampleEvaluation.mutate({
+                                                redditPostEvaluationId:
+                                                  evaluation.id,
+                                              });
+                                            } else {
+                                              openExampleModal(evaluation);
+                                            }
+                                          }}
+                                          disabled={
+                                            saveExampleEvaluation.isPending ||
+                                            deleteExampleEvaluation.isPending
+                                          }
+                                        >
+                                          {deleteExampleEvaluation.isPending ? (
+                                            <Loader2 className="size-4 animate-spin" />
+                                          ) : (
+                                            <BookmarkIcon className="size-4" />
+                                          )}
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        {evaluation.exampleEvaluation
+                                          ? "Remove from examples"
+                                          : "Save as example"}
+                                      </TooltipContent>
+                                    </Tooltip>
                                   </div>
                                 </div>
                               </div>
@@ -515,6 +708,44 @@ export function CampaignEvaluationList({ campaignId }: { campaignId: string }) {
         showRightEllipsis={page < totalPages - 2}
         setPage={setPage}
       />
+      <ResponsiveModal
+        open={exampleModalOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeExampleModal();
+          }
+        }}
+        title="Save example evaluation"
+        description={exampleModalDescription}
+      >
+        <div className="space-y-4">
+          <Textarea
+            value={exampleModalContent}
+            onChange={(event) => setExampleModalContent(event.target.value)}
+            placeholder="Describe the curated answer or example response."
+            rows={7}
+          />
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>Existing example message will be overwritten.</span>
+            <span>{exampleModalContent.trim().length} characters</span>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={closeExampleModal}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleExampleSave}
+              disabled={isExampleSaveDisabled}
+            >
+              {saveExampleEvaluation.isPending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                "Save example"
+              )}
+            </Button>
+          </div>
+        </div>
+      </ResponsiveModal>
     </div>
   );
 }

@@ -18,6 +18,7 @@ export const evaluationsRouter = createTRPCRouter({
         minScore: z.number().min(1).max(100).optional(),
         search: z.string().optional(),
         campaignId: z.string().uuid().optional(),
+        archived: z.boolean().optional(),
         sort: z
           .object({
             field: z.enum(["createdAt", "score"]).default("createdAt"),
@@ -29,7 +30,8 @@ export const evaluationsRouter = createTRPCRouter({
     )
     .query(async ({ input, ctx }) => {
       const where = {
-        archived: { equals: false },
+        archived:
+          input.archived != null ? { equals: input.archived } : undefined,
         campaignId: input.campaignId ? { equals: input.campaignId } : undefined,
         score: input.minScore ? { gte: input.minScore } : undefined,
         redditPost: {
@@ -64,7 +66,7 @@ export const evaluationsRouter = createTRPCRouter({
             input.sort?.field === "score"
               ? [{ score: input.sort.dir }, { createdAt: "desc" }]
               : { createdAt: input.sort?.dir ?? "desc" },
-          include: { redditPost: true },
+          include: { redditPost: true, exampleEvaluation: true },
           skip: (input.page - 1) * input.pageSize,
           take: input.pageSize,
         }),
@@ -228,17 +230,19 @@ export const evaluationsRouter = createTRPCRouter({
         });
       }
 
-      const defaultPrompt = `ROLE: You are an expert community + SEO strategist.
-GOAL: Score how promising it is to post a helpful reply that naturally mentions ${campaign.name} to drive organic traffic.
-
-SCORING (1–100): Higher is better. Consider:
-- Relevance to the business description: ${campaign.description}
-- Explicit need/pain (“how do I”, “tools for…”, “recommend”) vs. broad discussion
-- Post tone: questions/requests > debates > memes
-- Recency and engagement (score/comments) as signal of visibility
-- Clear angle to add value without being spammy; can suggest a free useful tip + link
-
-OUTPUT: JSON with { score: 1-100, reasoning: string, exampleMessage: string }. No extra keys.`;
+      const defaultPrompt = [
+        "ROLE: You are an expert community + SEO strategist.",
+        `GOAL: Score how promising it is to post a helpful reply that naturally mentions ${campaign.name} to drive organic traffic.`,
+        "",
+        "SCORING (1–100): Higher is better. Consider:",
+        `- Relevance to the business description: ${campaign.description}`,
+        "- Explicit need/pain (“how do I”, “tools for…”, “recommend”) vs. broad discussion",
+        "- Post tone: questions/requests > debates > memes",
+        "- Recency and engagement (score/comments) as signal of visibility",
+        "- Clear angle to add value without being spammy; can suggest a free useful tip + link",
+        "",
+        "OUTPUT: JSON with { score: 1-100, reasoning: string, exampleMessage: string }. No extra keys.",
+      ].join("\n");
 
       // Find post without an evaluation in the watched subreddits for this campaign
       const post = await ctx.db.redditPost.findFirst({
@@ -249,7 +253,66 @@ OUTPUT: JSON with { score: 1-100, reasoning: string, exampleMessage: string }. N
 
       if (!post) return { ok: true, evaluated: 0 };
 
+      const pinnedExamples = await ctx.db.exampleEvaluation.findMany({
+        where: {
+          redditPostEvaluation: {
+            campaignId: input.campaignId,
+          },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+        include: {
+          redditPostEvaluation: {
+            select: {
+              reasoning: true,
+              exampleMessage: true,
+              redditPost: {
+                select: {
+                  title: true,
+                  subreddit: true,
+                  permalink: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
       const model = openai("gpt-4o-mini");
+
+      const pinnedExamplesSection =
+        pinnedExamples.length > 0
+          ? [
+              "Pinned examples for campaign context:",
+              "Use these samples to understand the campaign's preferred tone, value angle, and scoring priorities before you score the new post.",
+              ...pinnedExamples.map((example, index) => {
+                const evaluation = example.redditPostEvaluation;
+                const postTitle =
+                  evaluation.redditPost?.title ?? "Untitled post";
+                const subreddit = evaluation.redditPost?.subreddit
+                  ? `r/${evaluation.redditPost.subreddit}`
+                  : null;
+                const permalink = evaluation.redditPost?.permalink
+                  ? `https://reddit.com${evaluation.redditPost.permalink}`
+                  : null;
+                const snippet =
+                  example.modifiedContent?.trim() ||
+                  evaluation.exampleMessage?.trim() ||
+                  evaluation.reasoning?.trim() ||
+                  "<no pinned content>";
+
+                const lines = [
+                  `${index + 1}. ${postTitle}${
+                    subreddit ? ` (${subreddit})` : ""
+                  }`,
+                  permalink ? `Permalink: ${permalink}` : null,
+                  `Pinned text: ${snippet}`,
+                ].filter(Boolean);
+
+                return lines.join("\n");
+              }),
+            ].join("\n\n")
+          : "";
 
       let evaluated = 0;
 
@@ -286,9 +349,13 @@ OUTPUT: JSON with { score: 1-100, reasoning: string, exampleMessage: string }. N
               .min(3)
               .describe("An example message the user might have sent."),
           }),
-          prompt: `${defaultPrompt}\n\n---
-REDDIT POST
-${details}\n---\nReturn only JSON.`,
+          prompt: [
+            defaultPrompt,
+            pinnedExamplesSection,
+            `---\nREDDIT POST\n${details}\n---\nReturn only JSON.`,
+          ]
+            .filter(Boolean)
+            .join("\n\n"),
         });
 
         const score = Math.max(1, Math.min(100, Math.round(object.score)));
@@ -317,5 +384,43 @@ ${details}\n---\nReturn only JSON.`,
       }
 
       return { ok: true, evaluated };
+    }),
+});
+
+export const exampleEvaluationsRouter = createTRPCRouter({
+  upsert: adminProcedure
+    .input(
+      z.object({
+        redditPostEvaluationId: z.string().uuid(),
+        modifiedContent: z.string().min(1),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      await ctx.db.exampleEvaluation.upsert({
+        where: { redditPostEvaluationId: input.redditPostEvaluationId },
+        create: {
+          redditPostEvaluationId: input.redditPostEvaluationId,
+          modifiedContent: input.modifiedContent,
+        },
+        update: {
+          modifiedContent: input.modifiedContent,
+        },
+      });
+
+      return { ok: true };
+    }),
+
+  delete: adminProcedure
+    .input(
+      z.object({
+        redditPostEvaluationId: z.string().uuid(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      await ctx.db.exampleEvaluation.deleteMany({
+        where: { redditPostEvaluationId: input.redditPostEvaluationId },
+      });
+
+      return { ok: true, pinned: true };
     }),
 });

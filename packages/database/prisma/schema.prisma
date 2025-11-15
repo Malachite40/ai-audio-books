@@ -352,8 +352,20 @@ model RedditPostEvaluation {
     archived       Boolean      @default(false)
     rating         ReviewRating @default(UNRATED)
 
-    redditPost RedditPost @relation(fields: [redditPostId], references: [id], onDelete: Cascade)
-    campaign   Campaign?  @relation(fields: [campaignId], references: [id])
+    redditPost        RedditPost         @relation(fields: [redditPostId], references: [id], onDelete: Cascade)
+    campaign          Campaign?          @relation(fields: [campaignId], references: [id])
+    exampleEvaluation ExampleEvaluation?
 
     @@index([score, createdAt])
+}
+
+// Pinned evaluations are used to improve future LLM evaluations by keeping
+// high-quality examples easily accessible. 
+model ExampleEvaluation {
+    id                     String   @id @default(uuid())
+    modifiedContent        String?
+    redditPostEvaluationId String   @unique
+    createdAt              DateTime @default(now()) @db.Timestamptz()
+
+    redditPostEvaluation RedditPostEvaluation @relation(fields: [redditPostEvaluationId], references: [id], onDelete: Cascade)
 }

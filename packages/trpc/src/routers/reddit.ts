@@ -6,12 +6,13 @@ import { TASK_NAMES } from "../queue";
 import { enqueueTask } from "../queue/enqueue";
 import { adminProcedure, createTRPCRouter, queueProcedure } from "../trpc";
 import { campaignsRouter } from "./campaign";
-import { evaluationsRouter } from "./evaluations";
+import { evaluationsRouter, exampleEvaluationsRouter } from "./evaluations";
 import { Category, scanSubredditInput } from "./reddit/types";
 
 export const redditRouter = createTRPCRouter({
   campaigns: campaignsRouter,
   evaluations: evaluationsRouter,
+  exampleEvaluations: exampleEvaluationsRouter,
   searchSubreddits: adminProcedure
     .input(
       z.object({
@@ -377,7 +378,7 @@ async function queueScanWatchedSubreddits({
 }
 
 async function queueScanSubreddit(subreddit: string) {
-  const cats: Category[] = ["new", "hot", "rising", "top", "controversial"];
+  const cats: Category[] = ["hot", "rising"];
   await Promise.all(
     cats.map((category) =>
       enqueueTask(TASK_NAMES.redditScanSubreddit, {
