@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import { api } from "@/trpc/react";
+import { WatchedSubreddit } from "@workspace/database";
 import { Button } from "@workspace/ui/components/button";
 import { Card } from "@workspace/ui/components/card";
 import { CampaignEvaluationChart } from "../_components/campaign-evaluation-chart";
@@ -22,6 +23,15 @@ export function CampaignClientPage({ campaignId }: CampaignClientProps) {
     });
   const campaign = data?.campaign;
 
+  const totalReach =
+    campaign?.watchedSubreddit?.reduce(
+      (sum: number, watch: WatchedSubreddit) => {
+        const value = typeof watch.reach === "number" ? watch.reach : 0;
+        return sum + value;
+      },
+      0
+    ) ?? 0;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -32,10 +42,6 @@ export function CampaignClientPage({ campaignId }: CampaignClientProps) {
           >
             ← Back to Leads
           </Link>
-          <h1 className="text-2xl font-semibold">Campaign</h1>
-          <p className="text-sm text-muted-foreground">
-            Manage watched subreddits for this campaign.
-          </p>
         </div>
       </div>
 
@@ -59,6 +65,7 @@ export function CampaignClientPage({ campaignId }: CampaignClientProps) {
             campaign={campaign}
             watchedSubredditsCount={campaign._count?.watchedSubreddit}
             evaluationsCount={campaign._count?.evaluations}
+            totalReach={totalReach}
           />
 
           <CampaignEvaluationChart campaignId={campaignId} />

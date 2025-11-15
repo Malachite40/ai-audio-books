@@ -60,7 +60,11 @@ export function AdminKeyValueCard() {
 
   const onSubmit = (values: z.infer<typeof KVFormSchema>) => {
     if (values.id) {
-      updateMutation.mutate({ id: values.id, key: values.key, value: values.value });
+      updateMutation.mutate({
+        id: values.id,
+        key: values.key,
+        value: values.value,
+      });
     } else {
       createMutation.mutate({ key: values.key, value: values.value });
     }
@@ -85,7 +89,10 @@ export function AdminKeyValueCard() {
     <>
       <Card className="mb-6 p-4">
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="flex gap-4 items-end flex-wrap">
+          <form
+            onSubmit={form.handleSubmit(onSubmit)}
+            className="flex gap-4 items-end flex-wrap"
+          >
             <FormField
               control={form.control}
               name="key"
@@ -112,11 +119,14 @@ export function AdminKeyValueCard() {
                 </FormItem>
               )}
             />
-            <Button type="submit" disabled={isMutating || !form.formState.isValid}>
+            <Button
+              type="submit"
+              disabled={isMutating || !form.formState.isValid}
+            >
               {form.getValues("id")
                 ? isMutating
                   ? "Saving..."
-                  : "Save Changes"
+                  : "Save"
                 : isMutating
                   ? "Adding..."
                   : "Add Entry"}
@@ -154,7 +164,9 @@ export function AdminKeyValueCard() {
               rows.map((row) => (
                 <TableRow key={row.id}>
                   <TableCell className="font-medium">{row.key}</TableCell>
-                  <TableCell className="max-w-[500px] break-words">{row.value}</TableCell>
+                  <TableCell className="max-w-[500px] break-words">
+                    {row.value}
+                  </TableCell>
                   <TableCell>
                     {row.updatedAt instanceof Date
                       ? row.updatedAt.toLocaleString()
@@ -174,7 +186,9 @@ export function AdminKeyValueCard() {
                         variant="destructive"
                         size="sm"
                         onClick={() => deleteMutation.mutate({ id: row.id })}
-                        disabled={deleteMutation.isPending || !!form.getValues("id")}
+                        disabled={
+                          deleteMutation.isPending || !!form.getValues("id")
+                        }
                       >
                         <Trash2 className="size-4" />
                       </Button>
@@ -189,4 +203,3 @@ export function AdminKeyValueCard() {
     </>
   );
 }
-

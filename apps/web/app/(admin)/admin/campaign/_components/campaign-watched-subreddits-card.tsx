@@ -1,6 +1,9 @@
 "use client";
 
+import { useAreYouSure } from "@/hooks/use-are-you-sure";
+import { millify } from "@/lib/numbers";
 import { api as trpc } from "@/trpc/react";
+import { WatchedSubreddit } from "@workspace/database";
 import { Button } from "@workspace/ui/components/button";
 import { Card } from "@workspace/ui/components/card";
 import { Input } from "@workspace/ui/components/input";
@@ -30,14 +33,9 @@ import { ExternalLink, Loader2, RefreshCw, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
-export interface WatchedSubredditRow {
-  subreddit: string;
-  createdAt?: string | Date | null;
-}
-
 interface CampaignWatchedSubredditsCardProps {
   campaignId: string;
-  watchedSubreddits: WatchedSubredditRow[];
+  watchedSubreddits: WatchedSubreddit[];
 }
 
 type SortOption = "name-asc" | "added-desc" | "added-asc";
@@ -49,9 +47,16 @@ export function CampaignWatchedSubredditsCard({
   const [filter, setFilter] = useState("");
   const [sort, setSort] = useState<SortOption>("added-desc");
 
+  const {
+    AreYouSure,
+    setShowAreYouSure,
+    object: subredditToDelete,
+    setObject: setSubredditToDelete,
+  } = useAreYouSure<string>();
+
   // Mutations scoped here so parent stays slim
   const utils = trpc.useUtils();
-  const deleteSubreddit = trpc.reddit.deleteWatchedSubreddit.useMutation({
+  const deleteSubreddit = trpc.reddit.delete.useMutation({
     onSuccess: async () => {
       await Promise.all([
         utils.reddit.campaigns.fetch.invalidate({ id: campaignId }),
@@ -62,12 +67,12 @@ export function CampaignWatchedSubredditsCard({
     onError: (err) =>
       toast.error("Failed to remove subreddit", { description: err.message }),
   });
-  const scanSubreddit = trpc.reddit.adminQueueScanSubreddit.useMutation({
+  const scanSubreddit = trpc.reddit.adminQueueScan.useMutation({
     onSuccess: () => toast.success("Scan queued"),
     onError: (err) =>
       toast.error("Failed to queue scan", { description: err.message }),
   });
-  const scanWatchList = trpc.reddit.adminScanWatchList.useMutation({
+  const scanWatchList = trpc.reddit.campaigns.adminScan.useMutation({
     onSuccess: () => toast.success("Queued scans for watched subreddits"),
     onError: (err) =>
       toast.error("Failed to queue scans", { description: err.message }),
@@ -104,6 +109,20 @@ export function CampaignWatchedSubredditsCard({
 
   return (
     <Card className="p-0 overflow-hidden">
+      <AreYouSure
+        title={
+          subredditToDelete ? `Remove r/${subredditToDelete}?` : "Are you sure?"
+        }
+        description="This will stop tracking this subreddit for this campaign."
+        isPending={deleteSubreddit.isPending}
+        onConfirm={async () => {
+          if (!subredditToDelete) return;
+          await deleteSubreddit.mutateAsync({
+            subreddit: subredditToDelete,
+            campaignId,
+          });
+        }}
+      />
       <div className="flex items-center justify-between gap-2 p-4 border-b">
         <div className="flex items-center gap-2 max-w-md w-full">
           <Input
@@ -151,6 +170,7 @@ export function CampaignWatchedSubredditsCard({
           <TableRow>
             <TableHead>Subreddit</TableHead>
             <TableHead className="w-48">Added</TableHead>
+            <TableHead className="w-48">Reach</TableHead>
             <TableHead className="w-48">Actions</TableHead>
           </TableRow>
         </TableHeader>
@@ -158,7 +178,7 @@ export function CampaignWatchedSubredditsCard({
           {filteredSortedRows.length === 0 ? (
             <TableRow>
               <TableCell
-                colSpan={3}
+                colSpan={4}
                 className="text-center py-6 text-muted-foreground"
               >
                 {watchedSubreddits.length === 0
@@ -186,13 +206,20 @@ export function CampaignWatchedSubredditsCard({
                       : "—"}
                   </TableCell>
                   <TableCell>
+                    {watch.reach !== null && watch.reach !== undefined
+                      ? millify(watch.reach)
+                      : "—"}
+                  </TableCell>
+                  <TableCell>
                     <div className="flex items-center gap-2">
                       <Button
                         variant="outline"
                         size="icon"
                         className="h-8 w-8"
                         onClick={() =>
-                          scanSubreddit.mutate({ subreddit: watch.subreddit })
+                          scanSubreddit.mutate({
+                            subreddit: watch.subreddit,
+                          })
                         }
                         disabled={scanSubreddit.isPending}
                         aria-label={`Scan r/${watch.subreddit}`}
@@ -229,14 +256,8 @@ export function CampaignWatchedSubredditsCard({
                         size="icon"
                         className="h-8 w-8 text-destructive hover:bg-destructive hover:text-white"
                         onClick={() => {
-                          const ok = window.confirm(
-                            `Remove r/${watch.subreddit} from this campaign?`
-                          );
-                          if (!ok) return;
-                          deleteSubreddit.mutate({
-                            subreddit: watch.subreddit,
-                            campaignId,
-                          });
+                          setSubredditToDelete(watch.subreddit);
+                          setShowAreYouSure(true);
                         }}
                         disabled={deleteSubreddit.isPending}
                         aria-label={`Remove r/${watch.subreddit}`}

@@ -80,7 +80,7 @@ export const speakersRouter = createTRPCRouter({
       await enqueueTask(TASK_NAMES.createAudioFileChunks, {
         audioFileId: audioFile.id,
         chunkSize: 300,
-        includeTitle: true,
+        includeTitle: false,
       } satisfies z.infer<typeof createAudioFileChunksInput>);
 
       // Point exampleAudio to the final MP3 URL immediately

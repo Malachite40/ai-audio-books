@@ -8,7 +8,7 @@ console.log("[cron] starting scheduler…");
 cron.schedule("*/30 * * * *", async () => {
   try {
     console.log("[cron] running subreddit scan job…");
-    await api.reddit.scanWatchList();
+    await api.reddit.campaigns.scan();
   } catch (err) {
     console.error("[cron] job error:", err);
   }

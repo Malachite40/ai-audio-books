@@ -3,10 +3,10 @@ import { TRPCError } from "@trpc/server";
 import { Prisma } from "@workspace/database";
 import { generateObject } from "ai";
 import z from "zod";
-import { TASK_NAMES } from "../queue";
-import { enqueueTask } from "../queue/enqueue";
-import { adminProcedure, createTRPCRouter, queueProcedure } from "../trpc";
-import { scoreRedditPostInput, scoreRedditPostsInput } from "./reddit/types";
+import { TASK_NAMES } from "../../queue";
+import { enqueueTask } from "../../queue/enqueue";
+import { adminProcedure, createTRPCRouter, queueProcedure } from "../../trpc";
+import { scoreRedditPostInput, scoreRedditPostsInput } from "../reddit/types";
 
 export const evaluationsRouter = createTRPCRouter({
   fetchAll: adminProcedure
@@ -66,7 +66,7 @@ export const evaluationsRouter = createTRPCRouter({
             input.sort?.field === "score"
               ? [{ score: input.sort.dir }, { createdAt: "desc" }]
               : { createdAt: input.sort?.dir ?? "desc" },
-          include: { redditPost: true, exampleEvaluation: true },
+          include: { redditPost: true },
           skip: (input.page - 1) * input.pageSize,
           take: input.pageSize,
         }),
@@ -167,6 +167,26 @@ export const evaluationsRouter = createTRPCRouter({
       return { ok: true };
     }),
 
+  quickArchiveByScore: adminProcedure
+    .input(
+      z.object({
+        campaignId: z.string().uuid(),
+        maxScore: z.number().min(1).max(100),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const result = await ctx.db.redditPostEvaluation.updateMany({
+        where: {
+          campaignId: input.campaignId,
+          archived: false,
+          score: { lt: input.maxScore },
+        },
+        data: { archived: true },
+      });
+
+      return { ok: true, archived: result.count };
+    }),
+
   scoreRedditPosts: queueProcedure
     .input(scoreRedditPostsInput)
     .mutation(async ({ input, ctx }) => {
@@ -221,6 +241,12 @@ export const evaluationsRouter = createTRPCRouter({
     .mutation(async ({ input, ctx }) => {
       const campaign = await ctx.db.campaign.findUnique({
         where: { id: input.campaignId },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          autoArchiveScore: true,
+        },
       });
 
       if (!campaign) {
@@ -253,68 +279,87 @@ export const evaluationsRouter = createTRPCRouter({
 
       if (!post) return { ok: true, evaluated: 0 };
 
-      const pinnedExamples = await ctx.db.exampleEvaluation.findMany({
-        where: {
-          redditPostEvaluation: {
+      const pinnedPositiveExamples = await ctx.db.redditPostEvaluation.findMany(
+        {
+          where: {
             campaignId: input.campaignId,
+            bookmarked: true,
+            rating: "POSITIVE",
           },
-        },
-        orderBy: { createdAt: "desc" },
-        take: 20,
-        include: {
-          redditPostEvaluation: {
-            select: {
-              reasoning: true,
-              exampleMessage: true,
-              redditPost: {
-                select: {
-                  title: true,
-                  subreddit: true,
-                  permalink: true,
-                },
+          orderBy: { createdAt: "desc" },
+          take: 20,
+          include: {
+            redditPost: {
+              select: {
+                title: true,
+                subreddit: true,
               },
             },
           },
-        },
-      });
+        }
+      );
 
       const model = openai("gpt-4o-mini");
 
-      const pinnedExamplesSection =
-        pinnedExamples.length > 0
+      const pinnedPositiveExamplesSection =
+        pinnedPositiveExamples.length > 0
           ? [
-              "Pinned examples for campaign context:",
-              "Use these samples to understand the campaign's preferred tone, value angle, and scoring priorities before you score the new post.",
-              ...pinnedExamples.map((example, index) => {
-                const evaluation = example.redditPostEvaluation;
-                const postTitle =
-                  evaluation.redditPost?.title ?? "Untitled post";
-                const subreddit = evaluation.redditPost?.subreddit
-                  ? `r/${evaluation.redditPost.subreddit}`
-                  : null;
-                const permalink = evaluation.redditPost?.permalink
-                  ? `https://reddit.com${evaluation.redditPost.permalink}`
-                  : null;
-                const snippet =
-                  example.modifiedContent?.trim() ||
-                  evaluation.exampleMessage?.trim() ||
-                  evaluation.reasoning?.trim() ||
-                  "<no pinned content>";
-
-                const lines = [
-                  `${index + 1}. ${postTitle}${
-                    subreddit ? ` (${subreddit})` : ""
-                  }`,
-                  permalink ? `Permalink: ${permalink}` : null,
-                  `Pinned text: ${snippet}`,
-                ].filter(Boolean);
-
-                return lines.join("\n");
+              "Pinned positive examples for campaign context:",
+              "Use these samples to understand the campaign's preferred tone, value angle, and scoring priorities before you score the new post. Incorporate similar reasoning and style where relevant.",
+              ...pinnedPositiveExamples.map((example, index) => {
+                const postTitle = example.redditPost.title ?? "Untitled post";
+                const snippet = `
+                --- Sample ${index + 1} ---
+                Posted Title: ${postTitle}
+                Score: ${example.score}
+                Example Message: ${example.exampleMessage?.trim()}
+                Reasoning: ${example.reasoning?.trim()}
+                User Feedback: ${example.rating}
+                `.trim();
+                return snippet;
               }),
             ].join("\n\n")
           : "";
 
-      let evaluated = 0;
+      const pinnedNegativeExamples = await ctx.db.redditPostEvaluation.findMany(
+        {
+          where: {
+            campaignId: input.campaignId,
+            bookmarked: true,
+            rating: "NEGATIVE",
+          },
+          orderBy: { createdAt: "desc" },
+          take: 20,
+          include: {
+            redditPost: {
+              select: {
+                title: true,
+                subreddit: true,
+              },
+            },
+          },
+        }
+      );
+
+      const pinnedNegativeExamplesSection =
+        pinnedNegativeExamples.length > 0
+          ? [
+              "Pinned negative examples for campaign context:",
+              "Use these samples to understand the campaign doesn't prefer. Avoid similar pitfalls when scoring the new post.",
+              ...pinnedNegativeExamples.map((example, index) => {
+                const postTitle = example.redditPost.title ?? "Untitled post";
+                const snippet = `
+                --- Sample ${index + 1} ---
+                Posted Title: ${postTitle}
+                Score: ${example.score}
+                Example Message: ${example.exampleMessage?.trim()}
+                Reasoning: ${example.reasoning?.trim()}
+                User Feedback: ${example.rating}
+                `.trim();
+                return snippet;
+              }),
+            ].join("\n\n")
+          : "";
 
       try {
         const details = [
@@ -351,8 +396,9 @@ export const evaluationsRouter = createTRPCRouter({
           }),
           prompt: [
             defaultPrompt,
-            pinnedExamplesSection,
-            `---\nREDDIT POST\n${details}\n---\nReturn only JSON.`,
+            pinnedPositiveExamplesSection,
+            pinnedNegativeExamplesSection,
+            `---\nREDDIT POST TO EVALUATE\n${details}\n---\nReturn only JSON.`,
           ]
             .filter(Boolean)
             .join("\n\n"),
@@ -365,6 +411,10 @@ export const evaluationsRouter = createTRPCRouter({
           4000
         );
 
+        const shouldArchive =
+          campaign.autoArchiveScore != null &&
+          score < campaign.autoArchiveScore;
+
         // Upsert to guard against race; include campaignId if provided
         await ctx.db.redditPostEvaluation.create({
           data: {
@@ -374,53 +424,59 @@ export const evaluationsRouter = createTRPCRouter({
             modelName: "gpt-4o-mini",
             exampleMessage,
             campaignId: input.campaignId,
+            archived: shouldArchive,
           },
         });
-        evaluated++;
       } catch (err) {
         // Skip failures; continue with others
         // Optional: log to console; cron stdout shows it
         console.error("[scoreRedditPosts] eval failed for", post.id, err);
       }
 
-      return { ok: true, evaluated };
-    }),
-});
-
-export const exampleEvaluationsRouter = createTRPCRouter({
-  upsert: adminProcedure
-    .input(
-      z.object({
-        redditPostEvaluationId: z.string().uuid(),
-        modifiedContent: z.string().min(1),
-      })
-    )
-    .mutation(async ({ ctx, input }) => {
-      await ctx.db.exampleEvaluation.upsert({
-        where: { redditPostEvaluationId: input.redditPostEvaluationId },
-        create: {
-          redditPostEvaluationId: input.redditPostEvaluationId,
-          modifiedContent: input.modifiedContent,
-        },
-        update: {
-          modifiedContent: input.modifiedContent,
-        },
-      });
-
       return { ok: true };
     }),
 
-  delete: adminProcedure
+  bookmark: adminProcedure
     .input(
       z.object({
-        redditPostEvaluationId: z.string().uuid(),
+        evaluationId: z.string().uuid(),
+        bookmarked: z.boolean(),
+        exampleMessage: z.string().optional(),
+        score: z.number().min(1).max(100).optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      await ctx.db.redditPostEvaluation.update({
+        where: { id: input.evaluationId },
+        data: {
+          bookmarked: input.bookmarked,
+          exampleMessage: input.exampleMessage,
+          score: input.score,
+        },
+      });
+      return {};
+    }),
+
+  updateRating: adminProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        direction: z.enum(["up", "down", "clear"]).default("up"),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      await ctx.db.exampleEvaluation.deleteMany({
-        where: { redditPostEvaluationId: input.redditPostEvaluationId },
+      const rating: Prisma.RedditPostEvaluationUpdateInput["rating"] =
+        input.direction === "up"
+          ? "POSITIVE"
+          : input.direction === "down"
+            ? "NEGATIVE"
+            : "UNRATED";
+
+      const evaluation = await ctx.db.redditPostEvaluation.update({
+        where: { id: input.id },
+        data: { rating },
       });
 
-      return { ok: true, pinned: true };
+      return { ok: true, evaluation };
     }),
 });

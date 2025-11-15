@@ -292,12 +292,13 @@ model CreditTransaction {
 }
 
 model Campaign {
-    id          String   @id @default(uuid())
-    name        String
-    description String
-    isActive    Boolean  @default(true)
-    createdAt   DateTime @default(now()) @db.Timestamptz()
-    updatedAt   DateTime @default(now()) @updatedAt @db.Timestamptz()
+    id               String   @id @default(uuid())
+    name             String
+    description      String
+    isActive         Boolean  @default(true)
+    autoArchiveScore Int?
+    createdAt        DateTime @default(now()) @db.Timestamptz()
+    updatedAt        DateTime @default(now()) @updatedAt @db.Timestamptz()
 
     watchedSubreddit WatchedSubreddit[]
     evaluations      RedditPostEvaluation[]
@@ -325,6 +326,7 @@ model RedditPost {
 model WatchedSubreddit {
     campaignId String
     subreddit  String
+    reach      Int?
     createdAt  DateTime @default(now()) @db.Timestamptz()
     updatedAt  DateTime @default(now()) @updatedAt @db.Timestamptz()
 
@@ -351,21 +353,10 @@ model RedditPostEvaluation {
     campaignId     String
     archived       Boolean      @default(false)
     rating         ReviewRating @default(UNRATED)
+    bookmarked     Boolean      @default(false)
 
-    redditPost        RedditPost         @relation(fields: [redditPostId], references: [id], onDelete: Cascade)
-    campaign          Campaign?          @relation(fields: [campaignId], references: [id])
-    exampleEvaluation ExampleEvaluation?
+    redditPost RedditPost @relation(fields: [redditPostId], references: [id], onDelete: Cascade)
+    campaign   Campaign?  @relation(fields: [campaignId], references: [id])
 
     @@index([score, createdAt])
-}
-
-// Pinned evaluations are used to improve future LLM evaluations by keeping
-// high-quality examples easily accessible. 
-model ExampleEvaluation {
-    id                     String   @id @default(uuid())
-    modifiedContent        String?
-    redditPostEvaluationId String   @unique
-    createdAt              DateTime @default(now()) @db.Timestamptz()
-
-    redditPostEvaluation RedditPostEvaluation @relation(fields: [redditPostEvaluationId], references: [id], onDelete: Cascade)
 }

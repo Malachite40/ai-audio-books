@@ -390,17 +390,16 @@ function HeaderActions({
 }) {
   const utils = api.useUtils();
 
-  const { data: unscoredData } =
-    api.reddit.countUnscoredPostsForCampaign.useQuery({
-      campaignId,
-    });
+  const { data: unscoredData } = api.reddit.campaigns.countUnscored.useQuery({
+    campaignId,
+  });
   const unscoredCount = unscoredData?.count ?? 0;
 
   const scoreUnscoredPosts =
     api.reddit.campaigns.adminQueueScorePosts.useMutation({
       onSuccess: () => {
         toast.success("Evaluation queued");
-        utils.reddit.countUnscoredPostsForCampaign.invalidate({ campaignId });
+        utils.reddit.campaigns.countUnscored.invalidate({ campaignId });
       },
       onError: (err) =>
         toast.error("Failed to queue evaluation", { description: err.message }),

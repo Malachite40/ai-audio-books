@@ -29,6 +29,16 @@ const CampaignSchema = z.object({
     .min(1, "Description is required")
     .max(1000, "Description must be under 1000 characters"),
   isActive: z.boolean(),
+  autoArchiveScore: z
+    .number({
+      required_error: "Please enter a score between 1 and 100.",
+      invalid_type_error: "Please enter a score between 1 and 100.",
+    })
+    .int()
+    .min(1, "Score must be at least 1.")
+    .max(100, "Score must be at most 100.")
+    .nullable()
+    .optional(),
 });
 
 export type CampaignFormValues = z.infer<typeof CampaignSchema>;
@@ -52,6 +62,7 @@ export function CampaignForm({
       name: campaign?.name ?? "",
       description: campaign?.description ?? "",
       isActive: campaign?.isActive ?? true,
+      autoArchiveScore: campaign?.autoArchiveScore ?? null,
     },
     mode: "onChange",
   });
@@ -148,6 +159,42 @@ export function CampaignForm({
             </FormItem>
           )}
         />
+        <FormField
+          control={form.control}
+          name="autoArchiveScore"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Auto-archive score threshold</FormLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  min={1}
+                  max={100}
+                  placeholder="Optional, e.g. 60"
+                  value={field.value == null ? "" : field.value}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    if (value === "") {
+                      field.onChange(null);
+                      return;
+                    }
+                    const num = Number(value);
+                    field.onChange(Number.isNaN(num) ? null : num);
+                  }}
+                  onBlur={field.onBlur}
+                  name={field.name}
+                  ref={field.ref}
+                />
+              </FormControl>
+              <p className="text-xs text-muted-foreground">
+                New evaluations for this campaign will be archived by default
+                when their score is below this threshold. Leave blank to disable
+                auto-archiving.
+              </p>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
         <div className="flex justify-end gap-2 pt-2">
           {onCancel ? (
             <Button
@@ -166,7 +213,7 @@ export function CampaignForm({
                 : "Saving…"
               : mode === "create"
                 ? "Create"
-                : "Save changes"}
+                : "Save"}
           </Button>
         </div>
       </form>

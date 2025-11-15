@@ -1,8 +1,9 @@
 import z from "zod";
-import { TASK_NAMES } from "../queue";
-import { enqueueTask } from "../queue/enqueue";
-import { adminProcedure, createTRPCRouter, queueProcedure } from "../trpc";
-import { scoreRedditPostsInput } from "./reddit/types";
+import { TASK_NAMES } from "../../queue";
+import { enqueueTask } from "../../queue/enqueue";
+import { adminProcedure, createTRPCRouter, queueProcedure } from "../../trpc";
+import { scoreRedditPostsInput } from "../reddit/types";
+import { queueScanWatchedSubreddits } from "./queueScan";
 
 export const campaignsRouter = createTRPCRouter({
   upsert: adminProcedure
@@ -12,6 +13,13 @@ export const campaignsRouter = createTRPCRouter({
         name: z.string().min(3).max(120),
         description: z.string().min(1).max(1000),
         isActive: z.boolean().optional(),
+        autoArchiveScore: z
+          .number()
+          .int()
+          .min(1)
+          .max(100)
+          .nullable()
+          .optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -21,11 +29,13 @@ export const campaignsRouter = createTRPCRouter({
           name: input.name,
           description: input.description,
           isActive: input.isActive ?? true,
+          autoArchiveScore: input.autoArchiveScore ?? null,
         },
         update: {
           name: input.name,
           description: input.description,
           isActive: input.isActive,
+          autoArchiveScore: input.autoArchiveScore ?? null,
         },
       });
       return { campaign: upserted };
@@ -98,4 +108,42 @@ export const campaignsRouter = createTRPCRouter({
 
     return { ok: true };
   }),
+  adminScan: adminProcedure
+    .input(
+      z.object({
+        campaignId: z.string().uuid(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      await queueScanWatchedSubreddits({ campaignId: input.campaignId });
+      return { ok: true };
+    }),
+  scan: queueProcedure.mutation(async () => {
+    await queueScanWatchedSubreddits({});
+    return { ok: true };
+  }),
+  countUnscored: adminProcedure
+    .input(z.object({ campaignId: z.string().uuid() }))
+    .query(async ({ input, ctx }) => {
+      const watched = await ctx.db.watchedSubreddit.findMany({
+        where: { campaignId: input.campaignId },
+        select: { subreddit: true },
+      });
+
+      const subreddits = watched.map((w) => w.subreddit);
+      const count = await ctx.db.redditPost.count({
+        where: {
+          evaluations: {
+            every: {
+              NOT: {
+                campaignId: input.campaignId,
+              },
+            },
+          },
+          subreddit: { in: subreddits },
+        },
+      });
+
+      return { count };
+    }),
 });

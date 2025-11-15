@@ -1,6 +1,7 @@
 "use client";
 
 import { ResponsiveModal } from "@/components/resonpsive-modal";
+import { millify } from "@/lib/numbers";
 import { useAreYouSure } from "@/hooks/use-are-you-sure";
 import { api } from "@/trpc/react";
 import { Campaign } from "@workspace/database";
@@ -21,6 +22,7 @@ type CampaignSummaryCardProps = {
   campaign: Campaign;
   watchedSubredditsCount?: number;
   evaluationsCount?: number;
+  totalReach?: number;
   onUpdated?: () => Promise<void> | void;
 };
 
@@ -28,6 +30,7 @@ export function CampaignSummaryCard({
   campaign,
   watchedSubredditsCount,
   evaluationsCount,
+  totalReach,
   onUpdated,
 }: CampaignSummaryCardProps) {
   const [editOpen, setEditOpen] = useState(false);
@@ -111,6 +114,11 @@ export function CampaignSummaryCard({
                   <Badge variant="outline" className="font-normal">
                     {evaluationsCount ?? 0} scanned posts
                   </Badge>
+                  {typeof totalReach === "number" && totalReach > 0 ? (
+                    <Badge variant="outline" className="font-normal">
+                      {millify(totalReach)} total reach
+                    </Badge>
+                  ) : null}
                 </div>
               </div>
 

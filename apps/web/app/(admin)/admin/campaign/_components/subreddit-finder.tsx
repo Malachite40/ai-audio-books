@@ -1,10 +1,9 @@
 "use client";
 
-import { ResponsiveModal } from "@/components/resonpsive-modal";
+import { millify } from "@/lib/numbers";
 import { api as trpc } from "@/trpc/react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@workspace/ui/components/button";
-import { Card } from "@workspace/ui/components/card";
 import {
   Form,
   FormControl,
@@ -35,11 +34,18 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
-import { BookmarkPlus, ExternalLink, FileText, Loader2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import {
+  BookmarkPlus,
+  ExternalLink,
+  FileText,
+  Loader2,
+  Sparkles,
+} from "lucide-react";
+import React, { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
+import { SubredditRulesModal } from "./subreddit-rules-modal";
 
 interface SubredditFinderProps {
   campaignId: string;
@@ -49,7 +55,7 @@ export function SubredditFinder({ campaignId }: SubredditFinderProps) {
   const utils = trpc.useUtils();
 
   // Mutation for tracking subreddit (duplicate of parent logic to keep component self-contained)
-  const upsertSubreddit = trpc.reddit.upsertWatchedSubreddit.useMutation({
+  const upsertSubreddit = trpc.reddit.upsert.useMutation({
     onSuccess: async () => {
       await Promise.all([
         utils.reddit.campaigns.fetch.invalidate({ id: campaignId }),
@@ -79,7 +85,7 @@ export function SubredditFinder({ campaignId }: SubredditFinderProps) {
     mode: "onChange",
   });
   const [apiSort, setApiSort] = useState<"desc" | "asc">("desc");
-  const searchApi = trpc.reddit.searchSubredditsApi.useMutation();
+  const searchApi = trpc.reddit.searchApi.useMutation();
   const apiItems = useMemo(() => searchApi.data?.items ?? [], [searchApi.data]);
   const apiItemsSorted = useMemo(() => {
     const arr = [...apiItems];
@@ -91,24 +97,147 @@ export function SubredditFinder({ campaignId }: SubredditFinderProps) {
     return arr;
   }, [apiItems, apiSort]);
 
-  // Rules modal
-  const [rulesOpen, setRulesOpen] = useState(false);
   const [rulesSubreddit, setRulesSubreddit] = useState<string | null>(null);
-  const rules = trpc.reddit.getSubredditRules.useMutation();
 
-  // Compact number formatter for subscribers
-  const compactFmt = useMemo(
-    () =>
-      new Intl.NumberFormat("en", {
-        notation: "compact",
-        maximumFractionDigits: 0,
-      }),
-    []
+  // Similar subreddits expansion state
+  const [expandedSimilarFor, setExpandedSimilarFor] = useState<string | null>(
+    null
   );
+  const similar = trpc.reddit.getSimilar.useMutation();
+
+  type SubredditActionsProps = {
+    rulesKey: string;
+    trackKey: string;
+    prefixed: string;
+    reach?: number;
+    showSimilar?: boolean;
+    isExpanded?: boolean;
+    similarKey?: string;
+  };
+
+  const SubredditActions: React.FC<SubredditActionsProps> = ({
+    rulesKey,
+    trackKey,
+    prefixed,
+    reach,
+    showSimilar = false,
+    isExpanded = false,
+    similarKey,
+  }) => {
+    return (
+      <TooltipProvider delayDuration={0}>
+        <div className="flex items-center gap-1">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={async () => {
+                  setRulesSubreddit(rulesKey);
+                  setRulesSubreddit(rulesKey);
+                }}
+                // disable button based on rules modal state if needed in future
+                aria-label="View rules"
+              >
+                <FileText className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>View rules</TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => {
+                  upsertSubreddit.mutate({
+                    subreddit: trackKey,
+                    campaignId,
+                    reach,
+                  });
+                }}
+                disabled={
+                  upsertSubreddit.isPending &&
+                  upsertSubreddit.variables?.subreddit === trackKey &&
+                  upsertSubreddit.variables?.campaignId === campaignId
+                }
+                aria-label="Track subreddit"
+              >
+                {(() => {
+                  const isSaving =
+                    upsertSubreddit.isPending &&
+                    upsertSubreddit.variables?.subreddit === trackKey &&
+                    upsertSubreddit.variables?.campaignId === campaignId;
+                  return isSaving ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <BookmarkPlus className="size-4" />
+                  );
+                })()}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Track in this campaign</TooltipContent>
+          </Tooltip>
+
+          {showSimilar && similarKey ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={async () => {
+                    if (isExpanded) {
+                      setExpandedSimilarFor(null);
+                      return;
+                    }
+                    setExpandedSimilarFor(similarKey);
+                    await similar.mutateAsync({ subreddit: similarKey });
+                  }}
+                  disabled={similar.isPending}
+                  aria-label="Find similar subreddits"
+                >
+                  {similar.isPending && isExpanded ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="size-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Find similar subreddits</TooltipContent>
+            </Tooltip>
+          ) : null}
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <a
+                href={`https://www.reddit.com/${prefixed}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8"
+                  aria-label="Visit subreddit"
+                >
+                  <ExternalLink className="size-4" />
+                </Button>
+              </a>
+            </TooltipTrigger>
+            <TooltipContent>Visit</TooltipContent>
+          </Tooltip>
+        </div>
+      </TooltipProvider>
+    );
+  };
 
   return (
     <>
-      <Card className="p-6 space-y-3">
+      <div className="space-y-3">
         <div className="space-y-1">
           <h3 className="text-lg font-semibold">Find and track subreddits</h3>
           <p className="text-sm text-muted-foreground">
@@ -167,6 +296,16 @@ export function SubredditFinder({ campaignId }: SubredditFinderProps) {
                 </FormItem>
               )}
             />
+            <Select value={apiSort} onValueChange={(v) => setApiSort(v as any)}>
+              <SelectTrigger type="button" className="w-[140px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="desc">High → Low</SelectItem>
+                <SelectItem value="asc">Low → High</SelectItem>
+              </SelectContent>
+            </Select>
+
             <div className="h-[58px] flex items-end pb-[2px]">
               <Button
                 type="submit"
@@ -177,23 +316,6 @@ export function SubredditFinder({ campaignId }: SubredditFinderProps) {
             </div>
           </form>
         </Form>
-
-        <div className="flex items-center justify-end py-1">
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">
-              Sort by subscribers
-            </span>
-            <Select value={apiSort} onValueChange={(v) => setApiSort(v as any)}>
-              <SelectTrigger className="w-[140px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="desc">High → Low</SelectItem>
-                <SelectItem value="asc">Low → High</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
 
         <div className="rounded-xl border overflow-x-auto">
           <Table>
@@ -225,178 +347,102 @@ export function SubredditFinder({ campaignId }: SubredditFinderProps) {
                   </TableCell>
                 </TableRow>
               ) : (
-                apiItemsSorted.map((s: any) => (
-                  <TableRow key={s.prefixed}>
-                    <TableCell>{s.prefixed}</TableCell>
-                    <TableCell className="whitespace-pre-wrap">
-                      {s.title || s.description || "—"}
-                    </TableCell>
-                    <TableCell>
-                      {typeof s.subscribers === "number"
-                        ? compactFmt.format(s.subscribers).toLowerCase()
-                        : "—"}
-                    </TableCell>
-                    <TableCell>
-                      <TooltipProvider delayDuration={0}>
-                        <div className="flex items-center gap-1">
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="outline"
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={async () => {
-                                  setRulesSubreddit(s.name);
-                                  setRulesOpen(true);
-                                  await rules.mutateAsync({
-                                    subreddit: s.name,
-                                  });
-                                }}
-                                disabled={rules.isPending}
-                                aria-label="View rules"
-                              >
-                                {rules.isPending &&
-                                rulesSubreddit === s.name ? (
-                                  <Loader2 className="size-4 animate-spin" />
-                                ) : (
-                                  <FileText className="size-4" />
-                                )}
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>View rules</TooltipContent>
-                          </Tooltip>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="outline"
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={() => {
-                                  const normalized = s.name.replace(
-                                    /^r\//i,
-                                    ""
-                                  );
-                                  upsertSubreddit.mutate({
-                                    subreddit: normalized,
-                                    campaignId,
-                                  });
-                                }}
-                                disabled={
-                                  upsertSubreddit.isPending &&
-                                  upsertSubreddit.variables?.subreddit ===
-                                    s.name.replace(/^r\//i, "") &&
-                                  upsertSubreddit.variables?.campaignId ===
-                                    campaignId
-                                }
-                                aria-label="Track subreddit"
-                              >
-                                {(() => {
-                                  const normalized = s.name.replace(
-                                    /^r\//i,
-                                    ""
-                                  );
-                                  const isSaving =
-                                    upsertSubreddit.isPending &&
-                                    upsertSubreddit.variables?.subreddit ===
-                                      normalized &&
-                                    upsertSubreddit.variables?.campaignId ===
-                                      campaignId;
-                                  return isSaving ? (
-                                    <Loader2 className="size-4 animate-spin" />
-                                  ) : (
-                                    <BookmarkPlus className="size-4" />
-                                  );
-                                })()}
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              Track in this campaign
-                            </TooltipContent>
-                          </Tooltip>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <a
-                                href={`https://www.reddit.com/${s.prefixed}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                              >
-                                <Button
-                                  variant="outline"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  aria-label="Visit subreddit"
-                                >
-                                  <ExternalLink className="size-4" />
-                                </Button>
-                              </a>
-                            </TooltipTrigger>
-                            <TooltipContent>Visit</TooltipContent>
-                          </Tooltip>
-                        </div>
-                      </TooltipProvider>
-                    </TableCell>
-                  </TableRow>
-                ))
+                apiItemsSorted.map((s: any) => {
+                  const normalizedName = s.name.replace(/^r\//i, "");
+                  const isExpanded = expandedSimilarFor === normalizedName;
+
+                  return (
+                    <>
+                      <TableRow key={s.prefixed}>
+                        <TableCell>{s.prefixed}</TableCell>
+                        <TableCell className="whitespace-pre-wrap">
+                          {s.title || s.description || "—"}
+                        </TableCell>
+                        <TableCell>
+                          {typeof s.subscribers === "number"
+                            ? millify(s.subscribers)
+                            : "—"}
+                        </TableCell>
+                        <TableCell>
+                          <SubredditActions
+                            rulesKey={normalizedName}
+                            trackKey={normalizedName}
+                            prefixed={s.prefixed}
+                            reach={s.subscribers}
+                            showSimilar
+                            isExpanded={isExpanded}
+                            similarKey={normalizedName}
+                          />
+                        </TableCell>
+                      </TableRow>
+                      {isExpanded && (
+                        <React.Fragment key={`${s.prefixed}-similar`}>
+                          {similar.isPending && !similar.data ? (
+                            <div className="py-3 text-sm text-muted-foreground">
+                              Loading similar subreddits…
+                            </div>
+                          ) : similar.data?.items?.length ? (
+                            <>
+                              <TableRow>
+                                <TableCell colSpan={4} className="bg-muted/40">
+                                  <div className="space-y-2">
+                                    <div className="text-xs font-medium text-muted-foreground">
+                                      Similar subreddits to r/{normalizedName}
+                                    </div>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                              {similar.data.items.map((child: any) => {
+                                const childNormalized = child.name.replace(
+                                  /^r\//i,
+                                  ""
+                                );
+
+                                return (
+                                  <TableRow
+                                    key={`${normalizedName}-${child.prefixed}`}
+                                    className="bg-muted"
+                                  >
+                                    <TableCell>{child.prefixed}</TableCell>
+                                    <TableCell className="whitespace-pre-wrap">
+                                      {child.title || child.description || "—"}
+                                    </TableCell>
+                                    <TableCell>
+                                      {typeof child.subscribers === "number"
+                                        ? millify(child.subscribers)
+                                        : "—"}
+                                    </TableCell>
+                                    <TableCell>
+                                      <SubredditActions
+                                        rulesKey={childNormalized}
+                                        trackKey={childNormalized}
+                                        prefixed={child.prefixed}
+                                        reach={child.subscribers}
+                                      />
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              })}
+                            </>
+                          ) : (
+                            <TableRow className="py-3 text-sm text-muted-foreground">
+                              <TableCell colSpan={5}>
+                                No similar subreddits found.
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </React.Fragment>
+                      )}
+                    </>
+                  );
+                })
               )}
             </TableBody>
           </Table>
         </div>
-      </Card>
+      </div>
 
-      {/* Rules Modal */}
-      <ResponsiveModal
-        open={rulesOpen}
-        onOpenChange={(v) => setRulesOpen(v)}
-        title={rulesSubreddit ? `r/${rulesSubreddit} rules` : "Subreddit rules"}
-        description={
-          rulesSubreddit ? "Community posting guidelines" : undefined
-        }
-      >
-        {rules.isPending && !rules.data ? (
-          <div className="text-sm text-muted-foreground">Loading rules…</div>
-        ) : rules.data?.items?.length ? (
-          <div className="space-y-3 max-h-[60vh] overflow-auto pr-1">
-            {rules.data.items
-              .slice()
-              .sort((a: any, b: any) => (a.priority ?? 0) - (b.priority ?? 0))
-              .map((r: any, idx: number) => (
-                <div
-                  key={`${r.shortName}-${idx}`}
-                  className="rounded-md border p-3"
-                >
-                  <div className="font-medium">
-                    {typeof r.priority === "number"
-                      ? `${r.priority + 1}. `
-                      : ""}
-                    {r.shortName || "Untitled rule"}
-                  </div>
-                  {r.description ? (
-                    <div className="mt-1 text-sm whitespace-pre-wrap">
-                      {r.description}
-                    </div>
-                  ) : null}
-                  {r.violationReason ? (
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      Violation: {r.violationReason}
-                    </div>
-                  ) : null}
-                </div>
-              ))}
-            {rules.data.siteRules?.length ? (
-              <div className="pt-2 text-xs text-muted-foreground">
-                Site-wide rules may also apply.
-              </div>
-            ) : null}
-          </div>
-        ) : (
-          <div className="text-sm text-muted-foreground">No rules found.</div>
-        )}
-        <div className="mt-4">
-          <Button variant="outline" onClick={() => setRulesOpen(false)}>
-            Close
-          </Button>
-        </div>
-      </ResponsiveModal>
+      <SubredditRulesModal subreddit={rulesSubreddit} />
     </>
   );
 }

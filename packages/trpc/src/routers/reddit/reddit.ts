@@ -1,19 +1,18 @@
-import { prisma, Prisma } from "@workspace/database";
 import crypto from "crypto";
 import z from "zod";
-import { reddit } from "../lib/reddit";
-import { TASK_NAMES } from "../queue";
-import { enqueueTask } from "../queue/enqueue";
-import { adminProcedure, createTRPCRouter, queueProcedure } from "../trpc";
+import { reddit } from "../../lib/reddit";
+import { adminProcedure, createTRPCRouter, queueProcedure } from "../../trpc";
 import { campaignsRouter } from "./campaign";
-import { evaluationsRouter, exampleEvaluationsRouter } from "./evaluations";
-import { Category, scanSubredditInput } from "./reddit/types";
+import { evaluationsRouter } from "./evaluations";
+import { postRouter } from "./post";
+import { queueScanSubreddit } from "./queueScan";
+import { Category, scanSubredditInput } from "./types";
 
 export const redditRouter = createTRPCRouter({
   campaigns: campaignsRouter,
   evaluations: evaluationsRouter,
-  exampleEvaluations: exampleEvaluationsRouter,
-  searchSubreddits: adminProcedure
+  posts: postRouter,
+  search: adminProcedure
     .input(
       z.object({
         query: z.string().min(1),
@@ -26,7 +25,7 @@ export const redditRouter = createTRPCRouter({
       });
       return { items };
     }),
-  searchSubredditsApi: adminProcedure
+  searchApi: adminProcedure
     .input(
       z.object({
         query: z.string().min(1),
@@ -39,48 +38,33 @@ export const redditRouter = createTRPCRouter({
       });
       return { items };
     }),
-  getSubredditRules: adminProcedure
+  getRules: adminProcedure
     .input(z.object({ subreddit: z.string().min(1) }))
     .mutation(async ({ input }) => {
       const data = await reddit.getSubredditRules(input.subreddit);
       return data;
     }),
-  getPostComments: adminProcedure
+  getSimilar: adminProcedure
     .input(
       z.object({
-        permalink: z.string().min(1),
-        limit: z.number().min(1).max(500).optional(),
-        depth: z.number().min(1).max(10).optional(),
+        subreddit: z.string().min(1),
+        limit: z.number().min(1).max(100).optional(),
       })
     )
     .mutation(async ({ input }) => {
-      const items = await reddit.getCommentsByPermalink(input.permalink, {
-        limit: input.limit ?? 100,
-        depth: input.depth ?? 5,
+      const items = await reddit.getSimilarSubreddits(input.subreddit, {
+        limit: input.limit ?? 25,
       });
       return { items };
     }),
-  adminQueueScanSubreddit: adminProcedure
+
+  adminQueueScan: adminProcedure
     .input(z.object({ subreddit: z.string().min(1) }))
     .mutation(async ({ input }) => {
       await queueScanSubreddit(input.subreddit);
       return { ok: true };
     }),
-  scanWatchList: queueProcedure.mutation(async () => {
-    await queueScanWatchedSubreddits({});
-    return { ok: true };
-  }),
-  adminScanWatchList: adminProcedure
-    .input(
-      z.object({
-        campaignId: z.string().uuid(),
-      })
-    )
-    .mutation(async ({ input }) => {
-      await queueScanWatchedSubreddits({ campaignId: input.campaignId });
-      return { ok: true };
-    }),
-  scanSubreddit: queueProcedure
+  scan: queueProcedure
     .input(scanSubredditInput)
     .mutation(async ({ input, ctx }) => {
       const { subreddit, category } = input;
@@ -126,7 +110,6 @@ export const redditRouter = createTRPCRouter({
       });
       return { ok: true, fetched: rows.length, inserted: created.count };
     }),
-
   scanSubredditWithSdk: queueProcedure
     .input(scanSubredditInput)
     .mutation(async ({ input, ctx }) => {
@@ -186,8 +169,52 @@ export const redditRouter = createTRPCRouter({
       });
       return { ok: true, fetched: rows.length, inserted: created.count };
     }),
+  upsert: adminProcedure
+    .input(
+      z.object({
+        subreddit: z.string().min(1),
+        campaignId: z.string(),
+        reach: z.number().min(0).optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      let reach = input.reach ?? null;
 
-  listPosts: adminProcedure
+      if (!reach) {
+        const subreddit = await reddit.getSubreddit(input.subreddit).getInfo();
+        reach = subreddit?.subscribers ?? null;
+      }
+
+      const item = await ctx.db.watchedSubreddit.upsert({
+        where: {
+          campaignId_subreddit: {
+            campaignId: input.campaignId,
+            subreddit: input.subreddit,
+          },
+        },
+        update: { updatedAt: new Date(), reach },
+        create: {
+          subreddit: input.subreddit,
+          campaignId: input.campaignId,
+          reach,
+        },
+      });
+      return { ok: true, item };
+    }),
+  delete: adminProcedure
+    .input(z.object({ subreddit: z.string().min(1), campaignId: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      await ctx.db.watchedSubreddit.delete({
+        where: {
+          campaignId_subreddit: {
+            campaignId: input.campaignId,
+            subreddit: input.subreddit,
+          },
+        },
+      });
+      return { ok: true };
+    }),
+  fetchAll: adminProcedure
     .input(
       z.object({
         page: z.number().min(1).default(1),
@@ -271,120 +298,4 @@ export const redditRouter = createTRPCRouter({
 
       return { items, total };
     }),
-  listWatchedSubreddit: adminProcedure.query(async ({ ctx }) => {
-    const items = await ctx.db.watchedSubreddit.findMany({
-      orderBy: { subreddit: "asc" },
-    });
-    return { items };
-  }),
-  upsertWatchedSubreddit: adminProcedure
-    .input(z.object({ subreddit: z.string().min(1), campaignId: z.string() }))
-    .mutation(async ({ input, ctx }) => {
-      const item = await ctx.db.watchedSubreddit.upsert({
-        where: {
-          campaignId_subreddit: {
-            campaignId: input.campaignId,
-            subreddit: input.subreddit,
-          },
-        },
-        update: { updatedAt: new Date() },
-        create: { subreddit: input.subreddit, campaignId: input.campaignId },
-      });
-      return { ok: true, item };
-    }),
-  deleteWatchedSubreddit: adminProcedure
-    .input(z.object({ subreddit: z.string().min(1), campaignId: z.string() }))
-    .mutation(async ({ input, ctx }) => {
-      await ctx.db.watchedSubreddit.delete({
-        where: {
-          campaignId_subreddit: {
-            campaignId: input.campaignId,
-            subreddit: input.subreddit,
-          },
-        },
-      });
-      return { ok: true };
-    }),
-  /**
-   * Count unscored posts for a campaign
-   */
-  countUnscoredPostsForCampaign: adminProcedure
-    .input(z.object({ campaignId: z.string().uuid() }))
-    .query(async ({ input, ctx }) => {
-      const watched = await ctx.db.watchedSubreddit.findMany({
-        where: { campaignId: input.campaignId },
-        select: { subreddit: true },
-      });
-
-      const subreddits = watched.map((w) => w.subreddit);
-      const count = await ctx.db.redditPost.count({
-        where: {
-          evaluations: {
-            every: {
-              NOT: {
-                campaignId: input.campaignId,
-              },
-            },
-          },
-          subreddit: { in: subreddits },
-        },
-      });
-
-      return { count };
-    }),
-  updateRating: adminProcedure
-    .input(
-      z.object({
-        id: z.string().uuid(),
-        direction: z.enum(["up", "down", "clear"]).default("up"),
-      })
-    )
-    .mutation(async ({ ctx, input }) => {
-      const rating: Prisma.RedditPostEvaluationUpdateInput["rating"] =
-        input.direction === "up"
-          ? "POSITIVE"
-          : input.direction === "down"
-            ? "NEGATIVE"
-            : "UNRATED";
-
-      const evaluation = await ctx.db.redditPostEvaluation.update({
-        where: { id: input.id },
-        data: { rating },
-      });
-
-      return { ok: true, evaluation };
-    }),
 });
-
-async function queueScanWatchedSubreddits({
-  campaignId,
-}: {
-  campaignId?: string;
-}) {
-  const watchedSubreddits = await prisma.watchedSubreddit.findMany({
-    where: campaignId ? { campaignId } : undefined,
-    select: { subreddit: true },
-  });
-
-  const deduped = new Set<string>();
-  watchedSubreddits.forEach((r) => deduped.add(r.subreddit));
-
-  const dedupedArray = Array.from(deduped);
-  for (let i = 0; i < dedupedArray.length; i++) {
-    await queueScanSubreddit(dedupedArray[i]!);
-    // Throttle to avoid Reddit rate limits
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-}
-
-async function queueScanSubreddit(subreddit: string) {
-  const cats: Category[] = ["hot", "rising"];
-  await Promise.all(
-    cats.map((category) =>
-      enqueueTask(TASK_NAMES.redditScanSubreddit, {
-        subreddit,
-        category,
-      } satisfies z.infer<typeof scanSubredditInput>)
-    )
-  );
-}

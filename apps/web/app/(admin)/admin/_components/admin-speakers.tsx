@@ -265,7 +265,7 @@ export function AdminSpeakersCard() {
               {form.getValues("id")
                 ? upsertSpeaker.isPending
                   ? "Saving..."
-                  : "Save Changes"
+                  : "Save"
                 : upsertSpeaker.isPending
                   ? "Adding..."
                   : "Add Speaker"}

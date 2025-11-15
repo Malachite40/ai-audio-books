@@ -60,7 +60,7 @@ export function LeadsPosts({ campaignId }: LeadsPostsProps) {
     setOpenRow({});
   }, [campaignId]);
 
-  const { data, refetch, isFetching } = api.reddit.listPosts.useQuery({
+  const { data, refetch, isFetching } = api.reddit.fetchAll.useQuery({
     page,
     pageSize: PAGE_SIZE,
     search: q.trim() ? q.trim() : undefined,
@@ -76,7 +76,7 @@ export function LeadsPosts({ campaignId }: LeadsPostsProps) {
   );
 
   // Comments fetching + row expansion state
-  const getComments = api.reddit.getPostComments.useMutation();
+  const getComments = api.reddit.posts.getComments.useMutation();
   const [commentsByPost, setCommentsByPost] = useState<Record<string, any[]>>(
     {}
   );

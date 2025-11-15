@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { ResponsiveModal } from "@/components/resonpsive-modal";
+import { millify } from "@/lib/numbers";
 import { api as trpc } from "@/trpc/react";
 import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
@@ -56,13 +57,13 @@ export function LeadsTools() {
   // API-based subreddit search (native endpoint)
   const [apiQuery, setApiQuery] = useState("");
   const [apiLimit, setApiLimit] = useState<number>(50);
-  const searchApi = trpc.reddit.searchSubredditsApi.useMutation();
+  const searchApi = trpc.reddit.searchApi.useMutation();
 
   // Post-based subreddit search (extract from cross-subreddit posts)
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState<number>(50);
 
-  const search = trpc.reddit.searchSubreddits.useMutation();
+  const search = trpc.reddit.search.useMutation();
   const items = useMemo(() => search.data?.items ?? [], [search.data]);
   const apiItems = useMemo(() => searchApi.data?.items ?? [], [searchApi.data]);
   const [apiSort, setApiSort] = useState<"desc" | "asc">("desc");
@@ -79,8 +80,8 @@ export function LeadsTools() {
   // Rules modal state
   const [rulesOpen, setRulesOpen] = useState(false);
   const [rulesSubreddit, setRulesSubreddit] = useState<string | null>(null);
-  const rules = trpc.reddit.getSubredditRules.useMutation();
-  const upsertWatch = trpc.reddit.upsertWatchedSubreddit.useMutation({
+  const rules = trpc.reddit.getRules.useMutation();
+  const upsertWatch = trpc.reddit.upsert.useMutation({
     onSuccess: async (res) => {
       await utils.reddit.campaigns.fetchAll.invalidate();
       const name = res?.item?.subreddit ?? "";
@@ -99,16 +100,6 @@ export function LeadsTools() {
       toast("Failed to track subreddit", { description: err.message });
     },
   });
-
-  // Compact number formatter for subscribers (1k, 10k, 100k, 1m, ...)
-  const compactFmt = useMemo(
-    () =>
-      new Intl.NumberFormat("en", {
-        notation: "compact",
-        maximumFractionDigits: 0,
-      }),
-    []
-  );
 
   const handleTrack = (subreddit: string) => {
     if (!selectedCampaignId) {
@@ -274,7 +265,7 @@ export function LeadsTools() {
                     </TableCell>
                     <TableCell>
                       {typeof s.subscribers === "number"
-                        ? compactFmt.format(s.subscribers).toLowerCase()
+                        ? millify(s.subscribers)
                         : "—"}
                     </TableCell>
                     <TableCell>

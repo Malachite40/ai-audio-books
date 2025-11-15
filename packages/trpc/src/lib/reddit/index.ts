@@ -10,7 +10,8 @@ if (
   typeof (instance as any).searchSubreddits !== "function" ||
   typeof (instance as any).searchSubredditsApi !== "function" ||
   typeof (instance as any).getSubredditRules !== "function" ||
-  typeof (instance as any).getCommentsByPermalink !== "function"
+  typeof (instance as any).getCommentsByPermalink !== "function" ||
+  typeof (instance as any).getSimilarSubreddits !== "function"
 ) {
   instance = createRedditClientFromEnv();
   if (process.env.NODE_ENV !== "production") globalForReddit.reddit = instance;
