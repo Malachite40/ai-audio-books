@@ -7,7 +7,7 @@ import z from "zod";
 import { TASK_NAMES } from "../../queue";
 import { enqueueTask } from "../../queue/enqueue";
 import { adminProcedure, createTRPCRouter, queueProcedure } from "../../trpc";
-import { scoreRedditPostInput, scoreRedditPostsInput } from "../reddit/types";
+import { EVAL_QUEUE_DELAY_MS, scoreRedditPostInput, scoreRedditPostsInput } from "../reddit/types";
 export const evaluationsRouter = createTRPCRouter({
   fetchAll: adminProcedure
     .input(
@@ -368,11 +368,18 @@ export const evaluationsRouter = createTRPCRouter({
 
       if (posts.length === 0) return { ok: true, evaluated: 0 };
 
-      for (const p of posts) {
+      for (let i = 0; i < posts.length; i++) {
+        const p = posts[i]!;
         await enqueueTask(TASK_NAMES.scoreRedditPost, {
           postId: p.redditId,
           campaignId: input.campaignId,
         } satisfies z.infer<typeof scoreRedditPostInput>);
+        // Spread evaluation jobs out in time to avoid hitting provider rate limits.
+        if (i < posts.length - 1) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, EVAL_QUEUE_DELAY_MS)
+          );
+        }
       }
 
       return { ok: true };

@@ -19,6 +19,19 @@ export const QUEUE_DELAY_MS =
   MS_IN_30_MINUTES / (MAX_REQUESTS_PER_MINUTE * CRON_INTERVAL_IN_MIN) +
   PADDING_MS; // Spread out over 30 minutes
 
+// Evaluation rate limiting (OpenAI, etc.)
+// Keep separate from Reddit HTTP scan limits so we can tune independently.
+export const EVAL_MAX_REQUESTS_PER_MINUTE = 200;
+export const EVAL_PADDING_MS = 10;
+export const EVAL_QUEUE_DELAY_MS =
+  60_000 / EVAL_MAX_REQUESTS_PER_MINUTE + EVAL_PADDING_MS;
+
+// Safety cap for how many posts to schedule per batch for a campaign.
+export const EVAL_MAX_PER_BATCH = 50;
+
+// Safety cap for how many evaluations to create per campaign per day.
+export const EVAL_MAX_PER_CAMPAIGN_PER_DAY = 500;
+
 export const scanSubredditInput = z.object({
   subreddit: z.string().min(1),
   category: Category,
