@@ -147,7 +147,6 @@ export const campaignsRouter = createTRPCRouter({
           },
         },
       });
-
       return { count };
     }),
 });
