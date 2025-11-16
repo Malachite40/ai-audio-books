@@ -2,12 +2,12 @@ import { openai } from "@ai-sdk/openai";
 import { TRPCError } from "@trpc/server";
 import { Prisma } from "@workspace/database";
 import { generateObject } from "ai";
+import { subDays } from "date-fns";
 import z from "zod";
 import { TASK_NAMES } from "../../queue";
 import { enqueueTask } from "../../queue/enqueue";
 import { adminProcedure, createTRPCRouter, queueProcedure } from "../../trpc";
 import { scoreRedditPostInput, scoreRedditPostsInput } from "../reddit/types";
-
 export const evaluationsRouter = createTRPCRouter({
   fetchAll: adminProcedure
     .input(
@@ -357,6 +357,10 @@ export const evaluationsRouter = createTRPCRouter({
           },
           subreddit: {
             in: watched.map((w) => w.subreddit),
+          },
+          // greater than 2 days ago, using date-fns
+          createdUtc: {
+            gte: subDays(new Date(), 2),
           },
         },
         orderBy: { createdUtc: "desc" },
