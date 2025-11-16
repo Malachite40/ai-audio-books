@@ -7,6 +7,9 @@ import { createTRPCRouter, queueProcedure } from "../trpc";
 export const testAudioChunkInput = z.object({ id: z.string().uuid() });
 export const testConcatAudioFileInput = z.object({ id: z.string().uuid() });
 
+export type TestAudioChunkInput = z.infer<typeof testAudioChunkInput>;
+export type TestConcatAudioFileInput = z.infer<typeof testConcatAudioFileInput>;
+
 const PLACEHOLDER_URL =
   "https://instantaudio.online/audio/d67cfd0a-ba84-498c-89cb-9146c3e0b413.mp3";
 
@@ -58,7 +61,7 @@ export const testWorkersRouter = createTRPCRouter({
         // Queue concat test procedure
         await enqueueTask(TASK_NAMES.test.concatTestAudioFile, {
           id: chunk.audioFileId,
-        } satisfies z.infer<typeof testConcatAudioFileInput>);
+        });
       }
       return { url: PLACEHOLDER_URL };
     }),
@@ -84,7 +87,7 @@ export const testWorkersRouter = createTRPCRouter({
           batch.map((chunk) => {
             return enqueueTask(TASK_NAMES.test.processTestAudioChunk, {
               id: chunk.id,
-            } satisfies z.infer<typeof testAudioChunkInput>);
+            });
           })
         );
         if (i + BATCH_SIZE < chunks.length) {

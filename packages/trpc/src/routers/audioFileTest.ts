@@ -130,7 +130,7 @@ export const audioFileTestRouter = createTRPCRouter({
 
       await enqueueTask(TASK_NAMES.test.processTestAudioFile, {
         id: audioFile.id,
-      } satisfies z.infer<typeof processAudioFileInput>);
+      });
       return { audioFile };
     }),
 });

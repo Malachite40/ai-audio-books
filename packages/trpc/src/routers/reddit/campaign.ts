@@ -3,7 +3,6 @@ import z from "zod";
 import { TASK_NAMES } from "../../queue";
 import { enqueueTask } from "../../queue/enqueue";
 import { adminProcedure, createTRPCRouter, queueProcedure } from "../../trpc";
-import { scoreRedditPostsInput } from "../reddit/types";
 import { queueScanWatchedSubreddits } from "./enqueueScan";
 
 export const campaignsRouter = createTRPCRouter({
@@ -89,9 +88,9 @@ export const campaignsRouter = createTRPCRouter({
   adminQueueScorePosts: adminProcedure
     .input(z.object({ campaignId: z.string().uuid() }))
     .mutation(async ({ input }) => {
-      await enqueueTask(TASK_NAMES.scoreRedditPosts, {
+      await enqueueTask(TASK_NAMES.reddit.scoreRedditPosts, {
         campaignId: input.campaignId,
-      } satisfies z.infer<typeof scoreRedditPostsInput>);
+      });
       return { ok: true };
     }),
 
@@ -102,9 +101,9 @@ export const campaignsRouter = createTRPCRouter({
     });
 
     for (const campaign of campaigns) {
-      await enqueueTask(TASK_NAMES.scoreRedditPosts, {
+      await enqueueTask(TASK_NAMES.reddit.scoreRedditPosts, {
         campaignId: campaign.id,
-      } satisfies z.infer<typeof scoreRedditPostsInput>);
+      });
     }
 
     return { ok: true };

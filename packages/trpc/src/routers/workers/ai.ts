@@ -9,7 +9,6 @@ import { TASK_NAMES } from "../../queue";
 import { enqueueTask } from "../../queue/enqueue";
 import { s3Client } from "../../s3";
 import { createTRPCRouter, queueProcedure } from "../../trpc";
-import { createAudioFileChunksInput } from "../workers";
 
 export const generateStoryInput = z.object({
   audioFileId: z.string().uuid(),
@@ -21,6 +20,9 @@ export const generateImageInput = z.object({
   audioFileId: z.string().uuid(),
   prompt: z.string().max(100),
 });
+
+export type GenerateStoryInput = z.infer<typeof generateStoryInput>;
+export type GenerateImageInput = z.infer<typeof generateImageInput>;
 
 export const aiWorkerRouter = createTRPCRouter({
   generateImage: queueProcedure
@@ -76,13 +78,13 @@ export const aiWorkerRouter = createTRPCRouter({
       await enqueueTask(TASK_NAMES.ai.generateImage, {
         audioFileId: input.audioFileId,
         prompt: `Generate an image for a story, the: ${title}.`,
-      } satisfies z.infer<typeof generateImageInput>);
+      });
 
-      await enqueueTask(TASK_NAMES.createAudioFileChunks, {
+      await enqueueTask(TASK_NAMES.audio.createAudioFileChunks, {
         audioFileId: input.audioFileId,
         chunkSize: 500,
         includeTitle: true,
-      } satisfies z.infer<typeof createAudioFileChunksInput>);
+      });
 
       return {};
     }),

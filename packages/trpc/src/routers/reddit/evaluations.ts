@@ -7,7 +7,11 @@ import z from "zod";
 import { TASK_NAMES } from "../../queue";
 import { enqueueTask } from "../../queue/enqueue";
 import { adminProcedure, createTRPCRouter, queueProcedure } from "../../trpc";
-import { EVAL_QUEUE_DELAY_MS, scoreRedditPostInput, scoreRedditPostsInput } from "../reddit/types";
+import {
+  EVAL_QUEUE_DELAY_MS,
+  scoreRedditPostInput,
+  scoreRedditPostsInput,
+} from "../reddit/types";
 export const evaluationsRouter = createTRPCRouter({
   fetchAll: adminProcedure
     .input(
@@ -370,10 +374,10 @@ export const evaluationsRouter = createTRPCRouter({
 
       for (let i = 0; i < posts.length; i++) {
         const p = posts[i]!;
-        await enqueueTask(TASK_NAMES.scoreRedditPost, {
+        await enqueueTask(TASK_NAMES.reddit.scoreRedditPost, {
           postId: p.redditId,
           campaignId: input.campaignId,
-        } satisfies z.infer<typeof scoreRedditPostInput>);
+        });
         // Spread evaluation jobs out in time to avoid hitting provider rate limits.
         if (i < posts.length - 1) {
           await new Promise((resolve) =>
@@ -591,6 +595,7 @@ export const evaluationsRouter = createTRPCRouter({
         evaluationId: z.string().uuid(),
         bookmarked: z.boolean(),
         exampleMessage: z.string().optional(),
+        reasoning: z.string().optional(),
         score: z.number().min(1).max(100).optional(),
       })
     )
@@ -600,6 +605,7 @@ export const evaluationsRouter = createTRPCRouter({
         data: {
           bookmarked: input.bookmarked,
           exampleMessage: input.exampleMessage,
+          reasoning: input.reasoning,
           score: input.score,
         },
       });

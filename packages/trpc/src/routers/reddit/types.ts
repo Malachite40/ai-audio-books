@@ -46,3 +46,10 @@ export const scoreRedditPostInput = z.object({
   postId: z.string().min(1),
   campaignId: z.string().uuid(),
 });
+
+export const backfill30DaysInput = z.object({ subreddit: z.string().min(1) });
+
+export type ScanSubredditInput = z.infer<typeof scanSubredditInput>;
+export type ScoreRedditPostsInput = z.infer<typeof scoreRedditPostsInput>;
+export type ScoreRedditPostInput = z.infer<typeof scoreRedditPostInput>;
+export type Backfill30DaysInput = z.infer<typeof backfill30DaysInput>;

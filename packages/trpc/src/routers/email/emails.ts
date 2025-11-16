@@ -4,15 +4,15 @@ import {
   WelcomeEmail,
 } from "@workspace/transactional";
 import z from "zod";
-import { resend } from "../lib/resend";
-import { TASK_NAMES } from "../queue";
-import { enqueueTask } from "../queue/enqueue";
+import { resend } from "../../lib/resend";
+import { TASK_NAMES } from "../../queue";
+import { enqueueTask } from "../../queue/enqueue";
 import {
   adminProcedure,
   createTRPCRouter,
   publicProcedure,
   queueProcedure,
-} from "../trpc";
+} from "../../trpc";
 export const emailsRouter = createTRPCRouter({
   join: publicProcedure
     .input(
@@ -97,7 +97,7 @@ export const emailsRouter = createTRPCRouter({
       });
 
       for (const campaign of campaigns) {
-        await enqueueTask(TASK_NAMES.sendRedditDailyDigestForAdmin, {
+        await enqueueTask(TASK_NAMES.email.sendRedditDailyDigestForAdmin, {
           campaignId: campaign.id,
           minScore: input.minScore,
           hoursBack: input.hoursBack,
@@ -116,7 +116,7 @@ export const emailsRouter = createTRPCRouter({
       })
     )
     .mutation(async ({ input }) => {
-      await enqueueTask(TASK_NAMES.sendRedditDailyDigestForAdmin, {
+      await enqueueTask(TASK_NAMES.email.sendRedditDailyDigestForAdmin, {
         campaignId: input.campaignId,
         minScore: input.minScore,
         hoursBack: input.hoursBack,

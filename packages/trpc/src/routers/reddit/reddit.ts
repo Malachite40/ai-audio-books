@@ -7,7 +7,12 @@ import { campaignsRouter } from "./campaign";
 import { queueScanSubreddit } from "./enqueueScan";
 import { evaluationsRouter } from "./evaluations";
 import { postRouter } from "./post";
-import { Category, scanSubredditInput, TRACKED_CATEGORIES } from "./types";
+import {
+  backfill30DaysInput,
+  Category,
+  scanSubredditInput,
+  TRACKED_CATEGORIES,
+} from "./types";
 
 export const redditRouter = createTRPCRouter({
   campaigns: campaignsRouter,
@@ -112,7 +117,7 @@ export const redditRouter = createTRPCRouter({
       return { ok: true, fetched: rows.length, inserted: created.count };
     }),
   backfill30Days: queueProcedure
-    .input(z.object({ subreddit: z.string().min(1) }))
+    .input(backfill30DaysInput)
     .mutation(async ({ input, ctx }) => {
       const { subreddit } = input;
       const since = new Date();
@@ -196,7 +201,7 @@ export const redditRouter = createTRPCRouter({
   adminQueueBackfill30Days: adminProcedure
     .input(z.object({ subreddit: z.string().min(1) }))
     .mutation(async ({ input }) => {
-      await enqueueTask(TASK_NAMES.redditBackfillSubreddit, {
+      await enqueueTask(TASK_NAMES.reddit.redditBackfillSubreddit, {
         subreddit: input.subreddit,
       });
       return { ok: true };

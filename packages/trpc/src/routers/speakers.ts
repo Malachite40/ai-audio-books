@@ -3,7 +3,6 @@ import { Languages } from "../lib/constants";
 import { TASK_NAMES } from "../queue";
 import { enqueueTask } from "../queue/enqueue";
 import { adminProcedure, createTRPCRouter, publicProcedure } from "../trpc";
-import { createAudioFileChunksInput } from "./workers";
 export const speakersRouter = createTRPCRouter({
   upsert: publicProcedure
     .input(
@@ -77,11 +76,11 @@ export const speakersRouter = createTRPCRouter({
       });
 
       // Queue chunk creation/processing
-      await enqueueTask(TASK_NAMES.createAudioFileChunks, {
+      await enqueueTask(TASK_NAMES.audio.createAudioFileChunks, {
         audioFileId: audioFile.id,
         chunkSize: 300,
         includeTitle: false,
-      } satisfies z.infer<typeof createAudioFileChunksInput>);
+      });
 
       // Point exampleAudio to the final MP3 URL immediately
       const url = `https://instantaudio.online/audio/${audioFile.id}.mp3`;

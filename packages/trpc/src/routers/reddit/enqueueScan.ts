@@ -1,12 +1,7 @@
 import { prisma } from "@workspace/database";
-import z from "zod";
 import { TASK_NAMES } from "../../queue";
 import { enqueueTask } from "../../queue/enqueue";
-import {
-  QUEUE_DELAY_MS,
-  scanSubredditInput,
-  TRACKED_CATEGORIES,
-} from "./types";
+import { QUEUE_DELAY_MS, TRACKED_CATEGORIES } from "./types";
 
 export async function queueScanWatchedSubreddits({
   campaignId,
@@ -32,10 +27,10 @@ export async function queueScanWatchedSubreddits({
 export async function queueScanSubreddit(subreddit: string) {
   await Promise.all(
     TRACKED_CATEGORIES.map((category) =>
-      enqueueTask(TASK_NAMES.redditScanSubreddit, {
+      enqueueTask(TASK_NAMES.reddit.redditScanSubreddit, {
         subreddit,
         category,
-      } satisfies z.infer<typeof scanSubredditInput>)
+      })
     )
   );
 }

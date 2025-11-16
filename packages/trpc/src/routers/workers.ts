@@ -52,6 +52,16 @@ export const createAudioFileChunksFromChaptersInput = z.object({
   ),
 });
 
+export type AudioChunkInput = z.infer<typeof audioChunkInput>;
+export type ProcessAudioFileInput = z.infer<typeof processAudioFileInput>;
+export type ConcatAudioFileInput = z.infer<typeof concatAudioFileInput>;
+export type CreateAudioFileChunksInput = z.infer<
+  typeof createAudioFileChunksInput
+>;
+export type CreateAudioFileChunksFromChaptersInput = z.infer<
+  typeof createAudioFileChunksFromChaptersInput
+>;
+
 export const workersRouter = createTRPCRouter({
   ai: aiWorkerRouter,
   test: testWorkersRouter,
@@ -592,10 +602,10 @@ export const workersRouter = createTRPCRouter({
           data: { status: "PROCESSING" },
         });
 
-        await enqueueTask(TASK_NAMES.concatAudioFile, {
+        await enqueueTask(TASK_NAMES.audio.concatAudioFile, {
           id: audioChunk.audioFileId,
           overwrite: true,
-        } satisfies z.infer<typeof concatAudioFileInput>);
+        });
       }
 
       return {};
@@ -620,9 +630,9 @@ export const workersRouter = createTRPCRouter({
         const batch = chunks.slice(i, i + BATCH_SIZE);
         await Promise.all(
           batch.map((chunk) => {
-            return enqueueTask(TASK_NAMES.processAudioChunkWithInworld, {
+            return enqueueTask(TASK_NAMES.audio.processAudioChunkWithInworld, {
               id: chunk.id,
-            } satisfies z.infer<typeof audioChunkInput>);
+            });
           })
         );
         if (i + BATCH_SIZE < chunks.length)
@@ -674,9 +684,9 @@ export const workersRouter = createTRPCRouter({
         );
       }
 
-      await enqueueTask(TASK_NAMES.processAudioFile, {
+      await enqueueTask(TASK_NAMES.audio.processAudioFile, {
         id: audioFile.id,
-      } satisfies z.infer<typeof processAudioFileInput>);
+      });
 
       if (audioFile.ownerId) {
         await ctx.db.$transaction(async (tx) => {
@@ -734,9 +744,9 @@ export const workersRouter = createTRPCRouter({
         );
       }
 
-      await enqueueTask(TASK_NAMES.processAudioFile, {
+      await enqueueTask(TASK_NAMES.audio.processAudioFile, {
         id: audioFile.id,
-      } satisfies z.infer<typeof processAudioFileInput>);
+      });
 
       if (audioFile.ownerId) {
         await ctx.db.$transaction(async (tx) => {

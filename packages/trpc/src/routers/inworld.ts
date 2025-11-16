@@ -4,12 +4,6 @@ import { sectionType } from "../lib/utils/chunking";
 import { TASK_NAMES } from "../queue";
 import { enqueueTask } from "../queue/enqueue";
 import { authenticatedProcedure, createTRPCRouter } from "../trpc";
-import {
-  audioChunkInput,
-  createAudioFileChunksFromChaptersInput,
-  createAudioFileChunksInput,
-} from "./workers";
-import { generateStoryInput } from "./workers/ai";
 
 export const inworldRouter = createTRPCRouter({
   createFromCopy: authenticatedProcedure
@@ -46,11 +40,11 @@ export const inworldRouter = createTRPCRouter({
           public: input.public,
         },
       });
-      await enqueueTask(TASK_NAMES.createAudioFileChunks, {
+      await enqueueTask(TASK_NAMES.audio.createAudioFileChunks, {
         audioFileId: audioFile.id,
         chunkSize: 300,
         includeTitle: input.includeTitle ?? true,
-      } satisfies z.infer<typeof createAudioFileChunksInput>);
+      });
       return {
         audioFile,
       };
@@ -98,7 +92,7 @@ export const inworldRouter = createTRPCRouter({
         audioFileId: audioFile.id,
         prompt: input.text,
         durationMinutes: input.durationMinutes ?? 5,
-      } satisfies z.infer<typeof generateStoryInput>);
+      });
 
       return {
         audioFile,
@@ -141,10 +135,10 @@ export const inworldRouter = createTRPCRouter({
         },
       });
 
-      await enqueueTask(TASK_NAMES.createAudioFileChunksFromChapters, {
+      await enqueueTask(TASK_NAMES.audio.createAudioFileChunksFromChapters, {
         audioFileId: audioFile.id,
         chapters: input.chapters,
-      } satisfies z.infer<typeof createAudioFileChunksFromChaptersInput>);
+      });
 
       return {
         audioFile,
@@ -166,9 +160,9 @@ export const inworldRouter = createTRPCRouter({
       // Retry processing for each failed chunks
       await Promise.all(
         failedChunks.map((chunk) => {
-          return enqueueTask(TASK_NAMES.processAudioChunkWithInworld, {
+          return enqueueTask(TASK_NAMES.audio.processAudioChunkWithInworld, {
             id: chunk.id,
-          } satisfies z.infer<typeof audioChunkInput>);
+          });
         })
       );
     }),

@@ -27,52 +27,59 @@ worker.register(TASK_NAMES.test.garbageCleanup, api.debug.garbageCleanup);
 worker.register(TASK_NAMES.test.memoryHogAlloc, api.debug.memoryHogAlloc);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Register Main Worker Tasks
+// Register Audio Worker Tasks
 // ─────────────────────────────────────────────────────────────────────────────
 worker.register(
-  TASK_NAMES.processAudioChunkWithInworld,
+  TASK_NAMES.audio.processAudioChunkWithInworld,
   api.workers.processAudioChunkWithInworld
 );
-worker.register(TASK_NAMES.processAudioFile, api.workers.processAudioFile);
-worker.register(TASK_NAMES.concatAudioFile, api.workers.concatAudioFile);
 worker.register(
-  TASK_NAMES.createAudioFileChunks,
+  TASK_NAMES.audio.processAudioFile,
+  api.workers.processAudioFile
+);
+worker.register(TASK_NAMES.audio.concatAudioFile, api.workers.concatAudioFile);
+worker.register(
+  TASK_NAMES.audio.createAudioFileChunks,
   api.workers.createAudioFileChunks
 );
 worker.register(
-  TASK_NAMES.createAudioFileChunksFromChapters,
+  TASK_NAMES.audio.createAudioFileChunksFromChapters,
   api.workers.createAudioFileChunksFromChapters
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Register Campaign Worker Tasks
+// ─────────────────────────────────────────────────────────────────────────────
+worker.register(
+  TASK_NAMES.campaign.queueAllPostsToScore,
+  api.reddit.campaigns.queueAllPostsToScore
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Register Reddit Worker Tasks
 // ─────────────────────────────────────────────────────────────────────────────
 worker.register(
-  TASK_NAMES.redditScanSubreddit,
+  TASK_NAMES.reddit.redditScanSubreddit,
   api.reddit.scanSubredditWithSdk
 );
 worker.register(
-  TASK_NAMES.redditBackfillSubreddit,
+  TASK_NAMES.reddit.redditBackfillSubreddit,
   api.reddit.backfill30Days
 );
 worker.register(
-  TASK_NAMES.scoreRedditPosts,
+  TASK_NAMES.reddit.scoreRedditPosts,
   api.reddit.evaluations.scoreRedditPosts
 );
 worker.register(
-  TASK_NAMES.scoreRedditPost,
+  TASK_NAMES.reddit.scoreRedditPost,
   api.reddit.evaluations.scoreRedditPost
-);
-worker.register(
-  TASK_NAMES.queueAllPostsToScore,
-  api.reddit.campaigns.queueAllPostsToScore
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Register Email Worker Tasks
 // ─────────────────────────────────────────────────────────────────────────────
 worker.register(
-  TASK_NAMES.sendRedditDailyDigestForAdmin,
+  TASK_NAMES.email.sendRedditDailyDigestForAdmin,
   api.emails.sendRedditDailyDigestForAdmin
 );
 

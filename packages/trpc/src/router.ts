@@ -1,7 +1,7 @@
 import { audioRouter } from "./routers/audio";
 import { creditsRouter } from "./routers/credits";
 import { debugRouter } from "./routers/debug";
-import { emailsRouter } from "./routers/emails";
+import { emailsRouter } from "./routers/email/emails";
 import { keyValueRouter } from "./routers/keyValueRouter";
 import { redditRouter } from "./routers/reddit/reddit";
 import { referralsRouter } from "./routers/referrals";

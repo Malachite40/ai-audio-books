@@ -16,7 +16,6 @@ import { audioFileSettingsRouter } from "./audioFileSettings";
 import { audioFileTestRouter } from "./audioFileTest";
 import { favoritesRouter } from "./favoritesRouter";
 import { inworldRouter } from "./inworld";
-import { audioChunkInput, concatAudioFileInput } from "./workers";
 
 export const audioRouter = createTRPCRouter({
   // Admin: fetch a single audio file with speaker and owner
@@ -241,7 +240,7 @@ export const audioRouter = createTRPCRouter({
           message: `Audio file with ID ${input.audioFileId} has ${audioChunks} unprocessed chunks. Cannot re-stitch until all chunks are processed.`,
         });
       }
-      await enqueueTask(TASK_NAMES.concatAudioFile, {
+      await enqueueTask(TASK_NAMES.audio.concatAudioFile, {
         id: input.audioFileId,
         overwrite: true,
       });
@@ -280,9 +279,9 @@ export const audioRouter = createTRPCRouter({
         if (chunks.length === 0) return {};
 
         for (const c of chunks) {
-          await enqueueTask(TASK_NAMES.processAudioChunkWithInworld, {
+          await enqueueTask(TASK_NAMES.audio.processAudioChunkWithInworld, {
             id: c.id,
-          } satisfies z.infer<typeof audioChunkInput>);
+          });
         }
 
         await ctx.db.audioFile.update({
@@ -298,7 +297,7 @@ export const audioRouter = createTRPCRouter({
           where: { audioFileId: input.audioFileId },
         });
 
-        await enqueueTask(TASK_NAMES.createAudioFileChunks, {
+        await enqueueTask(TASK_NAMES.audio.createAudioFileChunks, {
           audioFileId: input.audioFileId,
           chunkSize: input.chunkSize ?? 300,
           includeTitle: true,
@@ -325,10 +324,10 @@ export const audioRouter = createTRPCRouter({
         });
       }
 
-      await enqueueTask(TASK_NAMES.concatAudioFile, {
+      await enqueueTask(TASK_NAMES.audio.concatAudioFile, {
         id: input.audioFileId,
         overwrite: true,
-      } satisfies z.infer<typeof concatAudioFileInput>);
+      });
       return {};
     }),
 
