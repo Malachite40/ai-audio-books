@@ -1,3 +1,4 @@
+import { subDays } from "date-fns";
 import z from "zod";
 import { TASK_NAMES } from "../../queue";
 import { enqueueTask } from "../../queue/enqueue";
@@ -141,6 +142,9 @@ export const campaignsRouter = createTRPCRouter({
             },
           },
           subreddit: { in: subreddits },
+          createdUtc: {
+            gte: subDays(new Date(), 2),
+          },
         },
       });
 
