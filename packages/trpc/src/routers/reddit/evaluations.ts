@@ -105,19 +105,22 @@ export const evaluationsRouter = createTRPCRouter({
 
       // Map of subreddit -> Map<date, count>
       const countsBySubreddit = new Map<string, Map<string, number>>();
-      const totalsByDate = new Map<string, number>();
+      const totalsByInterval = new Map<string, number>();
 
-      // Initialize all dates for totals with 0
-      for (let i = 0; i < input.days; i++) {
-        const date = new Date(startDate);
-        date.setDate(date.getDate() + i);
-        const dateKey = date.toISOString().split("T")[0]!;
-        totalsByDate.set(dateKey, 0);
-      }
-
-      // Count evaluations by date and subreddit
+      // Count evaluations by hour and subreddit
       for (const evaluation of evaluations) {
-        const dateKey = evaluation.createdAt.toISOString().split("T")[0]!;
+        const createdAt = evaluation.createdAt;
+        const dateKey = new Date(
+          createdAt.getFullYear(),
+          createdAt.getMonth(),
+          createdAt.getDate(),
+          createdAt.getHours(),
+          0,
+          0,
+          0
+        )
+          .toISOString()
+          .slice(0, 13); // e.g. "2025-11-15T13"
         const subreddit = evaluation.redditPost?.subreddit ?? "unknown";
 
         if (!countsBySubreddit.has(subreddit)) {
@@ -126,30 +129,165 @@ export const evaluationsRouter = createTRPCRouter({
         const subMap = countsBySubreddit.get(subreddit)!;
         subMap.set(dateKey, (subMap.get(dateKey) ?? 0) + 1);
 
-        totalsByDate.set(dateKey, (totalsByDate.get(dateKey) ?? 0) + 1);
+        totalsByInterval.set(dateKey, (totalsByInterval.get(dateKey) ?? 0) + 1);
       }
 
-      // Build a sorted list of all date keys
-      const allDates = Array.from(totalsByDate.keys()).sort((a, b) =>
-        a.localeCompare(b)
-      );
+      // Ensure a continuous series of hourly intervals from startDate to now
+      const allIntervals: string[] = [];
+      const current = new Date(startDate);
+      const end = new Date();
 
-      const series = allDates.map((date) => {
-        const total = totalsByDate.get(date) ?? 0;
+      while (current <= end) {
+        const hourKey = new Date(
+          current.getFullYear(),
+          current.getMonth(),
+          current.getDate(),
+          current.getHours(),
+          0,
+          0,
+          0
+        )
+          .toISOString()
+          .slice(0, 13);
+        allIntervals.push(hourKey);
+        current.setHours(current.getHours() + 1);
+      }
+
+      const series = allIntervals.map((interval) => {
+        const total = totalsByInterval.get(interval) ?? 0;
         const subredditCounts: Record<string, number> = {};
 
         for (const [subreddit, subMap] of countsBySubreddit.entries()) {
-          subredditCounts[subreddit] = subMap.get(date) ?? 0;
+          subredditCounts[subreddit] = subMap.get(interval) ?? 0;
         }
 
         return {
-          date,
+          interval,
           total,
           subreddits: subredditCounts,
         };
       });
 
       return { series };
+    }),
+
+  getHighScoreShare: adminProcedure
+    .input(
+      z.object({
+        campaignId: z.string().uuid(),
+        subreddit: z.string(),
+        days: z.number().min(1).max(90).default(30),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      const campaign = await ctx.db.campaign.findUnique({
+        where: { id: input.campaignId },
+        select: { autoArchiveScore: true },
+      });
+
+      const threshold = campaign?.autoArchiveScore ?? 75;
+
+      const since = new Date();
+      since.setDate(since.getDate() - input.days);
+
+      const baseWhere: Prisma.RedditPostEvaluationWhereInput = {
+        campaignId: input.campaignId,
+        createdAt: { gte: since },
+        redditPost: {
+          subreddit: input.subreddit,
+        },
+      };
+
+      const [total, above] = await Promise.all([
+        ctx.db.redditPostEvaluation.count({
+          where: baseWhere,
+        }),
+        ctx.db.redditPostEvaluation.count({
+          where: {
+            ...baseWhere,
+            score: { gte: threshold },
+          },
+        }),
+      ]);
+
+      const percentage = total === 0 ? 0 : (above / total) * 100;
+
+      return {
+        total,
+        above,
+        percentage,
+        threshold,
+        days: input.days,
+      };
+    }),
+
+  getHighScoreShareForCampaign: adminProcedure
+    .input(
+      z.object({
+        campaignId: z.string().uuid(),
+        days: z.number().min(1).max(90).default(30),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      const campaign = await ctx.db.campaign.findUnique({
+        where: { id: input.campaignId },
+        select: { autoArchiveScore: true },
+      });
+
+      const threshold = campaign?.autoArchiveScore ?? 75;
+
+      const since = new Date();
+      since.setDate(since.getDate() - input.days);
+
+      const evaluations = await ctx.db.redditPostEvaluation.findMany({
+        where: {
+          campaignId: input.campaignId,
+          createdAt: { gte: since },
+        },
+        select: {
+          score: true,
+          redditPost: {
+            select: {
+              subreddit: true,
+            },
+          },
+        },
+      });
+
+      const counts = new Map<
+        string,
+        {
+          total: number;
+          above: number;
+        }
+      >();
+
+      for (const evalRow of evaluations) {
+        const subreddit = evalRow.redditPost.subreddit;
+        const current = counts.get(subreddit) ?? { total: 0, above: 0 };
+        current.total += 1;
+        if (evalRow.score >= threshold) current.above += 1;
+        counts.set(subreddit, current);
+      }
+
+      const result = Array.from(counts.entries()).map(
+        ([subreddit, { total, above }]) => {
+          const percentage = total === 0 ? 0 : (above / total) * 100;
+          return {
+            subreddit,
+            total,
+            above,
+            percentage,
+            threshold,
+          };
+        }
+      );
+
+      return {
+        days: input.days,
+        threshold,
+        items: result,
+      };
     }),
 
   archive: adminProcedure

@@ -196,6 +196,56 @@ export class RedditClient {
     return json.data.children.map((c) => c.data);
   }
 
+  async getListingSince(
+    path: string,
+    opts: { limit?: number; since: Date; maxPages?: number }
+  ) {
+    const items: any[] = [];
+    const sinceTime = opts.since.getTime();
+    const limit = opts.limit ?? 100;
+    const maxPages = opts.maxPages ?? 10;
+
+    let after: string | undefined;
+    for (let page = 0; page < maxPages; page++) {
+      const params = new URLSearchParams();
+      params.set("limit", String(limit));
+      if (after) params.set("after", after);
+
+      const json = await this.request<{
+        data: { children: any[]; after?: string | null };
+      }>(`${path}?${params.toString()}`);
+
+      const children = json.data?.children ?? [];
+      if (!children.length) break;
+      for (const c of children) {
+        const d = c?.data ?? {};
+        const createdUtcSeconds =
+          typeof d.created_utc === "number" ? d.created_utc : null;
+        const createdUtcMs =
+          createdUtcSeconds != null ? createdUtcSeconds * 1000 : null;
+
+        // Only collect posts within the time window; do not stop early
+        // since listings like "hot" or "rising" are not strictly ordered
+        // by created_utc.
+        if (createdUtcMs != null && createdUtcMs >= sinceTime) {
+          items.push(d);
+        }
+      }
+
+      // log the time with date-fns
+      const now = new Date();
+      console.log(`Page ${page + 1} fetched at ${now.toISOString()}`);
+
+      after =
+        typeof json.data.after === "string" && json.data.after
+          ? json.data.after
+          : undefined;
+      if (!after) break;
+    }
+
+    return items;
+  }
+
   /**
    * Search for subreddits by keyword by querying cross-subreddit posts and extracting subreddit names.
    * Returns a de-duplicated list of subreddit names and their r/ prefixed form.

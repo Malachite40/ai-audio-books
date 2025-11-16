@@ -52,6 +52,10 @@ worker.register(
   api.reddit.scanSubredditWithSdk
 );
 worker.register(
+  TASK_NAMES.redditBackfillSubreddit,
+  api.reddit.backfill30Days
+);
+worker.register(
   TASK_NAMES.scoreRedditPosts,
   api.reddit.evaluations.scoreRedditPosts
 );
@@ -62,6 +66,14 @@ worker.register(
 worker.register(
   TASK_NAMES.queueAllPostsToScore,
   api.reddit.campaigns.queueAllPostsToScore
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Register Email Worker Tasks
+// ─────────────────────────────────────────────────────────────────────────────
+worker.register(
+  TASK_NAMES.sendRedditDailyDigestForAdmin,
+  api.emails.sendRedditDailyDigestForAdmin
 );
 
 // ─────────────────────────────────────────────────────────────────────────────

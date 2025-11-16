@@ -32,7 +32,7 @@ type CampaignEvaluationChartProps = {
 
 export function CampaignEvaluationChart({
   campaignId,
-  days = 30,
+  days = 1,
 }: CampaignEvaluationChartProps) {
   const [rangeDays, setRangeDays] = useState<number>(days);
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(
@@ -55,7 +55,7 @@ export function CampaignEvaluationChart({
 
     return data.series.map((point) => {
       const row: Record<string, string | number> = {
-        date: point.date,
+        date: point.interval,
         total: point.total ?? 0,
       };
 
@@ -120,6 +120,7 @@ export function CampaignEvaluationChart({
             }}
             aria-label="Select time range"
           >
+            <ToggleGroupItem value="1">24h</ToggleGroupItem>
             <ToggleGroupItem value="7">7d</ToggleGroupItem>
             <ToggleGroupItem value="30">30d</ToggleGroupItem>
             <ToggleGroupItem value="90">90d</ToggleGroupItem>
@@ -196,22 +197,26 @@ export function CampaignEvaluationChart({
             textAnchor="end"
             height={60}
             fontSize={12}
-            tickFormatter={(value) =>
-              formatDistanceToNow(new Date(String(value)), {
+            tickFormatter={(value) => {
+              const isoHour = `${String(value)}:00:00.000Z`;
+              const dateObj = new Date(isoHour);
+              return formatDistanceToNow(dateObj, {
                 addSuffix: true,
-              }).replace("about ", "")
-            }
+              }).replace("about ", "");
+            }}
           />
           <ChartTooltip
             content={
               <ChartTooltipContent
                 indicator="line"
                 labelFormatter={(value) => {
+                  const isoHour = `${String(value)}:00:00.000Z`;
+                  const dateObj = new Date(isoHour);
                   return (
                     <div className="flex gap-3 items-center">
-                      <span>{format(new Date(String(value)), "P")}</span>
+                      <span>{format(dateObj, "Pp")}</span>
                       <span className="text-muted-foreground">
-                        {formatDistanceToNow(new Date(String(value)), {
+                        {formatDistanceToNow(dateObj, {
                           addSuffix: true,
                         }).replace("about ", "")}
                       </span>
@@ -341,7 +346,7 @@ export function CampaignEvaluationChart({
           ];
 
           return (
-            <div className="mb-2 flex flex-wrap gap-3 text-xs text-muted-foreground px-10">
+            <div className="mb-2 flex flex-wrap gap-3 text-xs text-muted-foreground px-1">
               {items.map((item) => {
                 const isHidden = hiddenSeries.has(item.key);
                 return (

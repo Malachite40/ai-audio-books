@@ -3,7 +3,7 @@ import { TASK_NAMES } from "../../queue";
 import { enqueueTask } from "../../queue/enqueue";
 import { adminProcedure, createTRPCRouter, queueProcedure } from "../../trpc";
 import { scoreRedditPostsInput } from "../reddit/types";
-import { queueScanWatchedSubreddits } from "./queueScan";
+import { queueScanWatchedSubreddits } from "./enqueueScan";
 
 export const campaignsRouter = createTRPCRouter({
   upsert: adminProcedure

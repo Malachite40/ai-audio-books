@@ -23,3 +23,13 @@ cron.schedule("*/30 * * * *", async () => {
     console.error("[cron] job error:", err);
   }
 });
+
+// runs once per day at 4:00 UTC
+cron.schedule("0 4 * * *", async () => {
+  try {
+    console.log("[cron] running daily Reddit digest email job…");
+    await api.emails.queueRedditDailyDigestForAllActiveCampaigns();
+  } catch (err) {
+    console.error("[cron] daily Reddit digest job error:", err);
+  }
+});

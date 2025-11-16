@@ -28,14 +28,26 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
-import { formatDistanceToNow } from "date-fns";
-import { ExternalLink, Loader2, RefreshCw, Trash2 } from "lucide-react";
+import {
+  ExternalLink,
+  History,
+  Loader2,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 interface CampaignWatchedSubredditsCardProps {
   campaignId: string;
   watchedSubreddits: WatchedSubreddit[];
+  scoreShares?: {
+    subreddit: string | null;
+    total: number;
+    above: number;
+    percentage: number;
+    threshold: number;
+  }[];
 }
 
 type SortOption = "name-asc" | "added-desc" | "added-asc";
@@ -43,9 +55,16 @@ type SortOption = "name-asc" | "added-desc" | "added-asc";
 export function CampaignWatchedSubredditsCard({
   campaignId,
   watchedSubreddits,
+  scoreShares,
 }: CampaignWatchedSubredditsCardProps) {
   const [filter, setFilter] = useState("");
-  const [sort, setSort] = useState<SortOption>("added-desc");
+  const [sort, setSort] = useState<SortOption | "high-score-desc">(
+    "high-score-desc"
+  );
+
+  const campaignQuery = trpc.reddit.campaigns.fetch.useQuery({
+    id: campaignId,
+  });
 
   const {
     AreYouSure,
@@ -77,14 +96,37 @@ export function CampaignWatchedSubredditsCard({
     onError: (err) =>
       toast.error("Failed to queue scans", { description: err.message }),
   });
+  const backfillSubreddit = trpc.reddit.adminQueueBackfill30Days.useMutation({
+    onSuccess: () => toast.success("Backfill for last 30 days queued"),
+    onError: (err) =>
+      toast.error("Failed to queue backfill", { description: err.message }),
+  });
 
   const filteredSortedRows = useMemo(() => {
     const term = filter.trim().toLowerCase();
     let items = watchedSubreddits;
     if (term)
       items = items.filter((w) => w.subreddit.toLowerCase().includes(term));
+    const scoresBySubreddit = new Map<string, number>();
+    for (const s of scoreShares ?? []) {
+      if (!s.subreddit) continue;
+      scoresBySubreddit.set(s.subreddit, s.percentage);
+    }
+
     const copy = [...items];
     switch (sort) {
+      case "high-score-desc":
+        // Default: sort by high-score percentage desc, then newest created
+        copy.sort((a, b) => {
+          const aPct = scoresBySubreddit.get(a.subreddit) ?? -1;
+          const bPct = scoresBySubreddit.get(b.subreddit) ?? -1;
+          if (aPct !== bPct) return bPct - aPct;
+          return (
+            new Date(b.createdAt ?? 0).getTime() -
+            new Date(a.createdAt ?? 0).getTime()
+          );
+        });
+        break;
       case "name-asc":
         copy.sort((a, b) => a.subreddit.localeCompare(b.subreddit));
         break;
@@ -95,7 +137,6 @@ export function CampaignWatchedSubredditsCard({
             new Date(b.createdAt ?? 0).getTime()
         );
         break;
-      case "added-desc":
       default:
         copy.sort(
           (a, b) =>
@@ -105,7 +146,7 @@ export function CampaignWatchedSubredditsCard({
         break;
     }
     return copy;
-  }, [watchedSubreddits, filter, sort]);
+  }, [watchedSubreddits, filter, sort, scoreShares]);
 
   return (
     <Card className="p-0 overflow-hidden">
@@ -152,12 +193,15 @@ export function CampaignWatchedSubredditsCard({
               <TooltipContent>Scan all watched subreddits</TooltipContent>
             </Tooltip>
           </TooltipProvider>
-          <div className="text-sm text-muted-foreground">Sort</div>
-          <Select value={sort} onValueChange={(v) => setSort(v as SortOption)}>
+          <Select
+            value={sort}
+            onValueChange={(v) => setSort(v as SortOption | "high-score-desc")}
+          >
             <SelectTrigger className="w-[180px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="high-score-desc">Best high-score %</SelectItem>
               <SelectItem value="added-desc">Newest added</SelectItem>
               <SelectItem value="added-asc">Oldest added</SelectItem>
               <SelectItem value="name-asc">Name A → Z</SelectItem>
@@ -169,7 +213,10 @@ export function CampaignWatchedSubredditsCard({
         <TableHeader>
           <TableRow>
             <TableHead>Subreddit</TableHead>
-            <TableHead className="w-48">Added</TableHead>
+            <TableHead className="w-64 text-end">{`Score ≥ ${(function () {
+              if (campaignQuery.isPending) return "-";
+              return campaignQuery.data?.campaign?.autoArchiveScore ?? "75";
+            })()}`}</TableHead>
             <TableHead className="w-48">Reach</TableHead>
             <TableHead className="w-48">Actions</TableHead>
           </TableRow>
@@ -178,7 +225,7 @@ export function CampaignWatchedSubredditsCard({
           {filteredSortedRows.length === 0 ? (
             <TableRow>
               <TableCell
-                colSpan={4}
+                colSpan={5}
                 className="text-center py-6 text-muted-foreground"
               >
                 {watchedSubreddits.length === 0
@@ -197,21 +244,51 @@ export function CampaignWatchedSubredditsCard({
               const isDeleting =
                 deleteSubreddit.isPending &&
                 deleteSubreddit.variables?.subreddit === watch.subreddit;
+              const isBackfilling =
+                backfillSubreddit.isPending &&
+                backfillSubreddit.variables?.subreddit === watch.subreddit;
               return (
                 <TableRow key={watch.subreddit}>
                   <TableCell>r/{watch.subreddit}</TableCell>
-                  <TableCell>
-                    {createdAt
-                      ? formatDistanceToNow(createdAt, { addSuffix: true })
-                      : "—"}
+                  <TableCell className="text-end">
+                    <SubredditHighScoreShare
+                      campaignId={campaignId}
+                      subreddit={watch.subreddit}
+                    />
                   </TableCell>
                   <TableCell>
                     {watch.reach !== null && watch.reach !== undefined
                       ? millify(watch.reach)
                       : "—"}
                   </TableCell>
+
                   <TableCell>
                     <div className="flex items-center gap-2">
+                      <TooltipProvider delayDuration={0}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() =>
+                                backfillSubreddit.mutate({
+                                  subreddit: watch.subreddit,
+                                })
+                              }
+                              disabled={backfillSubreddit.isPending}
+                              aria-label={`Backfill last 30 days for r/${watch.subreddit}`}
+                            >
+                              {isBackfilling ? (
+                                <Loader2 className="size-4 animate-spin" />
+                              ) : (
+                                <History className="size-4" />
+                              )}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Backfill last 30 days</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                       <Button
                         variant="outline"
                         size="icon"
@@ -277,5 +354,49 @@ export function CampaignWatchedSubredditsCard({
         </TableBody>
       </Table>
     </Card>
+  );
+}
+
+function SubredditHighScoreShare(props: {
+  campaignId: string;
+  subreddit: string;
+}) {
+  const { campaignId, subreddit } = props;
+
+  const { data, isLoading, error } =
+    trpc.reddit.evaluations.getHighScoreShare.useQuery({
+      campaignId,
+      subreddit,
+      days: 30,
+    });
+
+  if (isLoading) {
+    return <span className="text-xs text-muted-foreground">Loading…</span>;
+  }
+
+  if (error) {
+    return (
+      <span className="text-xs text-destructive" title={error.message}>
+        Error
+      </span>
+    );
+  }
+
+  if (!data || data.total === 0) {
+    return (
+      <span className="text-xs text-muted-foreground">No scored posts</span>
+    );
+  }
+
+  const pct = data.percentage;
+  let colorClass = "text-muted-foreground";
+  if (pct >= 15) colorClass = "text-emerald-600";
+  else if (pct >= 7) colorClass = "text-amber-600";
+  else colorClass = "text-destructive";
+
+  return (
+    <span className={`text-xs ${colorClass}`}>
+      ({data.above}/{data.total}) {pct.toFixed(1)}%
+    </span>
   );
 }

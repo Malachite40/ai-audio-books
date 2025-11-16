@@ -5,6 +5,7 @@ export { render } from "@react-email/components";
 export { default as ReferralBonusEmail } from "../emails/referral-bonus";
 export { default as WelcomeEmail } from "../emails/welcome";
 export { default as SubscriptionActivatedEmail } from "../emails/subscription-activated";
+export { default as RedditDigestEmail } from "../emails/reddit-digest";
 
 // Export shared styles and components for creating new templates
 export * from "./components";

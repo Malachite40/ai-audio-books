@@ -1,12 +1,13 @@
-import crypto from "crypto";
 import z from "zod";
 import { reddit } from "../../lib/reddit";
+import { TASK_NAMES } from "../../queue";
+import { enqueueTask } from "../../queue/enqueue";
 import { adminProcedure, createTRPCRouter, queueProcedure } from "../../trpc";
 import { campaignsRouter } from "./campaign";
+import { queueScanSubreddit } from "./enqueueScan";
 import { evaluationsRouter } from "./evaluations";
 import { postRouter } from "./post";
-import { queueScanSubreddit } from "./queueScan";
-import { Category, scanSubredditInput } from "./types";
+import { Category, scanSubredditInput, TRACKED_CATEGORIES } from "./types";
 
 export const redditRouter = createTRPCRouter({
   campaigns: campaignsRouter,
@@ -109,6 +110,96 @@ export const redditRouter = createTRPCRouter({
         skipDuplicates: true,
       });
       return { ok: true, fetched: rows.length, inserted: created.count };
+    }),
+  backfill30Days: queueProcedure
+    .input(z.object({ subreddit: z.string().min(1) }))
+    .mutation(async ({ input, ctx }) => {
+      const { subreddit } = input;
+      const since = new Date();
+      since.setDate(since.getDate() - 30);
+
+      const allRows: {
+        redditId: string;
+        subreddit: string;
+        category: Category;
+        title: string;
+        author: string | null;
+        url: string | null;
+        permalink: string;
+        createdUtc: Date;
+        score: number | null;
+        selfText: string | null;
+        numComments: number | null;
+      }[] = [];
+
+      for (const category of TRACKED_CATEGORIES) {
+        const path = `/r/${encodeURIComponent(subreddit)}/${category}.json`;
+        const items = await reddit.getListingSince(path, {
+          since,
+          limit: 100,
+          maxPages: 100,
+        });
+
+        for (const d of items as any[]) {
+          const baseId = d?.id ?? "";
+          const redditId =
+            (d?.name && String(d.name)) ||
+            (baseId ? `t3_${String(baseId)}` : undefined);
+          if (!redditId) continue;
+
+          const createdUtcSeconds =
+            typeof d?.created_utc === "number" ? d.created_utc : null;
+          if (createdUtcSeconds == null) continue;
+          const createdUtc = new Date(createdUtcSeconds * 1000);
+          if (createdUtc < since) continue;
+
+          allRows.push({
+            redditId,
+            subreddit,
+            category,
+            title: typeof d?.title === "string" ? d.title : "",
+            author: typeof d?.author === "string" ? d.author : null,
+            url:
+              (typeof d?.url_overridden_by_dest === "string" &&
+                d.url_overridden_by_dest) ||
+              (typeof d?.url === "string" ? d.url : null),
+            permalink:
+              typeof d?.permalink === "string" ? d.permalink : redditId,
+            createdUtc,
+            score:
+              typeof d?.score === "number"
+                ? d.score
+                : typeof d?.ups === "number"
+                  ? d.ups
+                  : null,
+            selfText:
+              typeof d?.selftext === "string" && d.selftext.length > 0
+                ? d.selftext
+                : null,
+            numComments:
+              typeof d?.num_comments === "number" ? d.num_comments : null,
+          });
+        }
+      }
+
+      if (allRows.length === 0) {
+        return { ok: true, fetched: 0, inserted: 0 };
+      }
+
+      const created = await ctx.db.redditPost.createMany({
+        data: allRows,
+        skipDuplicates: true,
+      });
+
+      return { ok: true, fetched: allRows.length, inserted: created.count };
+    }),
+  adminQueueBackfill30Days: adminProcedure
+    .input(z.object({ subreddit: z.string().min(1) }))
+    .mutation(async ({ input }) => {
+      await enqueueTask(TASK_NAMES.redditBackfillSubreddit, {
+        subreddit: input.subreddit,
+      });
+      return { ok: true };
     }),
   scanSubredditWithSdk: queueProcedure
     .input(scanSubredditInput)

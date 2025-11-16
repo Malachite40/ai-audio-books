@@ -156,6 +156,19 @@ export const components = {
       display: "inline-block",
       padding: "12px 24px",
     },
+    ghost: {
+      backgroundColor: "transparent",
+      border: `2px solid ${colors.primary}`,
+      borderRadius: "4px",
+      color: colors.primary,
+      fontFamily,
+      fontSize: "16px",
+      fontWeight: "600",
+      textDecoration: "none",
+      textAlign: "center" as const,
+      display: "inline-block",
+      padding: "10px 22px",
+    },
   },
   box: {
     default: {

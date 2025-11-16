@@ -1,19 +1,20 @@
 "use client";
 
 import { ResponsiveModal } from "@/components/resonpsive-modal";
-import { millify } from "@/lib/numbers";
 import { useAreYouSure } from "@/hooks/use-are-you-sure";
+import { millify } from "@/lib/numbers";
 import { api } from "@/trpc/react";
 import { Campaign } from "@workspace/database";
 import { Badge } from "@workspace/ui/components/badge";
 import { Button } from "@workspace/ui/components/button";
 import { Card } from "@workspace/ui/components/card";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@workspace/ui/components/tooltip";
-import { EditIcon, Trash2Icon } from "lucide-react";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@workspace/ui/components/dropdown-menu";
+import { EditIcon, MailIcon, MoreHorizontal, Trash2Icon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { CampaignForm } from "./campaign-form";
@@ -74,6 +75,9 @@ export function CampaignSummaryCard({
     deleteMutation.mutate({ id: campaign.id });
   };
 
+  const sendDigest =
+    api.emails.adminQueueRedditDailyDigestForCampaign.useMutation();
+
   return (
     <>
       <Card className="p-6 space-y-5">
@@ -123,32 +127,51 @@ export function CampaignSummaryCard({
               </div>
 
               <div className="ml-auto flex items-center gap-1">
-                <Tooltip>
-                  <TooltipTrigger asChild>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
                     <Button
                       variant="ghost"
-                      size="sm"
-                      aria-label="Edit campaign"
-                      onClick={() => setEditOpen(true)}
+                      size="icon"
+                      aria-label="Campaign actions"
+                    >
+                      <MoreHorizontal className="w-4 h-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        if (sendDigest.isPending) return;
+                        sendDigest.mutate({
+                          campaignId: campaign.id,
+                        });
+                      }}
+                    >
+                      <MailIcon className="w-4 h-4" />
+                      {sendDigest.isPending ? "Sending…" : "Test email"}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        setEditOpen(true);
+                      }}
                     >
                       <EditIcon className="w-4 h-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Edit campaign</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-label="Delete campaign"
-                      onClick={() => setShowAreYouSure(true)}
+                      Edit campaign
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      variant="destructive"
+                      onSelect={(event) => {
+                        setTimeout(() => {
+                          setShowAreYouSure(true);
+                        }, 0);
+                      }}
                     >
-                      <Trash2Icon className="w-4 h-4 text-destructive" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Delete campaign</TooltipContent>
-                </Tooltip>
+                      <Trash2Icon className="w-4 h-4" />
+                      Delete campaign
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
             {campaign.description ? (

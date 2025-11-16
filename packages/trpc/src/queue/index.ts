@@ -6,9 +6,11 @@ const TASK_NAMES = {
   createAudioFileChunks: "tasks.createAudioFileChunks",
   createAudioFileChunksFromChapters: "tasks.createAudioFileChunksFromChapters",
   redditScanSubreddit: "reddit.scanSubreddit",
+  redditBackfillSubreddit: "reddit.backfillSubreddit30Days",
   scoreRedditPosts: "tasks.scoreRedditPosts",
   scoreRedditPost: "tasks.scoreRedditPost",
   queueAllPostsToScore: "tasks.queueAllPostsToScore",
+  sendRedditDailyDigestForAdmin: "tasks.sendRedditDailyDigestForAdmin",
   ai: {
     generateStory: "tasks.ai.generateStory",
     generateImage: "tasks.ai.generateImage",

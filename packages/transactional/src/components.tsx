@@ -45,25 +45,35 @@ export const EmailLayout = ({ preview, children }: EmailLayoutProps) => {
 interface EmailButtonProps {
   href: string;
   children: React.ReactNode;
-  variant?: "primary" | "secondary";
+  variant?: "primary" | "secondary" | "ghost";
+  style?: React.CSSProperties;
 }
 
 export const EmailButton = ({
   href,
   children,
   variant = "primary",
-}: EmailButtonProps) => (
-  <Button
-    style={
-      variant === "primary"
-        ? components.button.primary
-        : components.button.secondary
-    }
-    href={href}
-  >
-    {children}
-  </Button>
-);
+  style,
+}: EmailButtonProps) => {
+  function getButtonStyle() {
+    if (variant === "primary") return components.button.primary;
+    if (variant === "secondary") return components.button.secondary;
+    if (variant === "ghost") return components.button.ghost;
+    return components.button.primary;
+  }
+
+  return (
+    <Button
+      style={{
+        ...getButtonStyle(),
+        ...style,
+      }}
+      href={href}
+    >
+      {children}
+    </Button>
+  );
+};
 
 interface EmailFooterProps {
   showSupport?: boolean;

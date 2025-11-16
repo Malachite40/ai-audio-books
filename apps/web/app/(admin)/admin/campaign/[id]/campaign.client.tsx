@@ -6,6 +6,12 @@ import { api } from "@/trpc/react";
 import { WatchedSubreddit } from "@workspace/database";
 import { Button } from "@workspace/ui/components/button";
 import { Card } from "@workspace/ui/components/card";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@workspace/ui/components/tabs";
 import { CampaignEvaluationChart } from "../_components/campaign-evaluation-chart";
 import { CampaignEvaluationList } from "../_components/campaign-evaluation-list";
 import { CampaignSummaryCard } from "../_components/campaign-summary-card";
@@ -22,6 +28,12 @@ export function CampaignClientPage({ campaignId }: CampaignClientProps) {
       id: campaignId,
     });
   const campaign = data?.campaign;
+
+  const { data: scoreShares } =
+    api.reddit.evaluations.getHighScoreShareForCampaign.useQuery({
+      campaignId,
+      days: 30,
+    });
 
   const totalReach =
     campaign?.watchedSubreddit?.reduce(
@@ -68,16 +80,24 @@ export function CampaignClientPage({ campaignId }: CampaignClientProps) {
             totalReach={totalReach}
           />
 
-          <CampaignEvaluationChart campaignId={campaignId} />
-
-          <CampaignEvaluationList campaignId={campaignId} />
-
-          <CampaignWatchedSubredditsCard
-            campaignId={campaignId}
-            watchedSubreddits={campaign.watchedSubreddit ?? []}
-          />
-
-          <SubredditFinder campaignId={campaignId} />
+          <Tabs defaultValue="evaluations" className="space-y-4">
+            <TabsList>
+              <TabsTrigger value="evaluations">Evaluations</TabsTrigger>
+              <TabsTrigger value="subreddits">Subreddits</TabsTrigger>
+            </TabsList>
+            <TabsContent value="evaluations" className="space-y-4">
+              <CampaignEvaluationChart campaignId={campaignId} />
+              <CampaignEvaluationList campaignId={campaignId} />
+            </TabsContent>
+            <TabsContent value="subreddits" className="space-y-4">
+              <CampaignWatchedSubredditsCard
+                campaignId={campaignId}
+                watchedSubreddits={campaign.watchedSubreddit ?? []}
+                scoreShares={scoreShares?.items ?? []}
+              />
+              <SubredditFinder campaignId={campaignId} />
+            </TabsContent>
+          </Tabs>
         </>
       )}
     </div>
