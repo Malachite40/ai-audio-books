@@ -21,7 +21,7 @@ export const evaluationsRouter = createTRPCRouter({
         subreddit: z.string().optional(),
         minScore: z.number().min(1).max(100).optional(),
         search: z.string().optional(),
-        campaignId: z.string().uuid().optional(),
+        campaignId: z.string().uuid(),
         archived: z.boolean().optional(),
         sort: z
           .object({
@@ -72,10 +72,7 @@ export const evaluationsRouter = createTRPCRouter({
             input.sort?.field === "score"
               ? [{ score: input.sort.dir }, { createdAt: "desc" }]
               : input.sort?.field === "bookmarked"
-                ? [
-                    { bookmarked: input.sort.dir },
-                    { createdAt: "desc" },
-                  ]
+                ? [{ bookmarked: input.sort.dir }, { createdAt: "desc" }]
                 : { createdAt: input.sort?.dir ?? "desc" },
           include: { redditPost: true },
           skip: (input.page - 1) * input.pageSize,
@@ -583,7 +580,12 @@ export const evaluationsRouter = createTRPCRouter({
 
         // Upsert to guard against race; ensure a single evaluation per redditPostId
         await ctx.db.redditPostEvaluation.upsert({
-          where: { redditPostId: post.id },
+          where: {
+            redditPostId_campaignId: {
+              redditPostId: post.id,
+              campaignId: input.campaignId,
+            },
+          },
           create: {
             redditPostId: post.id,
             score,

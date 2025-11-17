@@ -20,12 +20,7 @@ export const campaignsRouter = createTRPCRouter({
           .max(100)
           .nullable()
           .optional(),
-        model: z
-          .string()
-          .min(1)
-          .max(255)
-          .nullable()
-          .optional(),
+        model: z.string().min(1).max(255).nullable().optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -141,16 +136,10 @@ export const campaignsRouter = createTRPCRouter({
       const subreddits = watched.map((w) => w.subreddit);
       const count = await ctx.db.redditPost.count({
         where: {
-          evaluations: {
-            every: {
-              NOT: {
-                campaignId: input.campaignId,
-              },
-            },
-          },
           subreddit: { in: subreddits },
-          createdUtc: {
-            gte: subDays(new Date(), 2),
+          createdUtc: { gte: subDays(new Date(), 2) },
+          evaluations: {
+            none: { campaignId: input.campaignId },
           },
         },
       });
