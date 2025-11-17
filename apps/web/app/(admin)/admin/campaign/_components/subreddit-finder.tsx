@@ -10,16 +10,8 @@ import {
   FormField,
   FormItem,
   FormLabel,
-  FormMessage,
 } from "@workspace/ui/components/form";
 import { Input } from "@workspace/ui/components/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@workspace/ui/components/select";
 import {
   Table,
   TableBody,
@@ -98,6 +90,7 @@ export function SubredditFinder({ campaignId }: SubredditFinderProps) {
   }, [apiItems, apiSort]);
 
   const [rulesSubreddit, setRulesSubreddit] = useState<string | null>(null);
+  const [manualSubreddit, setManualSubreddit] = useState("");
 
   // Similar subreddits expansion state
   const [expandedSimilarFor, setExpandedSimilarFor] = useState<string | null>(
@@ -238,208 +231,232 @@ export function SubredditFinder({ campaignId }: SubredditFinderProps) {
   return (
     <>
       <div className="space-y-3">
-        <div className="space-y-1">
-          <h3 className="text-lg font-semibold">Find and track subreddits</h3>
-          <p className="text-sm text-muted-foreground">
-            Uses Reddit's native search. Track results directly into this
-            campaign.
-          </p>
-        </div>
-        <Form {...form}>
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <form
-            className="flex flex-wrap gap-2 items-end"
-            onSubmit={form.handleSubmit((values) => {
-              const query = values.keyword.trim();
-              if (!query) return; // guarded by schema but double-protect
-              searchApi.mutate({
-                query,
-                limit: values.limit,
+            className="flex flex-col gap-2 md:flex-row md:items-end md:gap-2 md:w-[40%]"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const normalized = manualSubreddit.replace(/^r\//i, "").trim();
+              if (!normalized) {
+                toast.error("Enter a subreddit name");
+                return;
+              }
+              upsertSubreddit.mutate({
+                subreddit: normalized,
+                campaignId,
               });
-            })}
+            }}
           >
-            <FormField
-              control={form.control}
-              name="keyword"
-              render={({ field }) => (
-                <FormItem className="flex-1 min-w-[220px]">
-                  <FormLabel className="text-sm">Keyword</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g. python" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="limit"
-              render={({ field }) => (
-                <FormItem className="w-[120px]">
-                  <FormLabel className="text-sm">Limit</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={200}
-                      inputMode="numeric"
-                      {...field}
-                      value={field.value ?? 50}
-                      onChange={(e) => {
-                        // Allow empty string temporarily for user typing
-                        const val = e.target.value;
-                        if (val === "") field.onChange(val);
-                        else field.onChange(Number(val));
-                      }}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <Select value={apiSort} onValueChange={(v) => setApiSort(v as any)}>
-              <SelectTrigger type="button" className="w-[140px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="desc">High → Low</SelectItem>
-                <SelectItem value="asc">Low → High</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <div className="h-[58px] flex items-end pb-[2px]">
+            <div className="flex-1 min-w-[200px]">
+              <label htmlFor="subreddit-manual" className="sr-only">
+                Add subreddit directly
+              </label>
+              <Input
+                id="subreddit-manual"
+                placeholder="Add subreddit (e.g. r/python)"
+                value={manualSubreddit}
+                onChange={(e) => setManualSubreddit(e.target.value)}
+              />
+            </div>
+            <div className="flex md:h-[40px] md:items-end">
               <Button
                 type="submit"
-                disabled={searchApi.isPending || !form.formState.isValid}
+                variant="outline"
+                disabled={upsertSubreddit.isPending}
               >
-                {searchApi.isPending ? "Searching…" : "Search"}
+                {upsertSubreddit.isPending ? "Adding…" : "Add"}
               </Button>
             </div>
           </form>
-        </Form>
 
-        <div className="rounded-xl border overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[200px]">Subreddit</TableHead>
-                <TableHead>Title/Description</TableHead>
-                <TableHead>Subscribers</TableHead>
-                <TableHead className="w-[160px]">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {searchApi.isPending && !searchApi.data ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={5}
-                    className="text-center py-6 text-muted-foreground"
-                  >
-                    Searching…
-                  </TableCell>
-                </TableRow>
-              ) : apiItems.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={5}
-                    className="text-center py-6 text-muted-foreground"
-                  >
-                    Enter a keyword and search, or no subreddits found.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                apiItemsSorted.map((s: any) => {
-                  const normalizedName = s.name.replace(/^r\//i, "");
-                  const isExpanded = expandedSimilarFor === normalizedName;
+          <Form {...form}>
+            <form
+              className="flex flex-col gap-2 md:flex-row md:flex-1 md:items-end md:gap-2"
+              onSubmit={form.handleSubmit((values) => {
+                const query = values.keyword.trim();
+                if (!query) return; // guarded by schema but double-protect
+                searchApi.mutate({
+                  query,
+                  limit: values.limit,
+                });
+              })}
+            >
+              <FormField
+                control={form.control}
+                name="keyword"
+                render={({ field }) => (
+                  <FormItem className="flex-1 min-w-[200px]">
+                    <FormLabel className="sr-only">Keyword</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Search by keyword" {...field} />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
 
-                  return (
-                    <>
-                      <TableRow key={s.prefixed}>
-                        <TableCell>{s.prefixed}</TableCell>
-                        <TableCell className="whitespace-pre-wrap">
-                          {s.title || s.description || "—"}
-                        </TableCell>
-                        <TableCell>
-                          {typeof s.subscribers === "number"
-                            ? millify(s.subscribers)
-                            : "—"}
-                        </TableCell>
-                        <TableCell>
-                          <SubredditActions
-                            rulesKey={normalizedName}
-                            trackKey={normalizedName}
-                            prefixed={s.prefixed}
-                            reach={s.subscribers}
-                            showSimilar
-                            isExpanded={isExpanded}
-                            similarKey={normalizedName}
-                          />
-                        </TableCell>
-                      </TableRow>
-                      {isExpanded && (
-                        <React.Fragment key={`${s.prefixed}-similar`}>
-                          {similar.isPending && !similar.data ? (
-                            <div className="py-3 text-sm text-muted-foreground">
-                              Loading similar subreddits…
-                            </div>
-                          ) : similar.data?.items?.length ? (
-                            <>
-                              <TableRow>
-                                <TableCell colSpan={4} className="bg-muted/40">
-                                  <div className="space-y-2">
-                                    <div className="text-xs font-medium text-muted-foreground">
-                                      Similar subreddits to r/{normalizedName}
+              <div className="flex md:h-[40px] md:items-end gap-2">
+                <Button
+                  type="submit"
+                  disabled={searchApi.isPending || !form.formState.isValid}
+                >
+                  {searchApi.isPending ? "Searching…" : "Search"}
+                </Button>
+
+                {(form.watch("keyword") || apiItemsSorted.length > 0) && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="px-2"
+                    onClick={() => {
+                      form.reset({
+                        keyword: "",
+                        limit: form.getValues("limit") ?? 50,
+                      });
+                      setExpandedSimilarFor(null);
+                      searchApi.reset();
+                      similar.reset();
+                    }}
+                    disabled={searchApi.isPending}
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
+            </form>
+          </Form>
+        </div>
+
+        {apiItemsSorted.length > 0 && (
+          <div className="rounded-xl border overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[200px]">Subreddit</TableHead>
+                  <TableHead>Title/Description</TableHead>
+                  <TableHead>Subscribers</TableHead>
+                  <TableHead className="w-[160px]">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {searchApi.isPending && !searchApi.data ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={5}
+                      className="text-center py-6 text-muted-foreground"
+                    >
+                      Searching…
+                    </TableCell>
+                  </TableRow>
+                ) : apiItems.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={5}
+                      className="text-center py-6 text-muted-foreground"
+                    >
+                      Enter a keyword and search, or no subreddits found.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  apiItemsSorted.map((s: any) => {
+                    const normalizedName = s.name.replace(/^r\//i, "");
+                    const isExpanded = expandedSimilarFor === normalizedName;
+
+                    return (
+                      <>
+                        <TableRow key={s.prefixed}>
+                          <TableCell>{s.prefixed}</TableCell>
+                          <TableCell className="whitespace-pre-wrap">
+                            {s.title || s.description || "—"}
+                          </TableCell>
+                          <TableCell>
+                            {typeof s.subscribers === "number"
+                              ? millify(s.subscribers)
+                              : "—"}
+                          </TableCell>
+                          <TableCell>
+                            <SubredditActions
+                              rulesKey={normalizedName}
+                              trackKey={normalizedName}
+                              prefixed={s.prefixed}
+                              reach={s.subscribers}
+                              showSimilar
+                              isExpanded={isExpanded}
+                              similarKey={normalizedName}
+                            />
+                          </TableCell>
+                        </TableRow>
+                        {isExpanded && (
+                          <React.Fragment key={`${s.prefixed}-similar`}>
+                            {similar.isPending && !similar.data ? (
+                              <div className="py-3 text-sm text-muted-foreground">
+                                Loading similar subreddits…
+                              </div>
+                            ) : similar.data?.items?.length ? (
+                              <>
+                                <TableRow>
+                                  <TableCell
+                                    colSpan={4}
+                                    className="bg-muted/40"
+                                  >
+                                    <div className="space-y-2">
+                                      <div className="text-xs font-medium text-muted-foreground">
+                                        Similar subreddits to r/{normalizedName}
+                                      </div>
                                     </div>
-                                  </div>
+                                  </TableCell>
+                                </TableRow>
+                                {similar.data.items.map((child: any) => {
+                                  const childNormalized = child.name.replace(
+                                    /^r\//i,
+                                    ""
+                                  );
+
+                                  return (
+                                    <TableRow
+                                      key={`${normalizedName}-${child.prefixed}`}
+                                      className="bg-muted"
+                                    >
+                                      <TableCell>{child.prefixed}</TableCell>
+                                      <TableCell className="whitespace-pre-wrap">
+                                        {child.title ||
+                                          child.description ||
+                                          "—"}
+                                      </TableCell>
+                                      <TableCell>
+                                        {typeof child.subscribers === "number"
+                                          ? millify(child.subscribers)
+                                          : "—"}
+                                      </TableCell>
+                                      <TableCell>
+                                        <SubredditActions
+                                          rulesKey={childNormalized}
+                                          trackKey={childNormalized}
+                                          prefixed={child.prefixed}
+                                          reach={child.subscribers}
+                                        />
+                                      </TableCell>
+                                    </TableRow>
+                                  );
+                                })}
+                              </>
+                            ) : (
+                              <TableRow className="py-3 text-sm text-muted-foreground">
+                                <TableCell colSpan={5}>
+                                  No similar subreddits found.
                                 </TableCell>
                               </TableRow>
-                              {similar.data.items.map((child: any) => {
-                                const childNormalized = child.name.replace(
-                                  /^r\//i,
-                                  ""
-                                );
-
-                                return (
-                                  <TableRow
-                                    key={`${normalizedName}-${child.prefixed}`}
-                                    className="bg-muted"
-                                  >
-                                    <TableCell>{child.prefixed}</TableCell>
-                                    <TableCell className="whitespace-pre-wrap">
-                                      {child.title || child.description || "—"}
-                                    </TableCell>
-                                    <TableCell>
-                                      {typeof child.subscribers === "number"
-                                        ? millify(child.subscribers)
-                                        : "—"}
-                                    </TableCell>
-                                    <TableCell>
-                                      <SubredditActions
-                                        rulesKey={childNormalized}
-                                        trackKey={childNormalized}
-                                        prefixed={child.prefixed}
-                                        reach={child.subscribers}
-                                      />
-                                    </TableCell>
-                                  </TableRow>
-                                );
-                              })}
-                            </>
-                          ) : (
-                            <TableRow className="py-3 text-sm text-muted-foreground">
-                              <TableCell colSpan={5}>
-                                No similar subreddits found.
-                              </TableCell>
-                            </TableRow>
-                          )}
-                        </React.Fragment>
-                      )}
-                    </>
-                  );
-                })
-              )}
-            </TableBody>
-          </Table>
-        </div>
+                            )}
+                          </React.Fragment>
+                        )}
+                      </>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        )}
       </div>
 
       <SubredditRulesModal subreddit={rulesSubreddit} />

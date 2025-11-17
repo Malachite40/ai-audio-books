@@ -123,6 +123,11 @@ export function CampaignSummaryCard({
                       {millify(totalReach)} total reach
                     </Badge>
                   ) : null}
+                  {campaign.model && (
+                    <Badge variant="outline" className="font-normal">
+                      {campaign.model}
+                    </Badge>
+                  )}
                 </div>
               </div>
 

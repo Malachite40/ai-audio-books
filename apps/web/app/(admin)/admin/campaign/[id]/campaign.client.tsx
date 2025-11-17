@@ -90,12 +90,13 @@ export function CampaignClientPage({ campaignId }: CampaignClientProps) {
               <CampaignEvaluationList campaignId={campaignId} />
             </TabsContent>
             <TabsContent value="subreddits" className="space-y-4">
+              <SubredditFinder campaignId={campaignId} />
+
               <CampaignWatchedSubredditsCard
                 campaignId={campaignId}
                 watchedSubreddits={campaign.watchedSubreddit ?? []}
                 scoreShares={scoreShares?.items ?? []}
               />
-              <SubredditFinder campaignId={campaignId} />
             </TabsContent>
           </Tabs>
         </>

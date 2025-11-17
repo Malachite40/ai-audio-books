@@ -25,7 +25,9 @@ export const evaluationsRouter = createTRPCRouter({
         archived: z.boolean().optional(),
         sort: z
           .object({
-            field: z.enum(["createdAt", "score"]).default("createdAt"),
+            field: z
+              .enum(["createdAt", "score", "bookmarked"])
+              .default("createdAt"),
             dir: z.enum(["asc", "desc"]).default("desc"),
           })
           .optional()
@@ -69,7 +71,12 @@ export const evaluationsRouter = createTRPCRouter({
           orderBy:
             input.sort?.field === "score"
               ? [{ score: input.sort.dir }, { createdAt: "desc" }]
-              : { createdAt: input.sort?.dir ?? "desc" },
+              : input.sort?.field === "bookmarked"
+                ? [
+                    { bookmarked: input.sort.dir },
+                    { createdAt: "desc" },
+                  ]
+                : { createdAt: input.sort?.dir ?? "desc" },
           include: { redditPost: true },
           skip: (input.page - 1) * input.pageSize,
           take: input.pageSize,
@@ -574,15 +581,23 @@ export const evaluationsRouter = createTRPCRouter({
           campaign.autoArchiveScore != null &&
           score < campaign.autoArchiveScore;
 
-        // Upsert to guard against race; include campaignId if provided
-        await ctx.db.redditPostEvaluation.create({
-          data: {
+        // Upsert to guard against race; ensure a single evaluation per redditPostId
+        await ctx.db.redditPostEvaluation.upsert({
+          where: { redditPostId: post.id },
+          create: {
             redditPostId: post.id,
             score,
             reasoning,
             modelName: modelId,
             exampleMessage,
             campaignId: input.campaignId,
+            archived: shouldArchive,
+          },
+          update: {
+            score,
+            reasoning,
+            modelName: modelId,
+            exampleMessage,
             archived: shouldArchive,
           },
         });

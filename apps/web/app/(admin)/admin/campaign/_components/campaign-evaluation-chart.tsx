@@ -189,6 +189,53 @@ export function CampaignEvaluationChart({
           // Reduce left padding to tighten the chart against the Y-axis
           margin={{ left: 0, right: 8, top: 8, bottom: 8 }}
         >
+          <defs>
+            <linearGradient id="fill-total" x1="0" y1="0" x2="0" y2="1">
+              <stop
+                offset="5%"
+                stopColor="var(--color-total, hsl(142 70% 45%))"
+                stopOpacity={0.8}
+              />
+              <stop
+                offset="95%"
+                stopColor="var(--color-total, hsl(142 70% 45%))"
+                stopOpacity={0.1}
+              />
+            </linearGradient>
+            {data?.series &&
+              (() => {
+                const subreddits = new Set<string>();
+                for (const point of data.series) {
+                  Object.keys(point.subreddits ?? {}).forEach((sub) =>
+                    subreddits.add(sub)
+                  );
+                }
+
+                return Array.from(subreddits)
+                  .sort()
+                  .map((subreddit) => (
+                    <linearGradient
+                      key={subreddit}
+                      id={`fill-${subreddit}`}
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="1"
+                    >
+                      <stop
+                        offset="5%"
+                        stopColor={`var(--color-${subreddit})`}
+                        stopOpacity={0.8}
+                      />
+                      <stop
+                        offset="95%"
+                        stopColor={`var(--color-${subreddit})`}
+                        stopOpacity={0.1}
+                      />
+                    </linearGradient>
+                  ));
+              })()}
+          </defs>
           <CartesianGrid vertical={false} strokeDasharray="3 3" />
           <XAxis
             dataKey="date"
@@ -272,8 +319,7 @@ export function CampaignEvaluationChart({
               type="monotone"
               dataKey="total"
               stroke="var(--color-total, hsl(142 70% 45%))"
-              fill="var(--color-total, hsl(142 70% 45%))"
-              fillOpacity={0.2}
+              fill="url(#fill-total)"
               strokeWidth={2}
               dot={false}
               activeDot={false}
@@ -299,8 +345,7 @@ export function CampaignEvaluationChart({
                       type="monotone"
                       dataKey={subreddit}
                       stroke={`var(--color-${subreddit})`}
-                      fill={`var(--color-${subreddit})`}
-                      fillOpacity={0.15}
+                      fill={`url(#fill-${subreddit})`}
                       strokeWidth={1.5}
                       dot={false}
                       activeDot={false}

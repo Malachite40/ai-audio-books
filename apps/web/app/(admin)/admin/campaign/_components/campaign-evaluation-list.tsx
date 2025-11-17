@@ -61,6 +61,7 @@ const SORT_OPTIONS = [
   { value: "createdAt_asc", label: "Oldest first" },
   { value: "score_desc", label: "Highest score" },
   { value: "score_asc", label: "Lowest score" },
+  { value: "bookmarked_desc", label: "Bookmarked first" },
 ] as const;
 type EvaluationSortValue = (typeof SORT_OPTIONS)[number]["value"];
 const DEFAULT_EVALUATION_SORT: EvaluationSortValue = "score_desc";
@@ -119,7 +120,7 @@ export function CampaignEvaluationList({ campaignId }: { campaignId: string }) {
   }, [campaignId, search, sortValue, statusValue]);
 
   const sortParts = sortValue.split("_") as [
-    "createdAt" | "score",
+    "createdAt" | "score" | "bookmarked",
     "asc" | "desc",
   ];
 
@@ -201,58 +202,64 @@ export function CampaignEvaluationList({ campaignId }: { campaignId: string }) {
 
   return (
     <div className="space-y-4 w-full">
-      <div className="flex gap-3">
-        <div>
-          <label className="block text-sm mb-1">Search</label>
-          <Input
-            placeholder="Title or author"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div className="flex flex-col gap-2 md:flex-row md:items-end md:gap-3 w-full md:max-w-2xl">
+          <div className="flex-1 min-w-[200px]">
+            <label htmlFor="evaluation-search" className="sr-only">
+              Search evaluations
+            </label>
+            <Input
+              id="evaluation-search"
+              placeholder="Search title or author"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <div className="flex gap-2 md:w-auto">
+            <Select
+              value={sortValue}
+              onValueChange={(value) =>
+                setSortValue(value as EvaluationSortValue)
+              }
+            >
+              <SelectTrigger className="min-w-[150px]">
+                <SelectValue placeholder="Sort" />
+              </SelectTrigger>
+              <SelectContent>
+                {SORT_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={statusValue}
+              onValueChange={(value) =>
+                setStatusValue(value as EvaluationStatusValue)
+              }
+            >
+              <SelectTrigger className="min-w-[130px]">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                {STATUS_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
-        <div>
-          <label className="block text-sm mb-1">Sort</label>
-          <Select
-            value={sortValue}
-            onValueChange={(value) =>
-              setSortValue(value as EvaluationSortValue)
-            }
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Sort evaluations" />
-            </SelectTrigger>
-            <SelectContent>
-              {SORT_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <label className="block text-sm mb-1">Status</label>
-          <Select
-            value={statusValue}
-            onValueChange={(value) =>
-              setStatusValue(value as EvaluationStatusValue)
-            }
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Filter by status" />
-            </SelectTrigger>
-            <SelectContent>
-              {STATUS_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="flex items-end gap-2 ml-auto">
+        <div className="flex items-end gap-2">
           {hasFilters && (
-            <Button variant="ghost" onClick={handleResetFilters}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleResetFilters}
+              className="px-2"
+            >
               Clear filters
             </Button>
           )}

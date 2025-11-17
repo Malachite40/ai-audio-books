@@ -5,15 +5,6 @@ import { millify } from "@/lib/numbers";
 import { api as trpc } from "@/trpc/react";
 import { WatchedSubreddit } from "@workspace/database";
 import { Button } from "@workspace/ui/components/button";
-import { Card } from "@workspace/ui/components/card";
-import { Input } from "@workspace/ui/components/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@workspace/ui/components/select";
 import {
   Table,
   TableBody,
@@ -34,6 +25,8 @@ import {
   Loader2,
   RefreshCw,
   Trash2,
+  ArrowDownAZ,
+  ArrowUpDown,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -50,7 +43,7 @@ interface CampaignWatchedSubredditsCardProps {
   }[];
 }
 
-type SortOption = "name-asc" | "added-desc" | "added-asc";
+type SortOption = "name-asc" | "high-score-desc" | "high-score-asc";
 
 export function CampaignWatchedSubredditsCard({
   campaignId,
@@ -58,9 +51,7 @@ export function CampaignWatchedSubredditsCard({
   scoreShares,
 }: CampaignWatchedSubredditsCardProps) {
   const [filter, setFilter] = useState("");
-  const [sort, setSort] = useState<SortOption | "high-score-desc">(
-    "high-score-desc"
-  );
+  const [sort, setSort] = useState<SortOption>("high-score-desc");
 
   const campaignQuery = trpc.reddit.campaigns.fetch.useQuery({
     id: campaignId,
@@ -127,29 +118,38 @@ export function CampaignWatchedSubredditsCard({
           );
         });
         break;
+      case "high-score-asc":
+        copy.sort((a, b) => {
+          const aPct = scoresBySubreddit.get(a.subreddit) ?? -1;
+          const bPct = scoresBySubreddit.get(b.subreddit) ?? -1;
+          if (aPct !== bPct) return aPct - bPct;
+          return (
+            new Date(a.createdAt ?? 0).getTime() -
+            new Date(b.createdAt ?? 0).getTime()
+          );
+        });
+        break;
       case "name-asc":
         copy.sort((a, b) => a.subreddit.localeCompare(b.subreddit));
         break;
-      case "added-asc":
-        copy.sort(
-          (a, b) =>
-            new Date(a.createdAt ?? 0).getTime() -
-            new Date(b.createdAt ?? 0).getTime()
-        );
-        break;
       default:
-        copy.sort(
-          (a, b) =>
+        // Fallback to high-score desc
+        copy.sort((a, b) => {
+          const aPct = scoresBySubreddit.get(a.subreddit) ?? -1;
+          const bPct = scoresBySubreddit.get(b.subreddit) ?? -1;
+          if (aPct !== bPct) return bPct - aPct;
+          return (
             new Date(b.createdAt ?? 0).getTime() -
             new Date(a.createdAt ?? 0).getTime()
-        );
+          );
+        });
         break;
     }
     return copy;
   }, [watchedSubreddits, filter, sort, scoreShares]);
 
   return (
-    <Card className="p-0 overflow-hidden">
+    <div className="p-0 overflow-hidden rounded-xl border">
       <AreYouSure
         title={
           subredditToDelete ? `Remove r/${subredditToDelete}?` : "Are you sure?"
@@ -164,59 +164,64 @@ export function CampaignWatchedSubredditsCard({
           });
         }}
       />
-      <div className="flex items-center justify-between gap-2 p-4 border-b">
-        <div className="flex items-center gap-2 max-w-md w-full">
-          <Input
-            placeholder="Filter by subreddit"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          <TooltipProvider delayDuration={0}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => scanWatchList.mutate({ campaignId })}
-                  disabled={scanWatchList.isPending}
-                  aria-label="Scan all watched subreddits"
-                >
-                  {scanWatchList.isPending ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="size-4" />
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Scan all watched subreddits</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-          <Select
-            value={sort}
-            onValueChange={(v) => setSort(v as SortOption | "high-score-desc")}
-          >
-            <SelectTrigger className="w-[180px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="high-score-desc">Best high-score %</SelectItem>
-              <SelectItem value="added-desc">Newest added</SelectItem>
-              <SelectItem value="added-asc">Oldest added</SelectItem>
-              <SelectItem value="name-asc">Name A → Z</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Subreddit</TableHead>
-            <TableHead className="w-64 text-end">{`Score ≥ ${(function () {
+            <TableHead>
+              <div className="flex items-center gap-1">
+                <span>Subreddit</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 p-0"
+                  onClick={() => setSort("name-asc")}
+                  aria-label="Sort by subreddit A to Z"
+                >
+                  <ArrowDownAZ
+                    className={`h-4 w-4 ${
+                      sort === "name-asc"
+                        ? "text-foreground"
+                        : "text-muted-foreground"
+                    }`}
+                  />
+                </Button>
+              </div>
+            </TableHead>
+            <TableHead className="w-64 text-end">
+              <div className="flex items-center justify-end gap-2">
+                <span>{`Score ≥ ${(function () {
               if (campaignQuery.isPending) return "-";
               return campaignQuery.data?.campaign?.autoArchiveScore ?? "75";
-            })()}`}</TableHead>
+            })()}`}</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 p-0"
+                  onClick={() =>
+                    setSort((prev) =>
+                      prev === "high-score-desc"
+                        ? "high-score-asc"
+                        : "high-score-desc"
+                    )
+                  }
+                  aria-label={
+                    sort === "high-score-asc"
+                      ? "Sort by score descending"
+                      : "Sort by score ascending"
+                  }
+                >
+                  <ArrowUpDown
+                    className={`h-4 w-4 ${
+                      sort === "high-score-desc" || sort === "high-score-asc"
+                        ? "text-foreground"
+                        : "text-muted-foreground"
+                    } ${sort === "high-score-asc" ? "rotate-180" : ""}`}
+                  />
+                </Button>
+              </div>
+            </TableHead>
             <TableHead className="w-48">Reach</TableHead>
             <TableHead className="w-48">Actions</TableHead>
           </TableRow>
@@ -353,7 +358,7 @@ export function CampaignWatchedSubredditsCard({
           )}
         </TableBody>
       </Table>
-    </Card>
+    </div>
   );
 }
 
