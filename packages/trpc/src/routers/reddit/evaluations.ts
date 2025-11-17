@@ -414,21 +414,37 @@ export const evaluationsRouter = createTRPCRouter({
         });
       }
 
-      const defaultPrompt = [
+      // ---- SHARED PROMPT BASE ----
+
+      const scoringPromptHeader = [
         "ROLE: You are an expert community + SEO strategist.",
-        `GOAL: Score how promising it is to post a helpful reply that naturally mentions ${campaign.name} to drive organic traffic.`,
+        "Primary job: Decide whether this post is a GOOD or BAD place to engage. It is OK, and EXPECTED, that many posts will be bad fits.",
         "",
-        "SCORING (1–100): Higher is better. Consider:",
-        `- Relevance to the business description: ${campaign.description}`,
-        "- Explicit need/pain (“how do I”, “tools for…”, “recommend”) vs. broad discussion",
-        "- Post tone: questions/requests > debates > memes",
-        "- Recency and engagement (score/comments) as signal of visibility",
-        "- Clear angle to add value without being spammy; can suggest a free useful tip + link",
+        `BUSINESS DESCRIPTION: ${campaign.description}`,
+        `BRAND NAME: ${campaign.name}`,
         "",
-        "OUTPUT: JSON with { score: 1-100, reasoning: string, exampleMessage: string }. No extra keys.",
+        "GOAL: Score how promising it is to post a *non-spammy*, genuinely helpful reply that only mentions the brand if it feels natural and clearly useful for the original poster.",
+        "",
+        "IMPORTANT RULES:",
+        "- If the only way to mention the brand would feel forced, off-topic, or salesy, give a LOW score (≤ 20) and shouldReply = false.",
+        "- If the post is a meme/vent/drama or not looking for help or recommendations, give a LOW score (≤ 20) and shouldReply = false.",
+        "- It is better to miss an opportunity than to spam.",
+        "",
+        "SCORING (1–100):",
+        "80–100: Very strong fit. The post clearly asks for help/info that the business can genuinely solve. A natural, useful reply is obvious.",
+        "60–79: Decent fit. There is a reasonable, non-spammy angle where the business can help, but it’s not perfect.",
+        "30–59: Weak fit. Only a subtle or partial connection; replying might be okay but not a priority.",
+        "1–29: Bad fit. No good way to add value; any mention would feel like spam or off-topic.",
+        "",
+        "Consider:",
+        "- Relevance to the business description.",
+        "- Explicit need/pain ('how do I', 'tools for…', 'recommend', 'any tips', 'looking for') vs. broad discussion or rant.",
+        "- Post type: questions/requests > thoughtful discussions > venting/drama > memes/shitposts.",
+        "- Recency & engagement (score/comments) as visibility signals.",
+        "- Whether you can clearly imagine a helpful, *non-salesy* reply. If not, score low and shouldReply = false.",
       ].join("\n");
 
-      // Find post without an evaluation in the watched subreddits for this campaign
+      // Find the post
       const post = await ctx.db.redditPost.findFirst({
         where: {
           redditId: input.postId,
@@ -436,6 +452,8 @@ export const evaluationsRouter = createTRPCRouter({
       });
 
       if (!post) return { ok: true, evaluated: 0 };
+
+      // ---- PINNED EXAMPLES ----
 
       const pinnedPositiveExamples = await ctx.db.redditPostEvaluation.findMany(
         {
@@ -457,28 +475,21 @@ export const evaluationsRouter = createTRPCRouter({
         }
       );
 
-      // Default OpenRouter model if campaign doesn't override it.
-      const defaultModel = "openai/gpt-4o-mini";
-      const modelId = campaign.model ?? defaultModel;
-      const model = openrouter.languageModel(
-        modelId
-      ) as unknown as LanguageModel;
-
       const pinnedPositiveExamplesSection =
         pinnedPositiveExamples.length > 0
           ? [
               "Pinned positive examples for campaign context:",
-              "Use these samples to understand the campaign's preferred tone, value angle, and scoring priorities before you score the new post. Incorporate similar reasoning and style where relevant.",
+              "Use these samples to understand the campaign's preferred tone, value angle, and what counts as a GOOD fit.",
               ...pinnedPositiveExamples.map((example, index) => {
                 const postTitle = example.redditPost.title ?? "Untitled post";
                 const snippet = `
-                --- Sample ${index + 1} ---
-                Posted Title: ${postTitle}
-                Score: ${example.score}
-                Example Message: ${example.exampleMessage?.trim()}
-                Reasoning: ${example.reasoning?.trim()}
-                User Feedback: ${example.rating}
-                `.trim();
+              --- Sample ${index + 1} (POSITIVE) ---
+              Posted Title: ${postTitle}
+              Score: ${example.score}
+              Example Message: ${example.exampleMessage?.trim() || "(none)"}
+              Reasoning: ${example.reasoning?.trim()}
+              User Feedback: ${example.rating}
+              `.trim();
                 return snippet;
               }),
             ].join("\n\n")
@@ -508,21 +519,42 @@ export const evaluationsRouter = createTRPCRouter({
         pinnedNegativeExamples.length > 0
           ? [
               "Pinned negative examples for campaign context:",
-              "Use these samples to understand the campaign doesn't prefer. Avoid similar pitfalls when scoring the new post.",
+              "Use these samples to understand what the campaign considers BAD fits. Avoid giving similar posts high scores.",
               ...pinnedNegativeExamples.map((example, index) => {
                 const postTitle = example.redditPost.title ?? "Untitled post";
                 const snippet = `
-                --- Sample ${index + 1} ---
-                Posted Title: ${postTitle}
-                Score: ${example.score}
-                Example Message: ${example.exampleMessage?.trim()}
-                Reasoning: ${example.reasoning?.trim()}
-                User Feedback: ${example.rating}
-                `.trim();
+              --- Sample ${index + 1} (NEGATIVE) ---
+              Posted Title: ${postTitle}
+              Score: ${example.score}
+              Example Message: ${example.exampleMessage?.trim() || "(none)"}
+              Reasoning: ${example.reasoning?.trim()}
+              User Feedback: ${example.rating}
+              `.trim();
                 return snippet;
               }),
             ].join("\n\n")
           : "";
+
+      // Optional global seeds if no campaign-specific examples
+      const shouldInjectGlobalSeeds =
+        pinnedPositiveExamples.length === 0 &&
+        pinnedNegativeExamples.length === 0;
+
+      const globalSeedExamplesSection = shouldInjectGlobalSeeds
+        ? [
+            "Global examples to calibrate scoring:",
+            "",
+            "--- Example A (GOOD FIT) ---",
+            "Post: 'Any tools to automate reporting for my small ecommerce store?'",
+            "Reasoning: Directly aligned with an analytics/automation product; user explicitly asks for tools.",
+            "Score: 90, shouldReply: true",
+            "",
+            "--- Example B (BAD FIT) ---",
+            "Post: 'LOL look at this meme about my boss 😂'",
+            "Reasoning: Meme/vent; not asking for help or recommendations. Any brand reply would look like spam.",
+            "Score: 5, shouldReply: false",
+          ].join("\n")
+        : "";
 
       try {
         const details = [
@@ -539,46 +571,146 @@ export const evaluationsRouter = createTRPCRouter({
           .filter(Boolean)
           .join("\n");
 
-        const { object } = await generateObject({
+        // ---- MODEL SELECTION ----
+
+        const defaultModel = "openai/gpt-4o-mini";
+        const modelId = campaign.model ?? defaultModel;
+        const model = openrouter.languageModel(
+          modelId
+        ) as unknown as LanguageModel;
+
+        // =========================================
+        // STEP 1: SCORING + SHOULD_REPLY + ANGLE
+        // =========================================
+
+        const scoringSchema = z.object({
+          score: z
+            .number()
+            .int()
+            .min(1)
+            .max(100)
+            .describe("Score from 1 to 100, higher is better."),
+          reasoning: z
+            .string()
+            .min(3)
+            .describe("Explanation for the score, short and concise."),
+          shouldReply: z
+            .boolean()
+            .describe(
+              "True only if replying would clearly add value and not be spammy."
+            ),
+          replyAngle: z
+            .enum([
+              "NONE",
+              "QUESTION_HELP",
+              "RECOMMENDATION",
+              "DISCUSSION",
+              "OFF_TOPIC",
+            ])
+            .describe(
+              "High-level category for how we would reply. Use NONE if shouldReply is false."
+            ),
+        });
+
+        const scoringPrompt = [
+          scoringPromptHeader,
+          globalSeedExamplesSection,
+          pinnedPositiveExamplesSection,
+          pinnedNegativeExamplesSection,
+          "",
+          "OUTPUT FORMAT:",
+          "Return ONLY JSON with { score, reasoning, shouldReply, replyAngle }.",
+          "If replying would be spammy or off-topic, set shouldReply = false and replyAngle = 'NONE'.",
+          "",
+          "--- REDDIT POST TO EVALUATE ---",
+          details,
+          "--------------------------------",
+        ]
+          .filter(Boolean)
+          .join("\n\n");
+
+        const scoringResult = await generateObject({
           model,
-          schema: z.object({
-            score: z
-              .number()
-              .int()
-              .min(1)
-              .max(100)
-              .describe("Score from 1 to 100, higher is better."),
-            reasoning: z
-              .string()
-              .min(3)
-              .describe("Explanation for the score, short and concise."),
+          schema: scoringSchema,
+          prompt: scoringPrompt,
+        });
+
+        const raw = scoringResult.object;
+
+        const score = Math.max(1, Math.min(100, Math.round(raw.score)));
+        const reasoning = String(raw.reasoning || "").slice(0, 4000);
+        const shouldReply = !!raw.shouldReply;
+        const replyAngle = raw.replyAngle || "NONE";
+
+        // ---- THRESHOLDS ----
+        // Archive threshold is driven by campaign.autoArchiveScore.
+        const archiveThreshold = campaign.autoArchiveScore ?? 60;
+        const shouldArchive =
+          campaign.autoArchiveScore != null && score < archiveThreshold;
+
+        // Reply threshold is independent: any score >= this will get an exampleMessage.
+        // You can make this configurable later via a DB column.
+        const shouldDraft = score >= archiveThreshold;
+
+        // =========================================
+        // STEP 2: DRAFT REPLY (ONLY IF SCORE HIGH)
+        // =========================================
+
+        let exampleMessage = "";
+
+        if (shouldDraft) {
+          const draftingSchema = z.object({
             exampleMessage: z
               .string()
               .min(3)
-              .describe("An example message the user might have sent."),
-          }),
-          prompt: [
-            defaultPrompt,
-            pinnedPositiveExamplesSection,
-            pinnedNegativeExamplesSection,
-            `---\nREDDIT POST TO EVALUATE\n${details}\n---\nReturn only JSON.`,
-          ]
-            .filter(Boolean)
-            .join("\n\n"),
-        });
+              .describe(
+                "A helpful, non-spammy reply suitable for Reddit. Mention the brand only if it feels natural and useful."
+              ),
+          });
 
-        const score = Math.max(1, Math.min(100, Math.round(object.score)));
-        const reasoning = String(object.reasoning || "").slice(0, 4000);
-        const exampleMessage = String(object.exampleMessage || "").slice(
-          0,
-          4000
-        );
+          const draftingPrompt = [
+            "ROLE: You are writing a helpful, non-spammy Reddit reply.",
+            `BUSINESS: ${campaign.name} – ${campaign.description}`,
+            "GOAL: Write a reply that genuinely helps the OP first. Mention the brand only if it feels natural and clearly useful.",
+            "",
+            "RULES:",
+            "- Do NOT hard sell.",
+            "- No urgency or FOMO.",
+            "- If a link is relevant, include it only once, ideally at the end.",
+            "- Fit the tone of Reddit: conversational, honest, not corporate-y.",
+            "",
+            `REPLY ANGLE: ${replyAngle}`,
+            `MODEL SHOULD_REPLY FLAG: ${shouldReply ? "true" : "false"} (informational only, do not override the score logic).`,
+            "",
+            "CONTEXT FROM SCORING STEP:",
+            `Score: ${score}`,
+            `Reasoning: ${reasoning}`,
+            "",
+            "--- REDDIT POST ---",
+            details,
+            "--------------------",
+            "",
+            "OUTPUT: Return ONLY JSON with { exampleMessage }.",
+          ].join("\n\n");
 
-        const shouldArchive =
-          campaign.autoArchiveScore != null &&
-          score < campaign.autoArchiveScore;
+          const draftingResult = await generateObject({
+            model,
+            schema: draftingSchema,
+            prompt: draftingPrompt,
+          });
 
-        // Upsert to guard against race; ensure a single evaluation per redditPostId
+          exampleMessage = String(
+            draftingResult.object.exampleMessage || ""
+          ).slice(0, 4000);
+        } else {
+          // For low-score posts, explicitly keep exampleMessage empty.
+          exampleMessage = "";
+        }
+
+        // =========================================
+        // UPSERT EVALUATION
+        // =========================================
+
         await ctx.db.redditPostEvaluation.upsert({
           where: {
             redditPostId_campaignId: {
@@ -604,9 +736,7 @@ export const evaluationsRouter = createTRPCRouter({
           },
         });
       } catch (err) {
-        // Skip failures; continue with others
-        // Optional: log to console; cron stdout shows it
-        console.error("[scoreRedditPosts] eval failed for", post.id, err);
+        console.error("[scoreRedditPosts] eval failed for", post?.id, err);
       }
 
       return { ok: true };
