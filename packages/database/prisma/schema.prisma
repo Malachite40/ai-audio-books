@@ -297,6 +297,11 @@ model Campaign {
     description      String
     isActive         Boolean  @default(true)
     autoArchiveScore Int?
+    /**
+     * OpenRouter model id to use when evaluating posts for this campaign.
+     * Example: "anthropic/claude-3.5-sonnet".
+     */
+    model            String?
     createdAt        DateTime @default(now()) @db.Timestamptz()
     updatedAt        DateTime @default(now()) @updatedAt @db.Timestamptz()
 

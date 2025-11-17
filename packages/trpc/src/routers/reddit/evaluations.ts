@@ -1,9 +1,9 @@
-import { openai } from "@ai-sdk/openai";
 import { TRPCError } from "@trpc/server";
 import { Prisma } from "@workspace/database";
-import { generateObject } from "ai";
+import { generateObject, type LanguageModel } from "ai";
 import { subDays } from "date-fns";
 import z from "zod";
+import { openrouter } from "../../lib/openrouter";
 import { TASK_NAMES } from "../../queue";
 import { enqueueTask } from "../../queue/enqueue";
 import { adminProcedure, createTRPCRouter, queueProcedure } from "../../trpc";
@@ -399,6 +399,7 @@ export const evaluationsRouter = createTRPCRouter({
           name: true,
           description: true,
           autoArchiveScore: true,
+          model: true,
         },
       });
 
@@ -452,7 +453,12 @@ export const evaluationsRouter = createTRPCRouter({
         }
       );
 
-      const model = openai("gpt-4o-mini");
+      // Default OpenRouter model if campaign doesn't override it.
+      const defaultModel = "openai/gpt-4o-mini";
+      const modelId = campaign.model ?? defaultModel;
+      const model = openrouter.languageModel(
+        modelId
+      ) as unknown as LanguageModel;
 
       const pinnedPositiveExamplesSection =
         pinnedPositiveExamples.length > 0
@@ -574,7 +580,7 @@ export const evaluationsRouter = createTRPCRouter({
             redditPostId: post.id,
             score,
             reasoning,
-            modelName: "gpt-4o-mini",
+            modelName: modelId,
             exampleMessage,
             campaignId: input.campaignId,
             archived: shouldArchive,

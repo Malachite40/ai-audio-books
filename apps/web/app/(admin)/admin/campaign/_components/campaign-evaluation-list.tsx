@@ -627,10 +627,20 @@ export function CampaignEvaluationList({ campaignId }: { campaignId: string }) {
                               <div className="space-y-2 text-wrap grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <Card className="p-3">
                                   {evaluation.exampleMessage ? (
-                                    <div className=" flex flex-col gap-2">
-                                      <span className="text-muted-foreground">
-                                        Example message:{" "}
-                                      </span>
+                                    <div className="flex flex-col gap-2">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-muted-foreground">
+                                          Example message
+                                        </span>
+                                        {evaluation.modelName ? (
+                                          <Badge
+                                            variant="outline"
+                                            className="text-[10px] px-1.5 py-0.5"
+                                          >
+                                            {evaluation.modelName}
+                                          </Badge>
+                                        ) : null}
+                                      </div>
                                       <span>{evaluation.exampleMessage}</span>
                                     </div>
                                   ) : null}

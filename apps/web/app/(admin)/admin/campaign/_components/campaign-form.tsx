@@ -13,6 +13,13 @@ import {
   FormMessage,
 } from "@workspace/ui/components/form";
 import { Input } from "@workspace/ui/components/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@workspace/ui/components/select";
 import { Switch } from "@workspace/ui/components/switch";
 import { Textarea } from "@workspace/ui/components/textarea";
 import { useForm } from "react-hook-form";
@@ -39,6 +46,12 @@ const CampaignSchema = z.object({
     .max(100, "Score must be at most 100.")
     .nullable()
     .optional(),
+  model: z
+    .string()
+    .min(1, "Model id must be at least 1 character.")
+    .max(255, "Model id must be under 255 characters.")
+    .nullable()
+    .optional(),
 });
 
 export type CampaignFormValues = z.infer<typeof CampaignSchema>;
@@ -63,6 +76,7 @@ export function CampaignForm({
       description: campaign?.description ?? "",
       isActive: campaign?.isActive ?? true,
       autoArchiveScore: campaign?.autoArchiveScore ?? null,
+      model: campaign?.model ?? null,
     },
     mode: "onChange",
   });
@@ -190,6 +204,62 @@ export function CampaignForm({
                 New evaluations for this campaign will be archived by default
                 when their score is below this threshold. Leave blank to disable
                 auto-archiving.
+              </p>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="model"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>OpenRouter model</FormLabel>
+              <Select
+                value={field.value ?? ""}
+                onValueChange={(value) =>
+                  field.onChange(
+                    value === "__DEFAULT_MODEL__" ? null : value
+                  )
+                }
+              >
+                <FormControl>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Use default model" />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  <SelectItem value="__DEFAULT_MODEL__">
+                    Use default model
+                  </SelectItem>
+                  <SelectItem value="anthropic/claude-sonnet-4.5">
+                    anthropic/claude-sonnet-4.5
+                  </SelectItem>
+                  <SelectItem value="deepseek/deepseek-chat-v3.1:free">
+                    deepseek/deepseek-chat-v3.1:free
+                  </SelectItem>
+                  <SelectItem value="deepseek/deepseek-v3.1-terminus">
+                    deepseek/deepseek-v3.1-terminus
+                  </SelectItem>
+                  <SelectItem value="google/gemini-2.5-flash">
+                    google/gemini-2.5-flash
+                  </SelectItem>
+                  <SelectItem value="google/gemini-2.5-flash-lite-preview-09-2025">
+                    google/gemini-2.5-flash-lite-preview-09-2025
+                  </SelectItem>
+                  <SelectItem value="gpt-4o-mini">gpt-4o-mini</SelectItem>
+                  <SelectItem value="qwen/qwen3-30b-a3b">
+                    qwen/qwen3-30b-a3b
+                  </SelectItem>
+                  <SelectItem value="x-ai/grok-4-fast">
+                    x-ai/grok-4-fast
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Optional. When set, Reddit post evaluations for this campaign
+                will use this OpenRouter model. Leave blank to use the default
+                model.
               </p>
               <FormMessage />
             </FormItem>

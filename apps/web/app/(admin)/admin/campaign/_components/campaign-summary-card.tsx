@@ -140,7 +140,6 @@ export function CampaignSummaryCard({
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem
                       onSelect={(event) => {
-                        event.preventDefault();
                         if (sendDigest.isPending) return;
                         sendDigest.mutate({
                           campaignId: campaign.id,
@@ -151,9 +150,13 @@ export function CampaignSummaryCard({
                       {sendDigest.isPending ? "Sending…" : "Test email"}
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onSelect={(event) => {
-                        event.preventDefault();
-                        setEditOpen(true);
+                      onSelect={() => {
+                        // Open the edit modal on the next tick so the
+                        // dropdown can fully close first and not interfere
+                        // with pointer events on the page.
+                        setTimeout(() => {
+                          setEditOpen(true);
+                        }, 0);
                       }}
                     >
                       <EditIcon className="w-4 h-4" />

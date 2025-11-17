@@ -20,6 +20,12 @@ export const campaignsRouter = createTRPCRouter({
           .max(100)
           .nullable()
           .optional(),
+        model: z
+          .string()
+          .min(1)
+          .max(255)
+          .nullable()
+          .optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -30,12 +36,14 @@ export const campaignsRouter = createTRPCRouter({
           description: input.description,
           isActive: input.isActive ?? true,
           autoArchiveScore: input.autoArchiveScore ?? null,
+          model: input.model ?? null,
         },
         update: {
           name: input.name,
           description: input.description,
           isActive: input.isActive,
           autoArchiveScore: input.autoArchiveScore ?? null,
+          model: input.model ?? null,
         },
       });
       return { campaign: upserted };
