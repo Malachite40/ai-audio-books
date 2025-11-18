@@ -31,7 +31,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className="min-h-full flex overflow-x-hidden max-w-dvw"
+      className="h-full" // or min-h-full; no flex, no max-w-dvw
     >
       <meta
         name="viewport"
@@ -39,7 +39,7 @@ export default function RootLayout({
       />
       <body
         suppressHydrationWarning
-        className={`${fontSans.variable} ${fontMono.variable} font-sans antialiased w-full`}
+        className={`${fontSans.variable} ${fontMono.variable} font-sans antialiased min-h-screen w-full overflow-x-hidden`}
       >
         <Suspense fallback={null}>
           <RedditPixel />

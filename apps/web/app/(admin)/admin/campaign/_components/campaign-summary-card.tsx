@@ -14,7 +14,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
-import { EditIcon, MailIcon, MoreHorizontal, Trash2Icon } from "lucide-react";
+import { EditIcon, MoreHorizontal, Trash2Icon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { CampaignForm } from "./campaign-form";
@@ -75,9 +75,6 @@ export function CampaignSummaryCard({
     deleteMutation.mutate({ id: campaign.id });
   };
 
-  const sendDigest =
-    api.emails.adminQueueRedditDailyDigestForCampaign.useMutation();
-
   return (
     <>
       <Card className="p-6 space-y-5">
@@ -111,7 +108,7 @@ export function CampaignSummaryCard({
                   </Badge>
                 </h2>
 
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
                   <Badge variant="outline" className="font-normal">
                     {watchedSubredditsCount ?? 0} subreddits
                   </Badge>
@@ -143,17 +140,6 @@ export function CampaignSummaryCard({
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      onSelect={(event) => {
-                        if (sendDigest.isPending) return;
-                        sendDigest.mutate({
-                          campaignId: campaign.id,
-                        });
-                      }}
-                    >
-                      <MailIcon className="w-4 h-4" />
-                      {sendDigest.isPending ? "Sending…" : "Test email"}
-                    </DropdownMenuItem>
                     <DropdownMenuItem
                       onSelect={() => {
                         // Open the edit modal on the next tick so the

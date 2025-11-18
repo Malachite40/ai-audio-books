@@ -97,7 +97,7 @@ export function CampaignEvaluationChart({
 
   return (
     <Card className="p-6 ">
-      <div className="flex justify-between mb-4">
+      <div className="flex flex-col md:flex-row justify-between mb-4">
         <div>
           <h2 className="font-semibold text-lg">High-Score Evaluations</h2>
           <p className="text-sm text-muted-foreground">

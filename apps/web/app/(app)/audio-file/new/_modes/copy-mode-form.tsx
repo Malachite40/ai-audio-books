@@ -247,6 +247,30 @@ export function CopyModeForm({
   const overCharacterLimit = requiredCredits > availableCredits;
 
   // RoyalRoad paste support (same behavior as before)
+  const normalizeImportantText = (raw: string): string => {
+    let text = raw;
+
+    // Remove leading blockquote markers ("> ")
+    text = text.replace(/^>\s*/gm, "");
+
+    // Strip markdown-style emphasis/bold markers while keeping inner text
+    text = text.replace(/[*_]+/g, "");
+
+    // Collapse multiple spaces
+    text = text.replace(/[ \t]+/g, " ");
+
+    // Collapse excessive blank lines
+    text = text.replace(/\n{3,}/g, "\n\n");
+
+    // Trim each line
+    text = text
+      .split("\n")
+      .map((line) => line.trim())
+      .join("\n");
+
+    return text.trim();
+  };
+
   const ROYALROAD_CHAPTER_RE =
     /^https?:\/\/(?:www\.)?royalroad\.com\/fiction\/(\d+)\/([^/]+)\/chapter\/(\d+)(?:\/([^/]+))?\/?$/i;
   const extractRoyalRoadUrl = (s: string) => s.match(ROYALROAD_CHAPTER_RE)?.[0];
@@ -285,15 +309,37 @@ export function CopyModeForm({
       const res = await fetch(proxied, { credentials: "omit" });
       if (!res.ok) throw new Error(`Fetch failed (${res.status})`);
       const body = await res.text();
-      const text = body
-        .replace(/<script[\s\S]*?<\/script>/gi, "")
-        .replace(/<style[\s\S]*?<\/style>/gi, "")
-        .replace(/<\/?(?:\w+)[^>]*>/g, "\n")
-        .replace(/\n{3,}/g, "\n\n")
-        .replace(/^Title:.*$/gm, "")
-        .replace(/^URL Source:.*$/gm, "")
-        .replace(/^Markdown Content:.*$/gm, "")
-        .trim();
+      let text: string | null = null;
+
+      // Prefer extracting only the main chapter content from RoyalRoad
+      try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(body, "text/html");
+        const chapterDiv = doc.querySelector(
+          "div.chapter-inner.chapter-content"
+        );
+        if (chapterDiv) {
+          text = chapterDiv.textContent || "";
+        }
+      } catch {
+        // If DOM parsing fails, fall back to regex-based cleanup below
+      }
+
+      if (!text) {
+        text = body
+          .replace(/<script[\s\S]*?<\/script>/gi, "")
+          .replace(/<style[\s\S]*?<\/style>/gi, "")
+          .replace(/<\/?(?:\w+)[^>]*>/g, "\n")
+          .replace(/^Title:.*$/gm, "")
+          .replace(/^URL Source:.*$/gm, "")
+          .replace(/^Markdown Content:.*$/gm, "")
+          .trim();
+      }
+
+      if (text) {
+        text = normalizeImportantText(text);
+      }
+
       if (!text) throw new Error("No content found");
       form.setValue("name", buildNameFromUrl(url), {
         shouldDirty: true,
@@ -537,7 +583,7 @@ export function CopyModeForm({
                         aria-live="polite"
                       >
                         {isImportingRR && (
-                          <InputGroupText className="text-xs text-muted-foreground animate-pulse">
+                          <InputGroupText className="text-xs animate-pulse text-primary">
                             Importing from RoyalRoad…
                           </InputGroupText>
                         )}

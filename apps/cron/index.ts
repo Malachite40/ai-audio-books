@@ -24,7 +24,8 @@ cron.schedule("*/30 * * * *", async () => {
   }
 });
 
-cron.schedule("0 8 * * *", async () => {
+// runs daily at 16:00 (8pm PST)
+cron.schedule("0 16 * * *", async () => {
   try {
     console.log("[cron] running daily Reddit digest email job…");
     await api.emails.queueRedditDailyDigestForAllActiveCampaigns();

@@ -21,7 +21,7 @@ export function FileDropzone({
   return (
     <div className="px-0">
       <div
-        className="border-2 border-dashed border-border rounded-md p-8 flex flex-col items-center justify-center text-center cursor-pointer"
+        className="border-2 border-dashed border-border rounded-md p-8 flex flex-col items-center justify-center text-center cursor-pointer max-w-dvw"
         onClick={handleBoxClick}
         onDragOver={handleDragOver}
         onDrop={handleDrop}
@@ -33,7 +33,7 @@ export function FileDropzone({
           Upload a text or PDF file
         </p>
         <p className="text-sm text-muted-foreground mt-1">
-          or, {" "}
+          or,{" "}
           <label
             htmlFor="textPdfUpload"
             className="text-primary hover:text-primary/90 font-medium cursor-pointer"
@@ -55,4 +55,3 @@ export function FileDropzone({
     </div>
   );
 }
-

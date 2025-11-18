@@ -105,7 +105,7 @@ export default function ExampleAudioToggle({
         ) : (
           <Play className="h-4 w-4" />
         )}
-        <span>{isPlaying ? "Pause" : "Play Example"}</span>
+        <span>{isPlaying ? "Pause" : "Example"}</span>
       </Button>
     </>
   );

@@ -447,12 +447,165 @@ export function CampaignEvaluationList({ campaignId }: { campaignId: string }) {
                             className="p-0 max-w-full hover:bg-none"
                           >
                             <div className="px-4 py-4 space-y-3 w-full overflow-hidden">
-                              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-wrap">
-                                <div className="flex flex-col gap-2 col-span-3">
+                              <div className="flex flex-col gap-4 text-wrap">
+                                <div className="flex flex-col gap-2">
                                   {/* title */}
                                   <span className="font-semibold text-xl">
                                     {evaluation.redditPost?.title ?? "—"}
                                   </span>
+
+                                  <div className="flex gap-4 ">
+                                    <Button
+                                      className="flex md:w-fit gap-2 items-center border border-primary hover:bg-primary/10"
+                                      size={"sm"}
+                                      variant={"link"}
+                                      onClick={() => {
+                                        //copy example message to clipboard and open reddit post
+                                        if (
+                                          evaluation.exampleMessage &&
+                                          evaluation.redditPost
+                                        ) {
+                                          navigator.clipboard.writeText(
+                                            evaluation.exampleMessage
+                                          );
+                                          const url = `https://reddit.com${evaluation.redditPost.permalink}`;
+                                          window.open(url, "_blank");
+                                        }
+                                      }}
+                                    >
+                                      <CopyIcon className="size-4" />
+                                      <PlusIcon className="size-4" />
+                                      <ExternalLinkIcon className="size-4" />
+                                    </Button>
+
+                                    <div className="flex gap-2">
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <Button
+                                            variant={
+                                              evaluation.rating === "POSITIVE"
+                                                ? "outline"
+                                                : "ghost"
+                                            }
+                                            size="icon"
+                                            aria-label="Mark as positive"
+                                            onClick={() =>
+                                              updateRating.mutate({
+                                                id: evaluation.id,
+                                                direction:
+                                                  evaluation.rating ===
+                                                  "POSITIVE"
+                                                    ? "clear"
+                                                    : "up",
+                                              })
+                                            }
+                                            disabled={updateRating.isPending}
+                                          >
+                                            <ThumbsUp className="size-4" />
+                                          </Button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>Upvote</TooltipContent>
+                                      </Tooltip>
+
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <Button
+                                            variant={
+                                              evaluation.rating === "NEGATIVE"
+                                                ? "outline"
+                                                : "ghost"
+                                            }
+                                            size="icon"
+                                            aria-label="Mark as negative"
+                                            onClick={() =>
+                                              updateRating.mutate({
+                                                id: evaluation.id,
+                                                direction:
+                                                  evaluation.rating ===
+                                                  "NEGATIVE"
+                                                    ? "clear"
+                                                    : "down",
+                                              })
+                                            }
+                                            disabled={updateRating.isPending}
+                                          >
+                                            <ThumbsDown className="size-4" />
+                                          </Button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          Downvote
+                                        </TooltipContent>
+                                      </Tooltip>
+
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            aria-label="Archive evaluation"
+                                            onClick={() =>
+                                              archiveEvaluation.mutate({
+                                                id: evaluation.id,
+                                              })
+                                            }
+                                            disabled={
+                                              archiveEvaluation.isPending
+                                            }
+                                          >
+                                            {archiveEvaluation.isPending ? (
+                                              <Loader2 className="size-4 animate-spin" />
+                                            ) : (
+                                              <ArchiveIcon className="size-4" />
+                                            )}
+                                          </Button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>Archive</TooltipContent>
+                                      </Tooltip>
+
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <Button
+                                            variant={
+                                              evaluation.bookmarked
+                                                ? "outline"
+                                                : "ghost"
+                                            }
+                                            size="icon"
+                                            aria-label={
+                                              evaluation.bookmarked
+                                                ? "Remove from examples"
+                                                : "Save as example"
+                                            }
+                                            onClick={(event) => {
+                                              event.stopPropagation();
+                                              if (evaluation.bookmarked) {
+                                                bookmarkEvaluation.mutate({
+                                                  evaluationId: evaluation.id,
+                                                  bookmarked: false,
+                                                });
+                                              } else {
+                                                openExampleModal(evaluation);
+                                              }
+                                            }}
+                                            disabled={
+                                              bookmarkEvaluation.isPending
+                                            }
+                                          >
+                                            {bookmarkEvaluation.isPending ? (
+                                              <Loader2 className="size-4 animate-spin" />
+                                            ) : (
+                                              <BookmarkIcon className="size-4" />
+                                            )}
+                                          </Button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          {evaluation.bookmarked
+                                            ? "Remove from examples"
+                                            : "Save as example"}
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </div>
+                                  </div>
 
                                   {/* Content */}
                                   <span className="text-muted-foreground line-clamp-[10]">
@@ -484,156 +637,10 @@ export function CampaignEvaluationList({ campaignId }: { campaignId: string }) {
                                     )}
                                   </div>
                                 </div>
-
-                                <div className="flex flex-col items-end gap-4 col-span-1">
-                                  <Button
-                                    className="flex md:w-fit gap-2 items-center"
-                                    size={"sm"}
-                                    onClick={() => {
-                                      //copy example message to clipboard and open reddit post
-                                      if (
-                                        evaluation.exampleMessage &&
-                                        evaluation.redditPost
-                                      ) {
-                                        navigator.clipboard.writeText(
-                                          evaluation.exampleMessage
-                                        );
-                                        const url = `https://reddit.com${evaluation.redditPost.permalink}`;
-                                        window.open(url, "_blank");
-                                      }
-                                    }}
-                                  >
-                                    <CopyIcon className="size-4" />
-                                    <PlusIcon className="size-4" />
-                                    <ExternalLinkIcon className="size-4" />
-                                  </Button>
-
-                                  <div className="flex gap-2">
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          variant={
-                                            evaluation.rating === "POSITIVE"
-                                              ? "outline"
-                                              : "ghost"
-                                          }
-                                          size="icon"
-                                          aria-label="Mark as positive"
-                                          onClick={() =>
-                                            updateRating.mutate({
-                                              id: evaluation.id,
-                                              direction:
-                                                evaluation.rating === "POSITIVE"
-                                                  ? "clear"
-                                                  : "up",
-                                            })
-                                          }
-                                          disabled={updateRating.isPending}
-                                        >
-                                          <ThumbsUp className="size-4" />
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent>Upvote</TooltipContent>
-                                    </Tooltip>
-
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          variant={
-                                            evaluation.rating === "NEGATIVE"
-                                              ? "outline"
-                                              : "ghost"
-                                          }
-                                          size="icon"
-                                          aria-label="Mark as negative"
-                                          onClick={() =>
-                                            updateRating.mutate({
-                                              id: evaluation.id,
-                                              direction:
-                                                evaluation.rating === "NEGATIVE"
-                                                  ? "clear"
-                                                  : "down",
-                                            })
-                                          }
-                                          disabled={updateRating.isPending}
-                                        >
-                                          <ThumbsDown className="size-4" />
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent>Downvote</TooltipContent>
-                                    </Tooltip>
-
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          aria-label="Archive evaluation"
-                                          onClick={() =>
-                                            archiveEvaluation.mutate({
-                                              id: evaluation.id,
-                                            })
-                                          }
-                                          disabled={archiveEvaluation.isPending}
-                                        >
-                                          {archiveEvaluation.isPending ? (
-                                            <Loader2 className="size-4 animate-spin" />
-                                          ) : (
-                                            <ArchiveIcon className="size-4" />
-                                          )}
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent>Archive</TooltipContent>
-                                    </Tooltip>
-
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          variant={
-                                            evaluation.bookmarked
-                                              ? "outline"
-                                              : "ghost"
-                                          }
-                                          size="icon"
-                                          aria-label={
-                                            evaluation.bookmarked
-                                              ? "Remove from examples"
-                                              : "Save as example"
-                                          }
-                                          onClick={(event) => {
-                                            event.stopPropagation();
-                                            if (evaluation.bookmarked) {
-                                              bookmarkEvaluation.mutate({
-                                                evaluationId: evaluation.id,
-                                                bookmarked: false,
-                                              });
-                                            } else {
-                                              openExampleModal(evaluation);
-                                            }
-                                          }}
-                                          disabled={
-                                            bookmarkEvaluation.isPending
-                                          }
-                                        >
-                                          {bookmarkEvaluation.isPending ? (
-                                            <Loader2 className="size-4 animate-spin" />
-                                          ) : (
-                                            <BookmarkIcon className="size-4" />
-                                          )}
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent>
-                                        {evaluation.bookmarked
-                                          ? "Remove from examples"
-                                          : "Save as example"}
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </div>
-                                </div>
                               </div>
                               <div className="space-y-2 text-wrap grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <Card className="p-3">
-                                  {evaluation.exampleMessage ? (
+                                {evaluation.exampleMessage && (
+                                  <Card className="p-3">
                                     <div className="flex flex-col gap-2">
                                       <div className="flex items-center gap-2">
                                         <span className="text-muted-foreground">
@@ -650,9 +657,14 @@ export function CampaignEvaluationList({ campaignId }: { campaignId: string }) {
                                       </div>
                                       <span>{evaluation.exampleMessage}</span>
                                     </div>
-                                  ) : null}
-                                </Card>
-                                <div className="flex flex-col text-muted-foreground py-2">
+                                  </Card>
+                                )}
+                                <div
+                                  className={cn(
+                                    "flex flex-col text-muted-foreground py-2",
+                                    !evaluation.exampleMessage && "col-span-2"
+                                  )}
+                                >
                                   <div className="flex flex-col gap-2">
                                     <span>{evaluation.reasoning || "—"}</span>
                                   </div>
