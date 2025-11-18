@@ -1,4 +1,5 @@
 "use client";
+import { api } from "@/trpc/react";
 import { Button, buttonVariants } from "@workspace/ui/components/button";
 import Link from "next/link";
 import { ResponsiveModal } from "./resonpsive-modal";
@@ -15,6 +16,13 @@ export function NotEnoughCreditsDialog({
   available: number;
 }) {
   const deficit = Math.max(0, needed - available);
+
+  const { data: subscriptionData, isLoading: subscriptionLoading } =
+    api.subscriptions.self.useQuery();
+
+  const subscriptionPlan = subscriptionData?.subscription;
+  const isFreePlan = subscriptionPlan?.plan === "FREE";
+
   return (
     <ResponsiveModal
       open={open}
@@ -44,10 +52,14 @@ export function NotEnoughCreditsDialog({
             Close
           </Button>
           <Link
-            href="/billing"
+            href={isFreePlan ? "/pricing" : "/billing"}
             className={buttonVariants({ className: "flex-1" })}
           >
-            Go to billing
+            {/* Loading */}
+            {subscriptionLoading && "Loading..."}
+
+            {/* Subscription Plan */}
+            {isFreePlan ? "Upgrade plan" : "Go to billing"}
           </Link>
         </div>
       </div>
