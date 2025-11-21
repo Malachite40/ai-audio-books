@@ -114,7 +114,11 @@ const homeFaqs: FaqItem[] = [
   {
     value: "faq-formats",
     question: "What export formats are supported?",
-    answer: <>MP3. If you&apos;d like support for other formats, please let us know.</>,
+    answer: (
+      <>
+        MP3. If you&apos;d like support for other formats, please let us know.
+      </>
+    ),
   },
   {
     value: "faq-voices",
@@ -123,8 +127,8 @@ const homeFaqs: FaqItem[] = [
       <>
         You’ll find a curated voice library tuned for narration. On higher
         tiers, you can fine-tune settings and may have a custom voice slot.
-        Support for SSML controls (pronunciation, emphasis, pauses) is
-        available on paid plans.
+        Support for SSML controls (pronunciation, emphasis, pauses) is available
+        on paid plans.
       </>
     ),
   },
@@ -600,6 +604,7 @@ export function HomeClient(props: HomeClientProps) {
 
         <FaqSection
           faqs={homeFaqs}
+          className="px-6"
           description={
             <>
               Short answers below. Need more? View the{" "}
