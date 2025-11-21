@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useForm } from "react-hook-form";
 import { toast } from "sonner";
+import { z } from "zod";
 
 import { ConfirmAudioVisibility } from "@/components/confirm-audio-visibility";
 import ExampleAudioToggle from "@/components/example-audio-toggle";
@@ -47,9 +47,12 @@ import { ArrowLeft, AudioLinesIcon } from "lucide-react";
 const MIN_DURATION = 5; // minutes
 const MAX_DURATION = 60; // minutes
 const STEP_MINUTES = 5; // slider/input increments
-const clamp = (n: number, lo: number, hi: number) => Math.min(Math.max(n, lo), hi);
-const roundToStep = (n: number, step = STEP_MINUTES) => Math.round(n / step) * step;
-const clampAndStep = (n: number) => clamp(roundToStep(n), MIN_DURATION, MAX_DURATION);
+const clamp = (n: number, lo: number, hi: number) =>
+  Math.min(Math.max(n, lo), hi);
+const roundToStep = (n: number, step = STEP_MINUTES) =>
+  Math.round(n / step) * step;
+const clampAndStep = (n: number) =>
+  clamp(roundToStep(n), MIN_DURATION, MAX_DURATION);
 const formatHm = (minutes?: number) => {
   if (!Number.isFinite(minutes)) return "—";
   const m = Math.max(0, Math.floor(Number(minutes)));
@@ -99,7 +102,8 @@ export function AiModeForm({ speakers, onBack }: Props) {
     if (fromStore && (Languages as readonly string[]).includes(fromStore)) {
       return fromStore as (typeof Languages)[number];
     }
-    const fromSpeaker = speakers.find((s) => s.id === speakerId)?.language as unknown as string | undefined;
+    const fromSpeaker = speakers.find((s) => s.id === speakerId)
+      ?.language as unknown as string | undefined;
     if (fromSpeaker && (Languages as readonly string[]).includes(fromSpeaker)) {
       return fromSpeaker as (typeof Languages)[number];
     }
@@ -109,18 +113,25 @@ export function AiModeForm({ speakers, onBack }: Props) {
       : Languages[0];
   }, [speakers, speakerId, storedLanguage]);
 
-  const [languageFilter, setLanguageFilter] = useState<(typeof Languages)[number]>(initialLanguage);
+  const [languageFilter, setLanguageFilter] =
+    useState<(typeof Languages)[number]>(initialLanguage);
 
   useEffect(() => {
     const lang = storedLanguage as unknown as string | undefined;
-    if (lang && (Languages as readonly string[]).includes(lang) && lang !== languageFilter) {
+    if (
+      lang &&
+      (Languages as readonly string[]).includes(lang) &&
+      lang !== languageFilter
+    ) {
       setLanguageFilter(lang as (typeof Languages)[number]);
     }
   }, [storedLanguage]);
 
   const filteredSpeakers = useMemo(() => {
     const list = Array.isArray(speakers) ? speakers : [];
-    return list.filter((s) => (s as any).language === (languageFilter as unknown as string));
+    return list.filter(
+      (s) => (s as any).language === (languageFilter as unknown as string)
+    );
   }, [speakers, languageFilter]);
 
   useEffect(() => {
@@ -142,8 +153,12 @@ export function AiModeForm({ speakers, onBack }: Props) {
 
   useEffect(() => {
     const subscription = form.watch((value, { name }) => {
-      if (name === "text" && typeof value.text === "string") setText(value.text);
-      if (name === "durationMinutes" && typeof value.durationMinutes === "number") {
+      if (name === "text" && typeof value.text === "string")
+        setText(value.text);
+      if (
+        name === "durationMinutes" &&
+        typeof value.durationMinutes === "number"
+      ) {
         setDurationMinutes(value.durationMinutes);
       }
     });
@@ -156,8 +171,13 @@ export function AiModeForm({ speakers, onBack }: Props) {
       form.setValue("text", text, { shouldDirty: false });
       form.trigger("text");
     }
-    if (typeof storeDurationMinutes === "number" && storeDurationMinutes !== form.getValues("durationMinutes")) {
-      form.setValue("durationMinutes", storeDurationMinutes, { shouldDirty: false });
+    if (
+      typeof storeDurationMinutes === "number" &&
+      storeDurationMinutes !== form.getValues("durationMinutes")
+    ) {
+      form.setValue("durationMinutes", storeDurationMinutes, {
+        shouldDirty: false,
+      });
       form.trigger("durationMinutes");
     }
   }, [text, storeDurationMinutes]);
@@ -175,7 +195,14 @@ export function AiModeForm({ speakers, onBack }: Props) {
       form.setValue("speakerId", speakerId, { shouldDirty: false });
       form.trigger("speakerId");
     }
-  }, [hasHydrated, speakerId, speakers, languageFilter, filteredSpeakers, form]);
+  }, [
+    hasHydrated,
+    speakerId,
+    speakers,
+    languageFilter,
+    filteredSpeakers,
+    form,
+  ]);
 
   const createAudioFileFromAi = api.audio.inworld.createFromAi.useMutation({
     onSuccess: (data) => {
@@ -189,14 +216,20 @@ export function AiModeForm({ speakers, onBack }: Props) {
   const testAudioMutation = api.audio.test.create.useMutation({
     onSuccess: (data) => router.push(`/audio-file/${data.audioFile.id}`),
     onError: (error) => {
-      toast("Test audio creation failed", { description: error.message, duration: 4000 });
+      toast("Test audio creation failed", {
+        description: error.message,
+        duration: 4000,
+      });
     },
   });
 
   const selectedSpeakerId = form.watch("speakerId");
-  const currentSpeaker = filteredSpeakers.find((s) => s.id === selectedSpeakerId);
+  const currentSpeaker = filteredSpeakers.find(
+    (s) => s.id === selectedSpeakerId
+  );
   const exampleUrl =
-    typeof currentSpeaker?.exampleAudio === "string" && currentSpeaker.exampleAudio.length > 0
+    typeof currentSpeaker?.exampleAudio === "string" &&
+    currentSpeaker.exampleAudio.length > 0
       ? currentSpeaker.exampleAudio
       : undefined;
 
@@ -204,7 +237,9 @@ export function AiModeForm({ speakers, onBack }: Props) {
   const creditsQuery = api.credits.fetch.useQuery();
   const durationMinutes = form.watch("durationMinutes") ?? 0;
   const requiredCredits = durationMinutes * 1000;
-  const availableCredits = userData ? (creditsQuery.data?.credits?.amount ?? 0) : 9999999999;
+  const availableCredits = userData
+    ? (creditsQuery.data?.credits?.amount ?? 0)
+    : 9999999999;
   const overCharacterLimit = requiredCredits > availableCredits;
 
   const handleCreateClick = async () => {
@@ -241,7 +276,13 @@ export function AiModeForm({ speakers, onBack }: Props) {
       />
 
       <div className="mb-2">
-        <Button className="!pl-0" type="button" variant="ghost" size="sm" onClick={onBack}>
+        <Button
+          className="!pl-0"
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={onBack}
+        >
           <ArrowLeft className="h-4 w-4 mr-1" />
           Back
         </Button>
@@ -257,7 +298,9 @@ export function AiModeForm({ speakers, onBack }: Props) {
               <FormItem className="mb-6">
                 <FormLabel className="flex mb-2 items-center justify-between">
                   <span>Audio Book Duration</span>
-                  <span className="text-xs text-muted-foreground">{formatHm(field.value)}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {formatHm(field.value)}
+                  </span>
                 </FormLabel>
                 <FormControl>
                   <div className="space-y-3">
@@ -267,7 +310,9 @@ export function AiModeForm({ speakers, onBack }: Props) {
                       step={STEP_MINUTES}
                       value={[Number(field.value ?? 10)]}
                       onValueChange={(vals) => {
-                        const v = Array.isArray(vals) ? Number(vals[0]) : Number(vals);
+                        const v = Array.isArray(vals)
+                          ? Number(vals[0])
+                          : Number(vals);
                         field.onChange(clampAndStep(v));
                       }}
                       aria-label="Duration in minutes"
@@ -288,7 +333,9 @@ export function AiModeForm({ speakers, onBack }: Props) {
                         }}
                         onBlur={(e) => {
                           const raw = Number(e.target.value);
-                          const fixed = clampAndStep(Number.isNaN(raw) ? 10 : raw);
+                          const fixed = clampAndStep(
+                            Number.isNaN(raw) ? 10 : raw
+                          );
                           field.onChange(fixed);
                         }}
                       />
@@ -310,12 +357,18 @@ export function AiModeForm({ speakers, onBack }: Props) {
                   setLanguageFilter(v as (typeof Languages)[number]);
                   const match = speakers.find((s) => s.language === v);
                   if (match) {
-                    form.setValue("speakerId", match.id, { shouldDirty: true, shouldValidate: true });
+                    form.setValue("speakerId", match.id, {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    });
                     setSpeakerId(match.id);
                   }
                 }}
               >
-                <SelectTrigger value={languageFilter} className="capitalize w-[180px]">
+                <SelectTrigger
+                  value={languageFilter}
+                  className="capitalize w-[180px]"
+                >
                   <SelectValue placeholder="Select language" />
                 </SelectTrigger>
                 <SelectContent>
@@ -348,7 +401,9 @@ export function AiModeForm({ speakers, onBack }: Props) {
                       <SelectTrigger className="w-[220px]">
                         <SelectValue
                           placeholder={
-                            filteredSpeakers.length === 0 ? "No speakers in this language" : "Select a speaker"
+                            filteredSpeakers.length === 0
+                              ? "No speakers in this language"
+                              : "Select a speaker"
                           }
                         />
                       </SelectTrigger>
@@ -368,7 +423,11 @@ export function AiModeForm({ speakers, onBack }: Props) {
               )}
             />
 
-            <ExampleAudioToggle exampleUrl={exampleUrl} speakerId={selectedSpeakerId} disabled={!selectedSpeakerId} />
+            <ExampleAudioToggle
+              exampleUrl={exampleUrl}
+              speakerId={selectedSpeakerId}
+              disabled={!selectedSpeakerId}
+            />
           </div>
 
           {/* Prompt */}
@@ -390,13 +449,26 @@ export function AiModeForm({ speakers, onBack }: Props) {
                       value={field.value ?? ""}
                     />
                     <InputGroupAddon align="block-end">
-                      <div className="flex gap-2 items-end justify-end" aria-live="polite">
-                        {(requiredCredits > 0 || creditsQuery.data?.credits) && (
-                          <InputGroupText className={cn("text-xs ml-auto", overCharacterLimit ? "text-amber-600" : "text-muted-foreground")}>
+                      <div
+                        className="flex gap-2 items-end justify-end"
+                        aria-live="polite"
+                      >
+                        {(requiredCredits > 0 ||
+                          creditsQuery.data?.credits) && (
+                          <InputGroupText
+                            className={cn(
+                              "text-xs ml-auto",
+                              overCharacterLimit
+                                ? "text-amber-600"
+                                : "text-muted-foreground"
+                            )}
+                          >
                             {requiredCredits > 0
-                              ? `${requiredCredits} Credits - $${(((requiredCredits * 10) / 1_000_000)).toFixed(4)}`
+                              ? `${requiredCredits} Credits - $${((requiredCredits * 10) / 1_000_000).toFixed(4)}`
                               : "0"}
-                            {typeof availableCredits === "number" && isLoggedIn && ` |  Remaining Credits: ${availableCredits}`}
+                            {typeof availableCredits === "number" &&
+                              isLoggedIn &&
+                              ` |  Remaining Credits: ${availableCredits}`}
                           </InputGroupText>
                         )}
                       </div>
@@ -414,37 +486,17 @@ export function AiModeForm({ speakers, onBack }: Props) {
               type="button"
               onClick={handleCreateClick}
               disabled={
-                createAudioFileFromAi.isPending || !form.formState.isValid || !form.getValues("speakerId") ||
+                createAudioFileFromAi.isPending ||
+                !form.formState.isValid ||
+                !form.getValues("speakerId") ||
                 filteredSpeakers.length === 0
               }
             >
               <AudioLinesIcon className="h-4 w-4" />
-              {createAudioFileFromAi.isPending ? "Synthesizing..." : "Create Audio"}
+              {createAudioFileFromAi.isPending
+                ? "Synthesizing..."
+                : "Create Audio"}
             </Button>
-
-            {!isAdmin && (
-              <div className="flex flex-col gap-2">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  disabled={!form.formState.isValid || !form.getValues("speakerId") || filteredSpeakers.length === 0}
-                  onClick={() => {
-                    const vals = form.getValues();
-                    testAudioMutation.mutate({
-                      name: "Untitled Audio",
-                      speakerId: vals.speakerId,
-                      text: vals.text,
-                      durationMinutes: vals.durationMinutes,
-                      public: vals.public ?? false,
-                      mode: "ai",
-                      chunkSize: 1000,
-                    });
-                  }}
-                >
-                  Test
-                </Button>
-              </div>
-            )}
           </div>
         </form>
       </Form>

@@ -1,6 +1,7 @@
 "use client";
 
 import SimpleAudioClip from "@/components/audio/simple-audio-clip";
+import FaqSection, { FaqItem } from "@/components/faq-section";
 import Logo from "@/components/svgs/logo";
 import { AudioFile, Speaker } from "@workspace/database";
 import { Button, buttonVariants } from "@workspace/ui/components/button";
@@ -33,12 +34,160 @@ import FooterSection from "@/components/footer";
 import { TestimonialsColumn } from "@/components/testimonials-columns";
 import { env } from "@/env";
 import { authClient } from "@/lib/auth-client";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@workspace/ui/components/accordion";
+
+const homeFaqs: FaqItem[] = [
+  {
+    value: "faq-what-is",
+    question: "What is InstantAudio.online?",
+    answer: (
+      <>
+        A tool for turning long-form text (books, articles, scripts) into
+        polished audiobooks with chapters, smooth stitching, and single-file
+        exports (MP3).
+      </>
+    ),
+  },
+  {
+    value: "faq-how-it-works",
+    question: "How does it work?",
+    answer: (
+      <>
+        Paste or upload text, pick a voice, preview a short clip, then render
+        the full book. Exports include MP3 (with chapter markers).
+      </>
+    ),
+  },
+  {
+    value: "faq-ownership",
+    question: "Who owns the audio I create?",
+    answer: (
+      <>
+        You own the output you generate. If your text uses third-party IP,
+        you’re responsible for having the rights. Don’t publicly share content
+        you don’t own or lack permission to distribute. See{" "}
+        <Link href="/term" className="underline underline-offset-2">
+          Terms
+        </Link>
+        .
+      </>
+    ),
+  },
+  {
+    value: "faq-commercial-use",
+    question: "Can I use the audio commercially?",
+    answer: (
+      <>
+        Starter is for non-commercial use and may include a
+        watermark/attribution. Paid plans allow commercial use of the audio you
+        create (subject to owning or licensing the underlying text). Always
+        follow our{" "}
+        <Link href="/term" className="underline underline-offset-2">
+          Terms
+        </Link>
+        .
+      </>
+    ),
+  },
+  {
+    value: "faq-characters",
+    question: "How do characters/credits translate to audio length?",
+    answer: (
+      <>
+        A rough guide: Approximately 5 characters equal 1 word, and narration
+        averages about 150 words per minute. For example, 100,000 characters
+        produce roughly 20,000 words, resulting in an estimated 133 minutes of
+        audio (about 2 hours and 13 minutes). Actual length may vary based on
+        voice and pacing.
+      </>
+    ),
+  },
+  {
+    value: "faq-rollover",
+    question: "Do unused characters roll over?",
+    answer: (
+      <>
+        Yes—unused characters roll over while your subscription is active. You
+        can also purchase extra when you need to.
+      </>
+    ),
+  },
+  {
+    value: "faq-formats",
+    question: "What export formats are supported?",
+    answer: <>MP3. If you&apos;d like support for other formats, please let us know.</>,
+  },
+  {
+    value: "faq-voices",
+    question: "What voices are available? Can I customize?",
+    answer: (
+      <>
+        You’ll find a curated voice library tuned for narration. On higher
+        tiers, you can fine-tune settings and may have a custom voice slot.
+        Support for SSML controls (pronunciation, emphasis, pauses) is
+        available on paid plans.
+      </>
+    ),
+  },
+  {
+    value: "faq-privacy",
+    question: "Is my project private? Can I share it?",
+    answer: (
+      <>
+        Projects are private by default. You can keep them private or share an
+        unlisted preview link. Only share publicly if you own the rights to the
+        underlying text.
+      </>
+    ),
+  },
+  {
+    value: "faq-limits",
+    question: "How big can my book be?",
+    answer: (
+      <>
+        The system is built for long-form content and handles large texts
+        without manual chunking. If you hit an edge case, split by natural
+        chapters and we’ll stitch cleanly with consistent pacing.
+      </>
+    ),
+  },
+  {
+    value: "faq-languages",
+    question: "What languages do you support?",
+    answer: (
+      <>
+        English is fully supported with multiple narration styles. Additional
+        languages and accents are available depending on voice; availability may
+        vary by plan.
+      </>
+    ),
+  },
+  {
+    value: "faq-cancel",
+    question: "Can I cancel anytime? What happens to rollover?",
+    answer: (
+      <>
+        You can cancel anytime. You keep access through the end of the billing
+        period. Rollover applies while you’re subscribed; it pauses if your plan
+        lapses and resumes when you reactivate.
+      </>
+    ),
+  },
+  {
+    value: "faq-support",
+    question: "How do I report an issue or takedown request?",
+    answer: (
+      <>
+        Contact support from your dashboard or email our abuse/takedown address
+        in the{" "}
+        <Link href="/term" className="underline underline-offset-2">
+          Terms
+        </Link>
+        . Include links, proof of ownership (if applicable), and any error
+        details.
+      </>
+    ),
+  },
+];
 
 export type HomeClientProps = {
   af: AudioFile;
@@ -449,172 +598,17 @@ export function HomeClient(props: HomeClientProps) {
           </div>
         </section>
 
-        {/* FAQ (Accordion) */}
-        <section className="min-h-dvh w-full p-6 ">
-          <div className="max-w-5xl mx-auto">
-            <h2 className="text-2xl font-bold mb-2">
-              Frequently Asked Questions
-            </h2>
-            <p className="text-sm text-foreground/70 mb-6 flex gap-1">
-              Short answers below. Need more? View the
+        <FaqSection
+          faqs={homeFaqs}
+          description={
+            <>
+              Short answers below. Need more? View the{" "}
               <Link href="/term" className="underline underline-offset-2">
                 terms.
               </Link>
-            </p>
-
-            <Accordion type="multiple" className="w-full">
-              <AccordionItem value="faq-what-is">
-                <AccordionTrigger>
-                  What is InstantAudio.online?
-                </AccordionTrigger>
-                <AccordionContent>
-                  A tool for turning long-form text (books, articles, scripts)
-                  into polished audiobooks with chapters, smooth stitching, and
-                  single-file exports (MP3).
-                </AccordionContent>
-              </AccordionItem>
-
-              <AccordionItem value="faq-how-it-works">
-                <AccordionTrigger>How does it work?</AccordionTrigger>
-                <AccordionContent>
-                  Paste or upload text, pick a voice, preview a short clip, then
-                  render the full book. Exports include MP3 (with chapter
-                  markers).
-                </AccordionContent>
-              </AccordionItem>
-
-              <AccordionItem value="faq-ownership">
-                <AccordionTrigger>
-                  Who owns the audio I create?
-                </AccordionTrigger>
-                <AccordionContent>
-                  {`You own the output you generate. If your text uses third-party
-                IP, you’re responsible for having the rights. Don’t publicly
-                share content you don’t own or lack permission to distribute.
-                See`}
-                  <Link href="/term" className="underline underline-offset-2">
-                    Terms
-                  </Link>
-                  .
-                </AccordionContent>
-              </AccordionItem>
-
-              <AccordionItem value="faq-commercial-use">
-                <AccordionTrigger>
-                  Can I use the audio commercially?
-                </AccordionTrigger>
-                <AccordionContent>
-                  Starter is for non-commercial use and may include a
-                  watermark/attribution. Paid plans allow commercial use of the
-                  audio you create (subject to owning or licensing the
-                  underlying text). Always follow our
-                  <Link href="/term" className="underline underline-offset-2">
-                    Terms
-                  </Link>
-                  .
-                </AccordionContent>
-              </AccordionItem>
-
-              <AccordionItem value="faq-characters">
-                <AccordionTrigger>
-                  How do characters/credits translate to audio length?
-                </AccordionTrigger>
-                <AccordionContent>
-                  {`A rough guide: Approximately 5 characters equal 1 word, and narration averages about 150 words per minute. For example, 100,000 characters produce roughly 20,000 words, resulting in an estimated 133 minutes of audio (about 2 hours and 13 minutes). Actual length may vary based on voice and pacing.`}
-                </AccordionContent>
-              </AccordionItem>
-
-              <AccordionItem value="faq-rollover">
-                <AccordionTrigger>
-                  Do unused characters roll over?
-                </AccordionTrigger>
-                <AccordionContent>
-                  Yes—unused characters roll over while your subscription is
-                  active. You can also purchase extra when you need to.
-                </AccordionContent>
-              </AccordionItem>
-
-              <AccordionItem value="faq-formats">
-                <AccordionTrigger>
-                  What export formats are supported?
-                </AccordionTrigger>
-                <AccordionContent>
-                  {`MP3. If you'd like support for other formats, please let us know.`}
-                </AccordionContent>
-              </AccordionItem>
-
-              <AccordionItem value="faq-voices">
-                <AccordionTrigger>
-                  What voices are available? Can I customize?
-                </AccordionTrigger>
-                <AccordionContent>
-                  {`You’ll find a curated voice library tuned for narration. On
-                higher tiers, you can fine-tune settings and may have a custom
-                voice slot. Support for SSML controls (pronunciation, emphasis,
-                pauses) is available on paid plans.`}
-                </AccordionContent>
-              </AccordionItem>
-
-              <AccordionItem value="faq-privacy">
-                <AccordionTrigger>
-                  Is my project private? Can I share it?
-                </AccordionTrigger>
-                <AccordionContent>
-                  Projects are private by default. You can keep them private or
-                  share an unlisted preview link. Only share publicly if you own
-                  the rights to the underlying text.
-                </AccordionContent>
-              </AccordionItem>
-
-              <AccordionItem value="faq-limits">
-                <AccordionTrigger>How big can my book be?</AccordionTrigger>
-                <AccordionContent>
-                  {`The system is built for long-form content and handles large
-                texts without manual chunking. If you hit an edge case, split by
-                natural chapters and we’ll stitch cleanly with consistent
-                pacing.`}
-                </AccordionContent>
-              </AccordionItem>
-
-              <AccordionItem value="faq-languages">
-                <AccordionTrigger>
-                  What languages do you support?
-                </AccordionTrigger>
-                <AccordionContent>
-                  English is fully supported with multiple narration styles.
-                  Additional languages and accents are available depending on
-                  voice; availability may vary by plan.
-                </AccordionContent>
-              </AccordionItem>
-
-              <AccordionItem value="faq-cancel">
-                <AccordionTrigger>
-                  Can I cancel anytime? What happens to rollover?
-                </AccordionTrigger>
-                <AccordionContent>
-                  {`You can cancel anytime. You keep access through the end of the
-                billing period. Rollover applies while you’re subscribed; it
-                pauses if your plan lapses and resumes when you reactivate.`}
-                </AccordionContent>
-              </AccordionItem>
-
-              <AccordionItem value="faq-support">
-                <AccordionTrigger>
-                  How do I report an issue or takedown request?
-                </AccordionTrigger>
-                <AccordionContent>
-                  Contact support from your dashboard or email our
-                  abuse/takedown address in the
-                  <Link href="/term" className="underline underline-offset-2">
-                    Terms
-                  </Link>
-                  . Include links, proof of ownership (if applicable), and any
-                  error details.
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
-          </div>
-        </section>
+            </>
+          }
+        />
       </div>
       <FooterSection />
     </>

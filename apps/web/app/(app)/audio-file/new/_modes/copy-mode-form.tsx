@@ -652,34 +652,6 @@ export function CopyModeForm({
               <AudioLinesIcon className="h-4 w-4" />
               {createAudioFile.isPending ? "Synthesizing..." : "Create Audio"}
             </Button>
-
-            {!isAdmin && (
-              <div className="flex flex-col gap-2">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  disabled={
-                    !form.formState.isValid ||
-                    !form.getValues("speakerId") ||
-                    filteredSpeakers.length === 0
-                  }
-                  onClick={() => {
-                    const vals = form.getValues();
-                    testAudioMutation.mutate({
-                      name: vals.name?.trim() || "Untitled Audio",
-                      speakerId: vals.speakerId,
-                      text: vals.text,
-                      durationMinutes: undefined,
-                      public: vals.public ?? false,
-                      mode: "copy",
-                      chunkSize: 1000,
-                    });
-                  }}
-                >
-                  Test
-                </Button>
-              </div>
-            )}
           </div>
         </form>
       </Form>
