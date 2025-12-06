@@ -21,10 +21,33 @@ import {
   TableHeader,
   TableRow,
 } from "@workspace/ui/components/table";
-import { CheckIcon, Loader2, MinusIcon, X } from "lucide-react";
+import { CheckIcon, Clock3Icon, Loader2, MinusIcon, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { featureNames, planFeatures } from "./pricing-plan-data";
+
+function getNewYearsDeadline() {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const thisNewYear = new Date(currentYear, 0, 1, 0, 0, 0, 0);
+  const nextNewYear =
+    now >= thisNewYear
+      ? new Date(currentYear + 1, 0, 1, 0, 0, 0, 0)
+      : thisNewYear;
+
+  return nextNewYear.getTime();
+}
+
+function formatTimeLeft(ms: number) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const days = Math.floor(totalSeconds / (3600 * 24));
+  const hours = Math.floor((totalSeconds % (3600 * 24)) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+
+  const pad = (value: number) => value.toString().padStart(2, "0");
+
+  return `${pad(days)}d ${pad(hours)}h ${pad(minutes)}m`;
+}
 
 /**
  * Instant Audio Online – Pricing
@@ -40,6 +63,19 @@ export default function SubscribeClientPage({
 }) {
   const router = useRouter();
   const { data } = authClient.useSession();
+  const [deadline] = useState(() => getNewYearsDeadline());
+  const [timeLeft, setTimeLeft] = useState(deadline - Date.now());
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setTimeLeft(deadline - Date.now());
+    }, 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, [deadline]);
+
+  const formattedTimeLeft = formatTimeLeft(timeLeft);
+
   const stripeCreateCheckoutSessionMutation =
     api.stripe.createCheckoutSession.useMutation({
       onSuccess: ({ url }) => {
@@ -65,6 +101,34 @@ export default function SubscribeClientPage({
             Turn any text into a polished audiobook. Paste long text → get one
             seamless file.
           </p>
+        </div>
+
+        {/* Limited-time discount banner */}
+        <div className="mx-auto mb-8 max-w-xl rounded-xl border border-primary/40 bg-gradient-to-r from-primary/10 via-primary/5 to-background px-4 py-4 text-sm shadow-sm">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <Clock3Icon className="h-4 w-4" />
+            </div>
+            <div className="flex flex-1 flex-col gap-1">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <Badge
+                  className="border-primary/60 bg-primary/10 font-semibold uppercase"
+                  variant="outline"
+                >
+                  Limited-time discount
+                </Badge>
+                <span className="text-muted-foreground">
+                  Offer ends New Years in{" "}
+                  <span className="font-mono font-semibold text-primary">
+                    {formattedTimeLeft}
+                  </span>
+                </span>
+              </div>
+              <span className="text-xs font-medium text-foreground">
+                Price is locked in for life!
+              </span>
+            </div>
+          </div>
         </div>
 
         {/* Toggle (hidden for now) */}
@@ -151,16 +215,21 @@ export default function SubscribeClientPage({
           </Card>
 
           {/* Basic Card */}
-          <Card className="border-primary">
+          <Card className="border-primary bg-gradient-to-b from-primary/15 to-primary/0">
             <CardHeader className="pb-2 text-center">
               <Badge className="mb-3 w-max self-center uppercase">
                 Most popular
               </Badge>
               <CardTitle className="!mb-7">Basic</CardTitle>
-              <span className="flex w-full items-end justify-center gap-1">
-                <span className="text-5xl font-bold">$11.99</span>
-                <span className="text-muted-foreground">/mo</span>
-              </span>
+              <div className="flex flex-col items-center justify-center gap-0.5">
+                <span className="text-lg text-muted-foreground/80 line-through decoration-red-500/50 decoration-2">
+                  $19.99
+                </span>
+                <div className="flex items-end gap-2">
+                  <span className="text-5xl font-bold text-primary">$11.99</span>
+                  <span className="mb-1 text-muted-foreground">/mo</span>
+                </div>
+              </div>
             </CardHeader>
             <CardDescription className="mx-auto w-11/12 text-center">
               For creators who need more capacity and control.
@@ -240,10 +309,15 @@ export default function SubscribeClientPage({
           <Card>
             <CardHeader className="pb-2 text-center">
               <CardTitle className="mb-7">Pro</CardTitle>
-              <span className="flex w-full items-end justify-center gap-1">
-                <span className="text-5xl font-bold">$39.99</span>
-                <span className="text-muted-foreground">/mo</span>
-              </span>
+              <div className="flex flex-col items-center justify-center gap-0.5">
+                <span className="text-lg text-muted-foreground/80 line-through decoration-red-500/50 decoration-2">
+                  $59.99
+                </span>
+                <div className="flex items-end gap-2">
+                  <span className="text-5xl font-bold text-primary">$39.99</span>
+                  <span className="mb-1 text-muted-foreground">/mo</span>
+                </div>
+              </div>
             </CardHeader>
             <CardDescription className="mx-auto w-11/12 text-center">
               Built for heavy workloads and publishers needing premium features.

@@ -48,12 +48,13 @@ export default function TermsPage() {
 
   return (
     <main className="mx-auto max-w-3xl px-5 py-12">
-      <header className="mb-10">
-        <h1 className="text-4xl font-bold tracking-tight mb-2">
+      <header className="mb-12 rounded-2xl bg-neutral-50 px-6 py-12 text-center dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800">
+        <h1 className="text-4xl font-extrabold tracking-tight mb-4 sm:text-5xl">
           Terms &amp; Conditions
         </h1>
-        <p className="text-sm text-neutral-600">
-          Last Updated: {new Date(LAST_UPDATED).toLocaleDateString()}
+        <p className="text-sm text-neutral-500 font-medium flex items-center justify-center gap-2">
+          <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+          Last Updated: {new Date(LAST_UPDATED).toLocaleDateString(undefined, { dateStyle: "long" })}
         </p>
       </header>
 
