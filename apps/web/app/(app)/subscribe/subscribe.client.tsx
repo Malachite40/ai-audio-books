@@ -226,7 +226,9 @@ export default function SubscribeClientPage({
                   $19.99
                 </span>
                 <div className="flex items-end gap-2">
-                  <span className="text-5xl font-bold text-primary">$11.99</span>
+                  <span className="text-5xl font-bold text-primary">
+                    $11.99
+                  </span>
                   <span className="mb-1 text-muted-foreground">/mo</span>
                 </div>
               </div>
@@ -314,7 +316,9 @@ export default function SubscribeClientPage({
                   $59.99
                 </span>
                 <div className="flex items-end gap-2">
-                  <span className="text-5xl font-bold text-primary">$39.99</span>
+                  <span className="text-5xl font-bold text-primary">
+                    $39.99
+                  </span>
                   <span className="mb-1 text-muted-foreground">/mo</span>
                 </div>
               </div>

@@ -54,7 +54,10 @@ export default function TermsPage() {
         </h1>
         <p className="text-sm text-neutral-500 font-medium flex items-center justify-center gap-2">
           <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-          Last Updated: {new Date(LAST_UPDATED).toLocaleDateString(undefined, { dateStyle: "long" })}
+          Last Updated:{" "}
+          {new Date(LAST_UPDATED).toLocaleDateString(undefined, {
+            dateStyle: "long",
+          })}
         </p>
       </header>
 
